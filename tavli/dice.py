@@ -18,8 +18,8 @@ class Dice:
 
 
 class Die:
-    def __init__(self):
-        self.value = 0
+    def __init__(self, value: int = 0):
+        self.value = value
 
     def roll(self):
         self.value = random.randint(1, 6)

@@ -65,6 +65,9 @@ class TestPossibleMoves(unittest.TestCase):
         self.board.points[1] = Point(1, self.color_white, 1)
         self.board.points[2] = Point(2)
         self.board.points[3] = Point(3)
+        self.dice.die1 = Die(1)
+        self.dice.die2 = Die(2)
+
 
         possible_moves_generator = PossibleMoves(self.board, self.color_white, self.dice)
         possible_moves = possible_moves_generator.find_moves()
