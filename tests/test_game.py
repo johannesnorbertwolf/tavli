@@ -19,7 +19,7 @@ class TestGame(unittest.TestCase):
 
     def test_play_turn(self):
         # Mocking dice roll and move checks
-        self.game.dice.roll = lambda: (1, 2)  # Mocking dice roll
+        self.game.dice.value = lambda: (1, 2)  # Mocking dice roll
         self.game.players[0].can_move = lambda board, from_point, to_point: True  # Mocking can_move
         self.game.players[0].make_move = lambda board, from_point, to_point: None  # Mocking make_move
 

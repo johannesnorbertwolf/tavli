@@ -14,13 +14,17 @@ class PossibleMoves:
     def find_moves(self) -> List[Move]:
         possible_moves = []
 
-        for half_move1 in self.get_half_move_range(self.dice.range1(self.color)):
+        half_moves1 = self.generate_half_moves(self.dice.die1)
+        half_moves2 = self.generate_half_moves(self.dice.die2)
+
+        for half_move1 in half_moves1:
             if not half_move1.is_valid():
                 continue
 
-            for half_move2 in self.get_half_move_range(self.dice.range2(self.color)):
+            for half_move2 in half_moves2:
                 if not half_move2.is_valid():
                     continue
+
                 if half_move1.from_point == half_move2.from_point:
                     if not half_move1.two_checkers_available():
                         continue
@@ -29,12 +33,16 @@ class PossibleMoves:
 
         return possible_moves
 
+    def generate_half_moves(self, die: Die) -> List[HalfMove]:
+        from_range = self.get_from_range(die)
+        return [self.create_half_move(from_point_index, die) for from_point_index in from_range]
 
-    def get_half_move_range(self, from_range):
-        return [self.get_half_move(from_point_index1, self.dice.die1) for from_point_index1 in from_range]
-    def get_half_move(self, from_point_index: int, die: Die) -> HalfMove:
-        to_point_index = from_point_index + die.roll if self.color.is_white() else from_point_index - die.roll()
+    def get_from_range(self, die: Die) -> List[int]:
+        return list(range(1, 25 - die.value) if self.color.is_white() else range(1 + die.value, 25))
+
+
+    def create_half_move(self, from_point_index: int, die: Die) -> HalfMove:
+        to_point_index = from_point_index + die.value if self.color.is_white() else from_point_index - die.value
         from_point = self.board.points[from_point_index]
         to_point = self.board.points[to_point_index]
         return HalfMove(from_point, to_point, self.color)
-
