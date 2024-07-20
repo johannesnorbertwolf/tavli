@@ -67,6 +67,12 @@ class TestPoint(unittest.TestCase):
         self.assertFalse(point.is_double_color(Color.WHITE))
         self.assertFalse(point.is_double_color(Color.BLACK))
 
+    def test_string(self):
+        point = Point(12, Color.WHITE, 8)
+        actual = str(point)
+        expected = "12: OOOOOOOO"
+        self.assertEqual(actual, expected)
+
 
 if __name__ == '__main__':
     unittest.main()

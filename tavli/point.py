@@ -1,14 +1,24 @@
 from typing import Optional
 from tavli.color import Color
 
+
 class Point:
     def __init__(self, position: int, color: Optional[Color] = None, number: int = 0) -> None:
         # Handle single constructor signature with default arguments
         self.position = position
-        self.pieces = [color] * number if color else []
+        self.pieces: list[color] = [color] * number if number else []
 
     def __eq__(self, other: 'Point') -> bool:
         return self.position == other.position
+
+    def __str__(self):
+        result = str(self.position) + ": "
+        for piece in self.pieces:
+            if piece.is_white():
+                result += "O"
+            else:
+                result += "X"
+        return result
 
     def pop(self) -> None:
         if self.pieces:
