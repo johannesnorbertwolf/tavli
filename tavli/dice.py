@@ -6,20 +6,26 @@ class Dice:
     def __init__(self):
         self.die1 = Die()
         self.die2 = Die()
+    def __str__(self):
+        return str(self.die1) + "," + str(self.die2)
+
+    def __repr__(self):
+        return self.__str__()
 
     def roll(self):
-        return self.die1.value(), self.die2.value()
-
-    def range1(self, color: Color):
-        return self.die1.get_range(color)
-
-    def range2(self, color: Color):
-        return self.die2.get_range(color)
+        self.die1.roll()
+        self.die2.roll()
 
 
 class Die:
     def __init__(self, value: int = 0):
         self.value = value
+
+    def __str__(self):
+        return str(self.value)
+
+    def __repr__(self):
+        return self.__str__()
 
     def roll(self):
         self.value = random.randint(1, 6)

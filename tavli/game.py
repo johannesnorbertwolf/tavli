@@ -1,12 +1,13 @@
 from tavli.board import GameBoard
 from tavli.player import Player
 from tavli.dice import Dice
+from tavli.color import Color
 
 class Game:
     def __init__(self):
         self.board = GameBoard()
         self.board.initialize_board()
-        self.players = [Player(name="Player1", color="W"), Player(name="Player2", color="B")]
+        self.players = [Player(name="Player1", color=Color.WHITE), Player(name="Player2", color=Color.BLACK)]
         self.current_player_index = 0
         self.dice = Dice()
 

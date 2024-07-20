@@ -13,8 +13,8 @@ class GameBoard:
         return self.__str__()
 
     def initialize_board(self):
-        self.points[1] = Point(1, Color.BLACK, 15)
-        self.points[24] = Point(24, Color.WHITE, 15)
+        self.points[1] = Point(1, Color.WHITE, 15)
+        self.points[24] = Point(24, Color.BLACK, 15)
 
     def move_checker(self, from_point, to_point):
         if self.is_point_open(to_point) or (

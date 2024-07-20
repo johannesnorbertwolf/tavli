@@ -1,12 +1,13 @@
-# main.py
-
 from tavli.game import Game
+from tavli.possible_moves import PossibleMoves
+
 
 def display_board(board):
     print("\nCurrent Board State:")
-    for point in range(1, 25):
-        print(f"{point}: {board.points[point]}")
+    for point in range(24, 0, -1):
+        print(f"{point:2}: {board.points[point]}")
     print("\n")
+
 
 def main():
     game = Game()
@@ -15,24 +16,51 @@ def main():
 
     while True:
         display_board(game.board)
-        print(f"{game.current_player.name}'s turn ({game.current_player.get_color})")
+        print(f"{game.current_player.name}'s turn ({game.current_player.color})")
 
-        try:
-            from_point = int(input("Enter the point to move from: "))
-            to_point = int(input("Enter the point to move to: "))
-        except ValueError:
-            print("Invalid input. Please enter valid point numbers.")
+        game.dice.roll()
+        print(f"Rolled: {game.dice.die1} and {game.dice.die2}")
+
+        # Calculate all possible moves
+        possible_moves_generator = PossibleMoves(game.board, game.current_player.color, game.dice)
+        possible_moves = possible_moves_generator.find_moves()
+
+        # List all possible moves
+        if not possible_moves:
+            print("No valid moves available. Switching turn.")
+            game.switch_turn()
             continue
 
-        game.play_turn(from_point, to_point)
+        print("Possible moves:")
+        for idx, move in enumerate(possible_moves):
+            print(f"{idx + 1}: {move}")
+
+        # Ask the player which move to do
+        while True:
+            try:
+                move_choice = int(input(f"Choose a move (1-{len(possible_moves)}): "))
+                if 1 <= move_choice <= len(possible_moves):
+                    chosen_move = possible_moves[move_choice - 1]
+                    break
+                else:
+                    print(f"Invalid choice. Please enter a number between 1 and {len(possible_moves)}.")
+            except ValueError:
+                print("Invalid input. Please enter a valid number.")
+
+        # Do the move
+        for half_move in chosen_move.half_moves:
+            half_move.apply(game.board)
+
+        print("Move applied. Thank you!")
 
         winner = game.check_winner()
         if winner:
             display_board(game.board)
-            print(f"{winner.name} ({winner.get_color}) has won the game!")
+            print(f"{winner.name} ({winner.color}) has won the game!")
             break
 
         game.switch_turn()
+
 
 if __name__ == "__main__":
     main()

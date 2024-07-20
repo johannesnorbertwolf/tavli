@@ -13,7 +13,7 @@ class Move:
         result = "("
         for half_move in self.half_moves:
             result += str(half_move) + ","
-        result[-1] = ")"
+        result = result[:-1] + ")"
         return result
 
     def __repr__(self):
