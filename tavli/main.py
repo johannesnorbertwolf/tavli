@@ -15,7 +15,7 @@ def main():
 
     while True:
         display_board(game.board)
-        print(f"{game.current_player.name}'s turn ({game.current_player.color})")
+        print(f"{game.current_player.name}'s turn ({game.current_player.get_color})")
 
         try:
             from_point = int(input("Enter the point to move from: "))
@@ -29,7 +29,7 @@ def main():
         winner = game.check_winner()
         if winner:
             display_board(game.board)
-            print(f"{winner.name} ({winner.color}) has won the game!")
+            print(f"{winner.name} ({winner.get_color}) has won the game!")
             break
 
         game.switch_turn()

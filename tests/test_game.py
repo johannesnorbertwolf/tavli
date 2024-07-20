@@ -7,15 +7,15 @@ class TestGame(unittest.TestCase):
 
     def test_initialization(self):
         self.assertEqual(self.game.current_player.name, "Player1")
-        self.assertEqual(self.game.current_player.color, "W")
+        self.assertEqual(self.game.current_player.get_color, "W")
 
     def test_switch_turn(self):
         self.game.switch_turn()
         self.assertEqual(self.game.current_player.name, "Player2")
-        self.assertEqual(self.game.current_player.color, "B")
+        self.assertEqual(self.game.current_player.get_color, "B")
         self.game.switch_turn()
         self.assertEqual(self.game.current_player.name, "Player1")
-        self.assertEqual(self.game.current_player.color, "W")
+        self.assertEqual(self.game.current_player.get_color, "W")
 
     def test_play_turn(self):
         # Mocking dice roll and move checks

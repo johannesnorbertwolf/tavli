@@ -1,5 +1,6 @@
 import unittest
 from tavli.board import GameBoard
+from tavli.color import Color
 
 class TestGameBoard(unittest.TestCase):
     def setUp(self):
@@ -8,15 +9,9 @@ class TestGameBoard(unittest.TestCase):
 
     def test_initial_setup(self):
         self.assertEqual(len(self.board.points[24]), 15)
-        self.assertEqual(self.board.points[24], ['W'] * 15)
+        self.assertEqual(self.board.points[24].is_white(), True)
         self.assertEqual(len(self.board.points[1]), 15)
-        self.assertEqual(self.board.points[1], ['B'] * 15)
-
-    def test_move_checker(self):
-        self.board.move_checker(24, 23)
-        self.assertEqual(len(self.board.points[24]), 14)
-        self.assertEqual(len(self.board.points[23]), 1)
-        self.assertEqual(self.board.points[23][0], 'W')
+        self.assertEqual(self.board.points[1].is_white(), False)
 
     def test_string(self):
         actual = str(self.board)

@@ -3,7 +3,7 @@ from tavli.color import Color
 
 
 class Point:
-    def __init__(self, position: int, color: Optional[Color] = None, number: int = 0) -> None:
+    def __init__(self, position: int, color: Color = Color.WHITE, number: int = 0) -> None:
         # Handle single constructor signature with default arguments
         self.position = position
         self.pieces: list[color] = [color] * number if number else []
@@ -23,8 +23,8 @@ class Point:
     def __repr__(self):
         return self.__str__()
 
-    def __repr__(self):
-        return self.__str__()
+    def __len__(self):
+        return len(self.pieces)
 
     def pop(self) -> None:
         if self.pieces:
@@ -34,9 +34,12 @@ class Point:
         self.pieces.append(color)
 
     def is_color(self, color: Color) -> bool:
-        return self.color() == color
+        return self.get_color() == color
 
-    def color(self) -> Optional[Color]:
+    def is_white(self):
+        return self.is_color(Color.WHITE)
+
+    def get_color(self) -> Optional[Color]:
         if self.is_empty():
             return None
         return self.pieces[-1]  # Check the last element

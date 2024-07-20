@@ -6,29 +6,29 @@ class TestPoint(unittest.TestCase):
     def test_initialization_empty(self):
         point = Point(1)
         self.assertTrue(point.is_empty())
-        self.assertIsNone(point.color())
+        self.assertIsNone(point.get_color())
 
     def test_initialization_with_color(self):
         point = Point(1, Color.WHITE, 3)
         self.assertFalse(point.is_empty())
         self.assertEqual(len(point.pieces), 3)
-        self.assertEqual(point.color(), Color.WHITE)
+        self.assertEqual(point.get_color(), Color.WHITE)
 
     def test_push(self):
         point = Point(1)
         point.push(Color.BLACK)
         self.assertFalse(point.is_empty())
         self.assertEqual(len(point.pieces), 1)
-        self.assertEqual(point.color(), Color.BLACK)
+        self.assertEqual(point.get_color(), Color.BLACK)
 
     def test_pop(self):
         point = Point(1, Color.WHITE, 2)
         point.pop()
         self.assertEqual(len(point.pieces), 1)
-        self.assertEqual(point.color(), Color.WHITE)
+        self.assertEqual(point.get_color(), Color.WHITE)
         point.pop()
         self.assertTrue(point.is_empty())
-        self.assertIsNone(point.color())
+        self.assertIsNone(point.get_color())
 
     def test_is_color(self):
         point = Point(1, Color.WHITE, 1)
