@@ -10,6 +10,12 @@ class HalfMove:
         self.to_point = to_point
         self.color = color
 
+    def __str__(self):
+        return str(self.from_point.position) + "->" + str(self.to_point.position)
+
+    def __repr__(self):
+        return self.__str__()
+
     def is_valid(self) -> bool:
         """
         Validate the half-move. A half-move is valid if:

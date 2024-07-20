@@ -8,6 +8,17 @@ class Move:
             raise ValueError("A move must consist of one or two half-moves.")
         self.half_moves = half_moves
 
+
+    def __str__(self):
+        result = "("
+        for half_move in self.half_moves:
+            result += str(half_move) + ","
+        result[-1] = ")"
+        return result
+
+    def __repr__(self):
+        return self.__str__()
+
     def is_valid(self) -> bool:
         # Ensure each half-move is valid
         for half_move in self.half_moves:

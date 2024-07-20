@@ -23,6 +23,9 @@ class Point:
     def __repr__(self):
         return self.__str__()
 
+    def __repr__(self):
+        return self.__str__()
+
     def pop(self) -> None:
         if self.pieces:
             self.pieces.pop()
