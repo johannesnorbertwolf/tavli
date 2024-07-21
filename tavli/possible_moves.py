@@ -23,6 +23,9 @@ class PossibleMoves:
 
             for half_move2 in half_moves2:
                 if not half_move2.is_valid():
+                    if half_move1.can_merge(half_move2):
+                        # Note: we allow stepping over a blocked piece here! Must be dealt with when this is not a poc anymore.
+                        possible_moves.append(Move([half_move1.merge(half_move2)]))
                     continue
 
                 if half_move1.from_point == half_move2.from_point:

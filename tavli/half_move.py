@@ -29,3 +29,9 @@ class HalfMove:
         Check if there are at least two checkers of the player's color at the starting point.
         """
         return self.from_point.is_double_color(self.color)
+
+    def merge(self, other: 'HalfMove'):
+        return HalfMove(self.from_point,other.to_point)
+
+    def can_merge(self, other: 'HalfMove'):
+        return self.to_point == other.from_point
