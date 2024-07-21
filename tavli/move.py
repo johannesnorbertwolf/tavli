@@ -25,7 +25,7 @@ class Move:
             if not half_move.is_valid():
                 return False
 
-        # Validate if both start from the same point that two checkers are available.=
+        # Validate if both start from the same point that two checkers are available.
         if len(self.half_moves) == 2:
             if self.half_moves[0].from_point == self.half_moves[1].from_point:
                 return self.half_moves[0].two_checkers_available()

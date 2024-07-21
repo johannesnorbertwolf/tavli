@@ -1,5 +1,7 @@
 from tavli.point import Point
 from tavli.color import Color
+from tavli.move import Move
+from tavli.half_move import HalfMove
 
 class GameBoard:
     def __init__(self):
@@ -21,6 +23,14 @@ class GameBoard:
                 len(self.points[to_point]) == 1 and self.points[to_point][0] != self.points[from_point][0]):
             checker = self.points[from_point].pop()
             self.points[to_point].append(checker)
+
+    def apply(self, move: Move):
+        for half_move in move.half_moves:
+            self.apply_half_move(half_move)
+
+    def apply_half_move(self, half_move: HalfMove):
+        half_move.from_point.pop()
+        half_move.to_point.push(half_move.color)
 
     def is_point_open(self, point):
         return len(self.points[point]) == 0 or (

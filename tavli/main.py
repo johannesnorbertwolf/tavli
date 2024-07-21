@@ -48,8 +48,7 @@ def main():
                 print("Invalid input. Please enter a valid number.")
 
         # Do the move
-        for half_move in chosen_move.half_moves:
-            half_move.apply(game.board)
+        game.board.apply(chosen_move)
 
         print("Move applied. Thank you!")
 
