@@ -15,7 +15,8 @@ class TestGameBoard(unittest.TestCase):
 
     def test_string(self):
         actual = str(self.board)
-        expected = """24: XXXXXXXXXXXXXXX
+        expected = """25: 
+24: XXXXXXXXXXXXXXX
 23: 
 22: 
 21: 
@@ -38,7 +39,8 @@ class TestGameBoard(unittest.TestCase):
 4: 
 3: 
 2: 
-1: OOOOOOOOOOOOOOO"""
+1: OOOOOOOOOOOOOOO
+0: """
         self.assertEqual(actual, expected)
 
 if __name__ == '__main__':

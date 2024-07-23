@@ -5,10 +5,10 @@ from tavli.half_move import HalfMove
 
 class GameBoard:
     def __init__(self):
-        self.points = {i: Point(i) for i in range(1, 25)}  # 1 to 24 points
+        self.points = {i: Point(i) for i in range(0, 26)}  # 1 to 24 points plus two
 
     def __str__(self):
-        lines = [str(self.points[i]) for i in range(24, 0, -1)]
+        lines = [str(self.points[i]) for i in range(25, -1, -1)]
         return "\n".join(lines)
 
     def __repr__(self):
