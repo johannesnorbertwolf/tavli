@@ -51,10 +51,10 @@ def main():
 
         print("Move applied. Thank you!")
 
-        winner = game.check_winner()
+        winner = game.check_winner(game.current_player.color)
         if winner:
             display_board(game.board)
-            print(f"{winner.name} ({winner.color}) has won the game!")
+            print(f"{game.current_player.name} ({game.current_player.color}) has won the game!")
             break
 
         game.switch_turn()

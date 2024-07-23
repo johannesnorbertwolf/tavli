@@ -44,3 +44,9 @@ class GameBoard:
         if len(self.points[point]) == 1:
             return self.points[point].pop()
         return None
+
+    def has_won(self, color: Color):
+        if color == Color.WHITE:
+            return len(self.points[25]) == 15
+        else:
+            return len(self.points[0]) == 15
