@@ -31,7 +31,7 @@ class HalfMove:
         return self.from_point.is_double_color(self.color)
 
     def merge(self, other: 'HalfMove'):
-        return HalfMove(self.from_point,other.to_point)
+        return HalfMove(self.from_point, other.to_point, self.color)
 
     def can_merge(self, other: 'HalfMove'):
         return self.to_point == other.from_point

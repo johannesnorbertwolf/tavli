@@ -25,14 +25,15 @@ class PossibleMoves:
                 if not half_move2.is_valid():
                     if half_move1.can_merge(half_move2):
                         # Note: we allow stepping over a blocked piece here! Must be dealt with when this is not a poc anymore.
-                        possible_moves.append(Move([half_move1.merge(half_move2)]))
+                        merged_move = half_move1.merge(half_move2)
+                        if merged_move.is_valid():
+                            possible_moves.append(Move([merged_move]))
                     continue
 
                 if half_move1.from_point == half_move2.from_point:
                     if not half_move1.two_checkers_available():
                         continue
-
-                possible_moves.append(Move([half_move1, half_move2]))
+                    possible_moves.append(Move([half_move1, half_move2]))
 
         return possible_moves
 

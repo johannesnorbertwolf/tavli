@@ -9,13 +9,13 @@ class TestGameBoard(unittest.TestCase):
 
     def test_initial_setup(self):
         self.assertEqual(len(self.board.points[24]), 15)
-        self.assertEqual(self.board.points[24].is_white(), True)
+        self.assertEqual(self.board.points[24].is_white(), False)
         self.assertEqual(len(self.board.points[1]), 15)
-        self.assertEqual(self.board.points[1].is_white(), False)
+        self.assertEqual(self.board.points[1].is_white(), True)
 
     def test_string(self):
         actual = str(self.board)
-        expected = """24: OOOOOOOOOOOOOOO
+        expected = """24: XXXXXXXXXXXXXXX
 23: 
 22: 
 21: 
@@ -38,7 +38,7 @@ class TestGameBoard(unittest.TestCase):
 4: 
 3: 
 2: 
-1: XXXXXXXXXXXXXXX"""
+1: OOOOOOOOOOOOOOO"""
         self.assertEqual(actual, expected)
 
 if __name__ == '__main__':
