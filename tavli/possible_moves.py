@@ -25,15 +25,22 @@ class PossibleMoves:
                 if not half_move2.is_valid():
                     if half_move1.can_merge(half_move2):
                         # Note: we allow stepping over a blocked piece here! Must be dealt with when this is not a poc anymore.
-                        merged_move = half_move1.merge(half_move2)
-                        if merged_move.is_valid():
-                            possible_moves.append(Move([merged_move]))
+                        merged_half_move = half_move1.merge(half_move2)
+                        if merged_half_move.is_valid():
+                            possible_moves.append(Move([merged_half_move]))
                     continue
 
                 if half_move1.from_point == half_move2.from_point:
                     if not half_move1.two_checkers_available():
                         continue
                     possible_moves.append(Move([half_move1, half_move2]))
+
+                possible_moves.append(Move([half_move1, half_move2]))
+
+        if len(possible_moves) == 0:
+            for half_move in half_moves1 + half_moves2:
+                if half_move.is_valid():
+                    possible_moves.append(Move([half_move]))
 
         return possible_moves
 
@@ -42,7 +49,7 @@ class PossibleMoves:
         return [self.create_half_move(from_point_index, die) for from_point_index in from_range]
 
     def get_from_range(self, die: Die) -> List[int]:
-        return list(range(1, 25 - die.value) if self.color.is_white() else range(1 + die.value, 25))
+        return list(range(1, 26 - die.value) if self.color.is_white() else range(0 + die.value, 25))
 
 
     def create_half_move(self, from_point_index: int, die: Die) -> HalfMove:
