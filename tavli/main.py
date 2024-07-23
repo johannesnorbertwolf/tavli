@@ -4,8 +4,7 @@ from tavli.possible_moves import PossibleMoves
 
 def display_board(board):
     print("\nCurrent Board State:")
-    for point in range(24, 0, -1):
-        print(f"{point:2}: {board.points[point]}")
+    print(board)
     print("\n")
 
 
