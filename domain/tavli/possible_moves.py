@@ -49,7 +49,8 @@ class PossibleMoves:
         return [self.create_half_move(from_point_index, die) for from_point_index in from_range]
 
     def get_from_range(self, die: Die) -> List[int]:
-        return list(range(1, 26 - die.value) if self.color.is_white() else range(0 + die.value, 25))
+        board_size = self.board.config.get_board_size()
+        return list(range(1, board_size + 2 - die.value) if self.color.is_white() else range(0 + die.value, board_size + 1))
 
 
     def create_half_move(self, from_point_index: int, die: Die) -> HalfMove:

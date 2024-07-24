@@ -5,7 +5,7 @@ from domain.tavli.dice import Dice
 
 class TestDice(unittest.TestCase):
     def setUp(self):
-        self.dice = Dice()
+        self.dice = Dice(6)
 
     def test_roll(self):
         self.dice.roll()

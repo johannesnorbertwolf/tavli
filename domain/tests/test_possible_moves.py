@@ -10,10 +10,10 @@ from config.config_loader import ConfigLoader
 
 class TestPossibleMoves(unittest.TestCase):
     def setUp(self) -> None:
-        config = ConfigLoader("config-test.yml")
-        self.board = GameBoard(config)
+        self.config = ConfigLoader("config-test.yml")
+        self.board = GameBoard(self.config)
         self.board.initialize_board()
-        self.dice = Dice()
+        self.dice = Dice(self.config.get_die_sides())
         self.color_white = Color.WHITE
         self.color_black = Color.BLACK
 
@@ -67,8 +67,8 @@ class TestPossibleMoves(unittest.TestCase):
         self.board.points[1] = Point(1, self.color_white, 1)
         self.board.points[2] = Point(2)
         self.board.points[3] = Point(3)
-        self.dice.die1 = Die(1)
-        self.dice.die2 = Die(2)
+        self.dice.die1 = Die(self.config.get_die_sides(), 1)
+        self.dice.die2 = Die(self.config.get_die_sides(), 2)
 
 
         possible_moves_generator = PossibleMoves(self.board, self.color_white, self.dice)
