@@ -1,10 +1,12 @@
 import unittest
 from domain.tavli.board import GameBoard
+from config.config_loader import ConfigLoader
 
 
 class TestGameBoard(unittest.TestCase):
     def setUp(self):
-        self.board = GameBoard()
+        config = ConfigLoader("config-test.yml")
+        self.board = GameBoard(config)
         self.board.initialize_board()
 
     def test_initial_setup(self):

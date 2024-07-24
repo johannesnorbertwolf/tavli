@@ -1,10 +1,12 @@
 import unittest
 from domain.tavli.game import Game
 from domain.tavli.color import Color
+from config.config_loader import ConfigLoader
 
 class TestGame(unittest.TestCase):
     def setUp(self):
-        self.game = Game()
+        config = ConfigLoader("config-test.yml")
+        self.game = Game(config)
 
     def test_initialization(self):
         self.assertEqual(self.game.current_player.name, "Player1")

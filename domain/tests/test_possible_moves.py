@@ -5,11 +5,13 @@ from domain.tavli.dice import Dice, Die
 from domain.tavli.possible_moves import PossibleMoves
 from domain.tavli.move import Move
 from domain.tavli.point import Point
+from config.config_loader import ConfigLoader
 
 
 class TestPossibleMoves(unittest.TestCase):
     def setUp(self) -> None:
-        self.board = GameBoard()
+        config = ConfigLoader("config-test.yml")
+        self.board = GameBoard(config)
         self.board.initialize_board()
         self.dice = Dice()
         self.color_white = Color.WHITE
