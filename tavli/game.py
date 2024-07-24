@@ -19,8 +19,5 @@ class Game:
         self.current_player_index = 1 - self.current_player_index
 
     def check_winner(self, color: Color):
-        # for player in self.players:
-        #     if all(not self.board.points[point] or self.board.points[point][0] != player.color for point in self.board.points):
-        #         return player
         return self.board.has_won(color)
 
