@@ -1,8 +1,8 @@
 import unittest
-from tavli.point import Point
-from tavli.color import Color
-from tavli.half_move import HalfMove
-from tavli.move import Move
+from domain.tavli.point import Point
+from domain.tavli.color import Color
+from domain.tavli.half_move import HalfMove
+from domain.tavli.move import Move
 
 class TestMove(unittest.TestCase):
     def setUp(self) -> None:

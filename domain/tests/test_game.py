@@ -1,5 +1,6 @@
 import unittest
-from tavli.game import Game
+from domain.tavli.game import Game
+from domain.tavli.color import Color
 
 class TestGame(unittest.TestCase):
     def setUp(self):
@@ -20,7 +21,7 @@ class TestGame(unittest.TestCase):
 
     def test_check_winner(self):
         # No winner initially
-        self.assertIsNone(self.game.check_winner())
+        self.assertFalse(self.game.check_winner(Color.WHITE))
 
 
 if __name__ == '__main__':

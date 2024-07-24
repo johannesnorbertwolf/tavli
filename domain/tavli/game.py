@@ -1,7 +1,7 @@
-from tavli.board import GameBoard
-from tavli.player import Player
-from tavli.dice import Dice
-from tavli.color import Color
+from domain.tavli.board import GameBoard
+from domain.tavli.player import Player
+from domain.tavli.dice import Dice
+from domain.tavli.color import Color
 
 class Game:
     def __init__(self):

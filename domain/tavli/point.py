@@ -1,5 +1,5 @@
 from typing import Optional
-from tavli.color import Color
+from domain.tavli.color import Color
 
 
 class Point:
@@ -55,3 +55,6 @@ class Point:
 
     def is_double_color(self, color: Color) -> bool:
         return len(self.pieces) > 1 and self.pieces[-1] == self.pieces[-2] == color
+
+    def is_captured_by(self, color: Color):
+        return len(self.pieces) > 1 and self[0] != color and self.pieces[1] == color

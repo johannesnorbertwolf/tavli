@@ -1,6 +1,6 @@
 import unittest
-from tavli.board import GameBoard
-from tavli.color import Color
+from domain.tavli.board import GameBoard
+
 
 class TestGameBoard(unittest.TestCase):
     def setUp(self):

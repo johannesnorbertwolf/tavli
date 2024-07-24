@@ -1,10 +1,10 @@
 import unittest
-from tavli.board import GameBoard
-from tavli.color import Color
-from tavli.dice import Dice, Die
-from tavli.possible_moves import PossibleMoves
-from tavli.move import Move
-from tavli.point import Point
+from domain.tavli.board import GameBoard
+from domain.tavli.color import Color
+from domain.tavli.dice import Dice, Die
+from domain.tavli.possible_moves import PossibleMoves
+from domain.tavli.move import Move
+from domain.tavli.point import Point
 
 
 class TestPossibleMoves(unittest.TestCase):

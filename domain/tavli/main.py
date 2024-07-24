@@ -1,5 +1,5 @@
-from tavli.game import Game
-from tavli.possible_moves import PossibleMoves
+from domain.tavli.game import Game
+from domain.tavli.possible_moves import PossibleMoves
 
 
 def display_board(board):

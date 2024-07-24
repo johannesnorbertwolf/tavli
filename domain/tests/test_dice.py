@@ -1,7 +1,7 @@
 # tests/test_dice.py
 
 import unittest
-from tavli.dice import Dice
+from domain.tavli.dice import Dice
 
 class TestDice(unittest.TestCase):
     def setUp(self):
