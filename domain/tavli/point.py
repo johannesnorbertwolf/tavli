@@ -12,7 +12,12 @@ class Point:
         return self.position == other.position
 
     def __str__(self):
-        result = str(self.position) + ": "
+        if self.position < 10:
+            result = " "
+        else:
+            result = ""
+
+        result += str(self.position) + ": "
         for piece in self.pieces:
             if piece.is_white():
                 result += "O"
@@ -57,4 +62,4 @@ class Point:
         return len(self.pieces) > 1 and self.pieces[-1] == self.pieces[-2] == color
 
     def is_captured_by(self, color: Color):
-        return len(self.pieces) > 1 and self[0] != color and self.pieces[1] == color
+        return len(self.pieces) > 1 and self.pieces[0] != color and self.pieces[1] == color
