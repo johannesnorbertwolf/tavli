@@ -2,13 +2,15 @@ from domain.tavli.point import Point
 from domain.tavli.color import Color
 from domain.tavli.move import Move
 from domain.tavli.half_move import HalfMove
+from config.config_loader import ConfigLoader
 
 class GameBoard:
-    def __init__(self):
-        self.points = {i: Point(i) for i in range(0, 26)}  # 1 to 24 points plus two
+    def __init__(self, config: ConfigLoader):
+        self.config = config
+        self.points = {i: Point(i) for i in range(0, config.get_board_size() + 2)}  # 1 to 24 points plus two
 
     def __str__(self):
-        lines = [str(self.points[i]) for i in range(25, -1, -1)]
+        lines = [str(self.points[i]) for i in range(self.config.get_board_size() + 1, -1, -1)]
         return "\n".join(lines)
 
     def __repr__(self):

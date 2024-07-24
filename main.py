@@ -1,6 +1,6 @@
 from domain.tavli.game import Game
 from domain.tavli.possible_moves import PossibleMoves
-
+from config.config_loader import ConfigLoader
 
 def display_board(board):
     print("\nCurrent Board State:")
@@ -9,7 +9,8 @@ def display_board(board):
 
 
 def main():
-    game = Game()
+    config = ConfigLoader("config/config.yml")
+    game = Game(config)
     game.board.initialize_board()
     print("Welcome to Tavli!")
 

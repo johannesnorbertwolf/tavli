@@ -73,7 +73,7 @@ class TestPossibleMoves(unittest.TestCase):
         possible_moves = possible_moves_generator.find_moves()
 
         # Expect no valid move involving both half-moves starting from the same point
-        self.assertEquals(len(possible_moves), 1)
+        self.assertEqual(len(possible_moves), 1)
 
 
 if __name__ == '__main__':

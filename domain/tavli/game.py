@@ -4,8 +4,8 @@ from domain.tavli.dice import Dice
 from domain.tavli.color import Color
 
 class Game:
-    def __init__(self):
-        self.board = GameBoard()
+    def __init__(self, config):
+        self.board = GameBoard(config)
         self.board.initialize_board()
         self.players = [Player(name="Player1", color=Color.WHITE), Player(name="Player2", color=Color.BLACK)]
         self.current_player_index = 0
