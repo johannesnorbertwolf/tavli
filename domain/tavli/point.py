@@ -3,10 +3,10 @@ from domain.tavli.color import Color
 
 
 class Point:
-    def __init__(self, position: int, color: Color = Color.WHITE, number: int = 0) -> None:
+    def __init__(self, position: int, color: Color = Color.WHITE, count: int = 0) -> None:
         # Handle single constructor signature with default arguments
         self.position = position
-        self.pieces: list[color] = [color] * number if number else []
+        self.pieces: list[color] = [color] * count if count else []
 
     def __eq__(self, other: 'Point') -> bool:
         return self.position == other.position
@@ -34,6 +34,7 @@ class Point:
     def pop(self) -> None:
         if self.pieces:
             self.pieces.pop()
+
 
     def push(self, color: Color) -> None:
         self.pieces.append(color)
@@ -63,3 +64,11 @@ class Point:
 
     def is_captured_by(self, color: Color):
         return len(self.pieces) > 1 and self.pieces[0] != color and self.pieces[1] == color
+
+    def is_captured(self):
+        return len(self.pieces) > 1 and self.pieces[0] != self.pieces[1]
+
+    def get_count(self):
+        if self.is_captured():
+            return len(self.pieces) - 1
+        return len(self.pieces)
