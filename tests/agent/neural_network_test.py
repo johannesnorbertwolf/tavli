@@ -1,6 +1,6 @@
 import unittest
 import torch
-from agent.neural_network import BoardEvaluator
+from agent.board_evaluator import BoardEvaluator
 
 class TestBoardEvaluator(unittest.TestCase):
     def setUp(self):

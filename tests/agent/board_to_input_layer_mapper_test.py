@@ -4,7 +4,7 @@ from domain.tavli.color import Color
 from domain.tavli.point import Point
 from domain.tavli.board import GameBoard
 from config.config_loader import ConfigLoader
-from agent.board_to_input_layer_mapper import BoardEncoder
+from agent.board_encoder import BoardEncoder
 
 class TestBoardEncoder(unittest.TestCase):
     def setUp(self):
