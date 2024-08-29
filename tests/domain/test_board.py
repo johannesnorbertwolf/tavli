@@ -5,7 +5,7 @@ from config.config_loader import ConfigLoader
 
 class TestGameBoard(unittest.TestCase):
     def setUp(self):
-        config = ConfigLoader("config-test.yml")
+        config = ConfigLoader("../config-test.yml")
         self.board = GameBoard(config)
         self.board.initialize_board()
 
@@ -33,16 +33,16 @@ class TestGameBoard(unittest.TestCase):
 12: 
 11: 
 10: 
-9: 
-8: 
-7: 
-6: 
-5: 
-4: 
-3: 
-2: 
-1: OOOOOOOOOOOOOOO
-0: """
+ 9: 
+ 8: 
+ 7: 
+ 6: 
+ 5: 
+ 4: 
+ 3: 
+ 2: 
+ 1: OOOOOOOOOOOOOOO
+ 0: """
         self.assertEqual(actual, expected)
 
 if __name__ == '__main__':

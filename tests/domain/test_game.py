@@ -5,7 +5,7 @@ from config.config_loader import ConfigLoader
 
 class TestGame(unittest.TestCase):
     def setUp(self):
-        config = ConfigLoader("config-test.yml")
+        config = ConfigLoader("../config-test.yml")
         self.game = Game(config)
 
     def test_initialization(self):

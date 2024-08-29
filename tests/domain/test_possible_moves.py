@@ -10,7 +10,7 @@ from config.config_loader import ConfigLoader
 
 class TestPossibleMoves(unittest.TestCase):
     def setUp(self) -> None:
-        self.config = ConfigLoader("config-test.yml")
+        self.config = ConfigLoader("../config-test.yml")
         self.board = GameBoard(self.config)
         self.board.initialize_board()
         self.dice = Dice(self.config.get_die_sides())
