@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 from typing import List
-from domain.tavli.board import GameBoard
-from domain.tavli.move import Move
-from domain.tavli.color import Color
+from domain.board import GameBoard
+from domain.move import Move
+from domain.color import Color
 
 class Agent:
     def __init__(self, neural_network: torch.nn.Module, board_encoder):

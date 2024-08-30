@@ -1,5 +1,5 @@
 from typing import Optional
-from domain.tavli.color import Color
+from domain.color import Color
 
 
 class Point:

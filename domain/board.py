@@ -1,7 +1,7 @@
-from domain.tavli.point import Point
-from domain.tavli.color import Color
-from domain.tavli.move import Move
-from domain.tavli.half_move import HalfMove
+from domain.point import Point
+from domain.color import Color
+from domain.move import Move
+from domain.half_move import HalfMove
 from config.config_loader import ConfigLoader
 from typing import Dict
 

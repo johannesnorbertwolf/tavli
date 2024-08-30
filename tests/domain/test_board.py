@@ -1,5 +1,5 @@
 import unittest
-from domain.tavli.board import GameBoard
+from domain.board import GameBoard
 from config.config_loader import ConfigLoader
 
 

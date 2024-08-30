@@ -1,5 +1,5 @@
-from domain.tavli.game import Game
-from domain.tavli.possible_moves import PossibleMoves
+from game.game import Game
+from domain.possible_moves import PossibleMoves
 from config.config_loader import ConfigLoader
 
 def display_board(board):

@@ -1,10 +1,10 @@
 import unittest
-from domain.tavli.board import GameBoard
-from domain.tavli.color import Color
-from domain.tavli.dice import Dice, Die
-from domain.tavli.possible_moves import PossibleMoves
-from domain.tavli.move import Move
-from domain.tavli.point import Point
+from domain.board import GameBoard
+from domain.color import Color
+from domain.dice import Dice, Die
+from domain.possible_moves import PossibleMoves
+from domain.move import Move
+from domain.point import Point
 from config.config_loader import ConfigLoader
 
 

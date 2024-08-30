@@ -3,9 +3,9 @@ from typing import List
 
 from sympy.logic.boolalg import Boolean
 
-from domain.tavli.color import Color
-from domain.tavli.point import Point
-from domain.tavli.board import GameBoard
+from domain.color import Color
+from domain.point import Point
+from domain.board import GameBoard
 from config.config_loader import ConfigLoader
 
 class BoardEncoder:

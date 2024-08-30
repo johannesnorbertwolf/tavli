@@ -1,6 +1,6 @@
 import unittest
-from domain.tavli.game import Game
-from domain.tavli.color import Color
+from game.game import Game
+from domain.color import Color
 from config.config_loader import ConfigLoader
 
 class TestGame(unittest.TestCase):

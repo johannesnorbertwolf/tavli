@@ -1,8 +1,8 @@
-from domain.tavli.half_move import HalfMove
-from domain.tavli.move import Move
-from domain.tavli.board import GameBoard
-from domain.tavli.color import Color
-from domain.tavli.dice import Dice, Die
+from domain.half_move import HalfMove
+from domain.move import Move
+from domain.board import GameBoard
+from domain.color import Color
+from domain.dice import Dice, Die
 from typing import List
 
 class PossibleMoves:

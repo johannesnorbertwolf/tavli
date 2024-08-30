@@ -1,7 +1,7 @@
-from domain.tavli.board import GameBoard
-from domain.tavli.player import Player
-from domain.tavli.dice import Dice
-from domain.tavli.color import Color
+from domain.board import GameBoard
+from domain.player import Player
+from domain.dice import Dice
+from domain.color import Color
 from config.config_loader import ConfigLoader
 
 

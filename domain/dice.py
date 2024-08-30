@@ -1,5 +1,4 @@
 import random
-from domain.tavli.color import Color
 
 
 class Dice:

@@ -1,5 +1,5 @@
-from domain.tavli.point import Point
-from domain.tavli.color import Color
+from domain.point import Point
+from domain.color import Color
 
 class HalfMove:
     def __init__(self, from_point: Point, to_point: Point, color: Color) -> None:

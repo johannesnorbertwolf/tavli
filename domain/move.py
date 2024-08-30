@@ -1,5 +1,5 @@
 from typing import List
-from domain.tavli.half_move import HalfMove
+from domain.half_move import HalfMove
 
 
 class Move:

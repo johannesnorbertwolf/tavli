@@ -1,6 +1,6 @@
 import unittest
-from domain.tavli.color import Color
-from domain.tavli.point import Point
+from domain.color import Color
+from domain.point import Point
 
 class TestPoint(unittest.TestCase):
     def test_initialization_empty(self):
