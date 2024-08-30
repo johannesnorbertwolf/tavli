@@ -4,7 +4,7 @@ from domain.color import Color
 from domain.point import Point
 from domain.board import GameBoard
 from config.config_loader import ConfigLoader
-from agent.board_encoder import BoardEncoder
+from ai.board_encoder import BoardEncoder
 
 class TestBoardEncoder(unittest.TestCase):
     def setUp(self):

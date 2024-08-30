@@ -1,6 +1,6 @@
 import unittest
 import torch
-from agent.board_evaluator import BoardEvaluator
+from ai.board_evaluator import BoardEvaluator
 
 class TestBoardEvaluator(unittest.TestCase):
     def setUp(self):

@@ -14,3 +14,6 @@ class ConfigLoader:
 
     def get_die_sides(self):
         return self.config.get("die_sides", 6)  # Default to 6
+
+    def get_hidden_size(self):
+        return self.config.get("hidden_size", 128)
