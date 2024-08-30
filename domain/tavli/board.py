@@ -34,9 +34,17 @@ class GameBoard:
         for half_move in move.half_moves:
             self.apply_half_move(half_move)
 
+    def undo(self, move: Move):
+        for half_move in move.half_moves:
+            self.undo_half_move(half_move)
+
     def apply_half_move(self, half_move: HalfMove):
         half_move.from_point.pop()
         half_move.to_point.push(half_move.color)
+
+    def undo_half_move(self, half_move: HalfMove):
+        half_move.to_point.pop()
+        half_move.from_point.push(half_move.color)
 
     def is_point_open(self, point):
         return len(self.points[point]) == 0 or (
