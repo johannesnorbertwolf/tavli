@@ -1,37 +1,47 @@
 import torch
-from typing import List, Optional
+import numpy as np
+from typing import List
+from domain.tavli.board import GameBoard
 from domain.tavli.move import Move
-from board_encoder import BoardEncoder
-from board_evaluator import BoardEvaluator
-
+from domain.tavli.color import Color
 
 class Agent:
-    def __init__(self, model: BoardEvaluator, encoder: BoardEncoder, color: Color):
-        self.model = model
-        self.encoder = encoder
-        self.color = color
+    def __init__(self, neural_network: torch.nn.Module, board_encoder):
+        self.neural_network = neural_network
+        self.board_encoder = board_encoder
 
-    def evaluate_moves(self, possible_moves: List[Move], board: GameBoard) -> Optional[Move]:
-        best_move = None
-        best_score = -float('inf')
+    def evaluate_moves(self, board: GameBoard, possible_moves: List[Move], color: Color) -> List[float]:
+        """
+        Returns a list of scores for each possible move by applying and undoing each move.
+        Encodes all board states and runs them through the neural network in a single batch.
+        """
+        encoded_boards = []
 
         for move in possible_moves:
-            # Apply the move to get the new board state
+            # Apply the move temporarily to the board
             board.apply(move)
 
             # Encode the new board state
-            encoded_board = self.encoder.encode_board(board)
-            encoded_board_tensor = torch.tensor(encoded_board, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+            encoded_board = self.board_encoder.encode_board(board)
+            encoded_boards.append(encoded_board)
 
-            # Get the score from the neural network
-            score = self.model(encoded_board_tensor).item()
-
-            # Revert the move to get back to the original board state
+            # Undo the move to restore the original board state
             board.undo(move)
 
-            # Select the move with the highest score
-            if score > best_score:
-                best_score = score
-                best_move = move
+        # Convert the list of encoded boards to a tensor and pass it through the neural network in a batch
+        input_tensor = torch.tensor(encoded_boards, dtype=torch.float32)
+        with torch.no_grad():
+            scores = self.neural_network(input_tensor).squeeze().tolist()
 
-        return best_move
+        return scores
+
+    def get_best_move_index(self, board: GameBoard, possible_moves: List[Move], color: Color) -> int:
+        """
+        Returns the index of the best move based on the neural network's evaluation.
+        """
+        scores = self.evaluate_moves(board, possible_moves, color)
+
+        # Find the index of the maximum score
+        best_move_index = int(np.argmax(scores))
+
+        return best_move_index
