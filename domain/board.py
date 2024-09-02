@@ -24,12 +24,6 @@ class GameBoard:
         self.points[1] = Point(1, Color.WHITE, self.number_of_pieces)
         self.points[self.board_size] = Point(self.board_size, Color.BLACK, self.number_of_pieces)
 
-    def move_checker(self, from_point, to_point):
-        if self.is_point_open(to_point) or (
-                len(self.points[to_point]) == 1 and self.points[to_point][0] != self.points[from_point][0]):
-            checker = self.points[from_point].pop()
-            self.points[to_point].append(checker)
-
     def apply(self, move: Move):
         for half_move in move.half_moves:
             self.apply_half_move(half_move)
