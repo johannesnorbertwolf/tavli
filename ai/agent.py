@@ -28,8 +28,11 @@ class Agent:
             # Undo the move to restore the original board state
             board.undo(move)
 
-        # Convert the list of encoded boards to a tensor and pass it through the neural network in a batch
-        input_tensor = torch.tensor(encoded_boards, dtype=torch.float32)
+        # Convert the list of encoded boards to a single NumPy array
+        combined_encoded_boards = np.array(encoded_boards)
+
+        # Convert the NumPy array to a tensor and pass it through the neural network in a batch
+        input_tensor = torch.tensor(combined_encoded_boards, dtype=torch.float32)
         with torch.no_grad():
             scores = self.neural_network(input_tensor).squeeze().tolist()
 
