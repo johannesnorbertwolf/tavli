@@ -1,14 +1,10 @@
-from networkx.algorithms.bipartite import color
-
-from game.game import Game
+from ai.training import TDLearner
 from domain.possible_moves import PossibleMoves
 from config.config_loader import ConfigLoader
-from ai.agent import Agent  # Import the Agent class
-from ai.board_evaluator import BoardEvaluator  # Assuming you have the neural network class
-from ai.board_encoder import BoardEncoder  # Assuming you have the board encoder class
-import torch
-from ai.training import TDLearner
+from game.game import Game
+from ai.agent import Agent
 from domain.color import Color
+
 
 def display_board(board):
     print("\nCurrent Board State:")
@@ -19,9 +15,13 @@ def display_board(board):
 def main():
     config = ConfigLoader("config/config.yml")
 
-    # Initialize and train the AI
+    print("Initializing AI training...")
     tdlearner = TDLearner(config)
+
+    print("Starting training process...")
     tdlearner.train(num_episodes=10000)
+
+    print("Training completed. Starting game...")
 
     # After training, you can use the trained model to play games
     game = Game(config)
@@ -44,18 +44,24 @@ def main():
 
         if game.current_player.color == Color.WHITE:
             # Human player's turn
-            print("Possible moves:")
-            for idx, move in enumerate(possible_moves):
-                print(f"{idx + 1}: {move}")
+            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, game.current_player.color)
+
+            # Sort moves based on their scores
+            sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
+
+            print("Possible moves (sorted by AI evaluation):")
+            for idx, (move, score) in enumerate(sorted_moves):
+                win_chance = score * 100  # Convert score to percentage
+                print(f"{idx + 1}: {move} - Estimated win chance: {win_chance:.2f}%")
 
             while True:
                 try:
-                    move_choice = int(input(f"Choose a move (1-{len(possible_moves)}): "))
-                    if 1 <= move_choice <= len(possible_moves):
-                        chosen_move = possible_moves[move_choice - 1]
+                    move_choice = int(input(f"Choose a move (1-{len(sorted_moves)}): "))
+                    if 1 <= move_choice <= len(sorted_moves):
+                        chosen_move = sorted_moves[move_choice - 1][0]
                         break
                     else:
-                        print(f"Invalid choice. Please enter a number between 1 and {len(possible_moves)}.")
+                        print(f"Invalid choice. Please enter a number between 1 and {len(sorted_moves)}.")
                 except ValueError:
                     print("Invalid input. Please enter a valid number.")
         else:
