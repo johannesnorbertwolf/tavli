@@ -1,7 +1,7 @@
 import torch
-import random
 import numpy as np
 from collections import deque
+import random
 from typing import List, Tuple
 from domain.board import GameBoard
 from domain.move import Move
@@ -11,10 +11,11 @@ from ai.agent import Agent
 from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from game.game import Game
+from tqdm import tqdm
 
 
 class TDLearner:
-    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64):
+    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64, max_episode_length=1000):
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
@@ -22,28 +23,33 @@ class TDLearner:
         self.discount_factor = discount_factor
         self.batch_size = batch_size
         self.replay_buffer = deque(maxlen=10000)
+        self.max_episode_length = max_episode_length
 
     def train(self, num_episodes: int):
-        for episode in range(num_episodes):
-            self.play_episode()
-            if len(self.replay_buffer) >= self.batch_size:
-                self.update_model()
-
-            if episode % 100 == 0:
-                print(f"Episode {episode} completed")
+        for episode in tqdm(range(num_episodes), desc="Training Progress"):
+            try:
+                self.play_episode()
+                if len(self.replay_buffer) >= self.batch_size:
+                    loss = self.update_model()
+                    if episode % 100 == 0:
+                        print(f"Episode {episode} completed. Loss: {loss:.4f}")
+            except Exception as e:
+                print(f"Error in episode {episode}: {str(e)}")
+                break
 
     def play_episode(self):
         game = Game(self.config)
         agent = Agent(self.board_evaluator, self.board_encoder)
         game_history = []
 
-        while True:
+        for _ in range(self.max_episode_length):
             current_state = game.board
             possible_moves_generator = PossibleMoves(current_state, game.current_player.color, game.dice)
             possible_moves = possible_moves_generator.find_moves()
 
             if not possible_moves:
                 game.switch_turn()
+                game.dice.roll()
                 continue
 
             move = agent.get_best_move(current_state, possible_moves, game.current_player.color)
@@ -51,14 +57,12 @@ class TDLearner:
 
             game_history.append((current_state, move, game.current_player.color))
 
-            # Check for a winner after each move
             if game.check_winner(game.current_player.color):
                 break
 
             game.switch_turn()
             game.dice.roll()
 
-        # Process game history
         winner_color = game.current_player.color
         self.process_game_history(game_history, winner_color)
 
@@ -71,7 +75,7 @@ class TDLearner:
             self.replay_buffer.append((encoded_state, move, discounted_reward))
 
     def update_model(self):
-        batch = random.sample(self.replay_buffer, self.batch_size)
+        batch = random.sample(self.replay_buffer, min(self.batch_size, len(self.replay_buffer)))
         states, moves, rewards = zip(*batch)
 
         states_tensor = torch.FloatTensor(np.array(states))
@@ -84,4 +88,4 @@ class TDLearner:
         loss.backward()
         self.optimizer.step()
 
-
+        return loss.item()
