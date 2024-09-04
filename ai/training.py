@@ -13,6 +13,10 @@ from ai.board_evaluator import BoardEvaluator
 from game.game import Game
 from tqdm import tqdm
 
+class RandomAgent:
+    def get_best_move(self, possible_moves):
+        return random.choice(possible_moves)
+
 class SelfPlayTDLearner:
     def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64):
         self.config = config
@@ -22,6 +26,7 @@ class SelfPlayTDLearner:
         self.discount_factor = discount_factor
         self.batch_size = batch_size
         self.replay_buffer = deque(maxlen=10000)
+        self.random_agent = RandomAgent()
 
     def train(self, num_episodes: int):
         for episode in tqdm(range(num_episodes), desc="Training Progress"):
@@ -31,6 +36,11 @@ class SelfPlayTDLearner:
                 if episode % 100 == 0:
                     print(f"Episode {episode} completed. Loss: {loss:.4f}")
                     self.save_model(f"model_checkpoint_{episode}.pth")
+
+                    # Evaluate against random agent after each episode
+                    wins = self.evaluate_against_random(num_games=10)
+                    print(f"Episode {episode}: Won {wins}/10 games against random agent")
+
 
     def play_self_play_episode(self):
         game = Game(self.config)
@@ -86,3 +96,37 @@ class SelfPlayTDLearner:
 
     def load_model(self, filename):
         self.board_evaluator.load_state_dict(torch.load(filename))
+
+    def evaluate_against_random(self, num_games: int) -> int:
+        wins = 0
+        ai_agent = Agent(self.board_evaluator, self.board_encoder)
+
+        for _ in range(num_games):
+            game = Game(self.config)
+            current_player = Color.WHITE  # AI always plays as White for consistency
+
+            while not game.check_winner(game.current_player.color):
+                game.dice.roll()
+                possible_moves = PossibleMoves(game.board, game.current_player.color, game.dice).find_moves()
+
+                if not possible_moves:
+                    game.switch_turn()
+                    current_player = Color.BLACK if current_player == Color.WHITE else Color.WHITE
+                    continue
+
+                if current_player == Color.WHITE:
+                    move = ai_agent.get_best_move(game.board, possible_moves, current_player)
+                else:
+                    move = self.random_agent.get_best_move(possible_moves)
+
+                game.board.apply(move)
+
+                if game.check_winner(game.current_player.color):
+                    if current_player == Color.WHITE:
+                        wins += 1
+                    break
+
+                game.switch_turn()
+                current_player = Color.BLACK if current_player == Color.WHITE else Color.WHITE
+
+        return wins
