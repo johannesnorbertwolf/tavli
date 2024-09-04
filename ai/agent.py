@@ -22,7 +22,7 @@ class Agent:
             board.apply(move)
 
             # Encode the new board state
-            encoded_board = self.board_encoder.encode_board(board)
+            encoded_board = self.board_encoder.encode_board(board, color == Color.WHITE)
             encoded_boards.append(encoded_board)
 
             # Undo the move to restore the original board state
@@ -38,7 +38,7 @@ class Agent:
 
         return scores
 
-    def get_best_move_index(self, board: GameBoard, possible_moves: List[Move], color: Color) -> int:
+    def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> Move:
         """
         Returns the index of the best move based on the neural network's evaluation.
         """
@@ -47,4 +47,4 @@ class Agent:
         # Find the index of the maximum score
         best_move_index = int(np.argmax(scores))
 
-        return best_move_index
+        return possible_moves[best_move_index]
