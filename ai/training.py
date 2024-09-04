@@ -13,9 +13,8 @@ from ai.board_evaluator import BoardEvaluator
 from game.game import Game
 from tqdm import tqdm
 
-
-class TDLearner:
-    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64, max_episode_length=1000):
+class SelfPlayTDLearner:
+    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64):
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
@@ -23,29 +22,24 @@ class TDLearner:
         self.discount_factor = discount_factor
         self.batch_size = batch_size
         self.replay_buffer = deque(maxlen=10000)
-        self.max_episode_length = max_episode_length
 
     def train(self, num_episodes: int):
         for episode in tqdm(range(num_episodes), desc="Training Progress"):
-            try:
-                self.play_episode()
-                if len(self.replay_buffer) >= self.batch_size:
-                    loss = self.update_model()
-                    if episode % 100 == 0:
-                        print(f"Episode {episode} completed. Loss: {loss:.4f}")
-            except Exception as e:
-                print(f"Error in episode {episode}: {str(e)}")
-                break
+            self.play_self_play_episode()
+            if len(self.replay_buffer) >= self.batch_size:
+                loss = self.update_model()
+                if episode % 100 == 0:
+                    print(f"Episode {episode} completed. Loss: {loss:.4f}")
+                    self.save_model(f"model_checkpoint_{episode}.pth")
 
-    def play_episode(self):
+    def play_self_play_episode(self):
         game = Game(self.config)
         agent = Agent(self.board_evaluator, self.board_encoder)
         game_history = []
 
-        for _ in range(self.max_episode_length):
+        while not game.check_winner(game.current_player.color):
             current_state = game.board
-            possible_moves_generator = PossibleMoves(current_state, game.current_player.color, game.dice)
-            possible_moves = possible_moves_generator.find_moves()
+            possible_moves = PossibleMoves(current_state, game.current_player.color, game.dice).find_moves()
 
             if not possible_moves:
                 game.switch_turn()
@@ -56,9 +50,6 @@ class TDLearner:
             game.board.apply(move)
 
             game_history.append((current_state, move, game.current_player.color))
-
-            if game.check_winner(game.current_player.color):
-                break
 
             game.switch_turn()
             game.dice.roll()
@@ -89,3 +80,9 @@ class TDLearner:
         self.optimizer.step()
 
         return loss.item()
+
+    def save_model(self, filename):
+        torch.save(self.board_evaluator.state_dict(), filename)
+
+    def load_model(self, filename):
+        self.board_evaluator.load_state_dict(torch.load(filename))

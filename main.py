@@ -1,4 +1,4 @@
-from ai.training import TDLearner
+from ai.training import SelfPlayTDLearner
 from domain.possible_moves import PossibleMoves
 from config.config_loader import ConfigLoader
 from game.game import Game
@@ -16,7 +16,7 @@ def main():
     config = ConfigLoader("config/config.yml")
 
     print("Initializing AI training...")
-    tdlearner = TDLearner(config)
+    tdlearner = SelfPlayTDLearner(config)
 
     print("Starting training process...")
     tdlearner.train(num_episodes=10000)
