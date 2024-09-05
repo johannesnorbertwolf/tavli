@@ -34,9 +34,14 @@ class Agent:
         # Convert the NumPy array to a tensor and pass it through the neural network in a batch
         input_tensor = torch.tensor(combined_encoded_boards, dtype=torch.float32)
         with torch.no_grad():
-            scores = self.neural_network(input_tensor).squeeze().tolist()
+            scores = self.neural_network(input_tensor).squeeze()
 
-        return scores
+            # Ensure we always return a list
+            if scores.dim() == 0:
+                return [scores.item()]
+            else:
+                return scores.tolist()
+
 
     def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> Move:
         """
