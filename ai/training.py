@@ -14,7 +14,7 @@ from game.game import Game
 from tqdm import tqdm
 
 class RandomAgent:
-    def get_best_move(self, possible_moves):
+    def get_move(self, possible_moves):
         return random.choice(possible_moves)
 
 class SelfPlayTDLearner:
@@ -27,6 +27,7 @@ class SelfPlayTDLearner:
         self.batch_size = batch_size
         self.replay_buffer = deque(maxlen=10000)
         self.random_agent = RandomAgent()
+        self.agent = Agent(self.board_evaluator, self.board_encoder)
 
     def train(self, num_episodes: int):
         for episode in tqdm(range(num_episodes), desc="Training Progress"):
@@ -44,7 +45,6 @@ class SelfPlayTDLearner:
 
     def play_self_play_episode(self):
         game = Game(self.config)
-        agent = Agent(self.board_evaluator, self.board_encoder)
         game_history = []
 
         while not game.check_winner(game.current_player.color):
@@ -56,20 +56,32 @@ class SelfPlayTDLearner:
                 game.dice.roll()
                 continue
 
-            move = agent.get_best_move(current_state, possible_moves, game.current_player.color)
-            game.board.apply(move)
+            move_scores = self.agent.evaluate_moves(current_state, possible_moves, game.current_player.color)
+            best_move_index = np.argmax(move_scores)
+            chosen_move = possible_moves[best_move_index]
+            try:
+                index_ = move_scores[best_move_index]
+            except Exception as e:
+                logger.error(f"Error occurred on move {move_count}")
 
-            game_history.append((current_state, move, game.current_player.color))
+            game_history.append((current_state, chosen_move, game.current_player.color, index_))
 
+            game.board.apply(chosen_move)
             game.switch_turn()
             game.dice.roll()
 
         winner_color = game.current_player.color
         self.process_game_history(game_history, winner_color)
 
-    def process_game_history(self, game_history: List[Tuple[GameBoard, Move, Color]], winner_color: Color):
-        for i, (state, move, color) in enumerate(reversed(game_history)):
-            reward = 1.0 if color == winner_color else 0.0
+    def process_game_history(self, game_history: List[Tuple[GameBoard, Move, Color, float]], winner_color: Color):
+        for i, (state, move, color, move_score) in enumerate(reversed(game_history)):
+            # The move_score is already the evaluation of the move
+            reward = move_score
+
+            # Add terminal reward
+            if i == 0:  # If this is the last move
+                reward += 1.0 if color == winner_color else -1.0
+
             discounted_reward = reward * (self.discount_factor ** i)
 
             encoded_state = self.board_encoder.encode_board(state, color == Color.WHITE)
@@ -117,7 +129,7 @@ class SelfPlayTDLearner:
                 if current_player == Color.WHITE:
                     move = ai_agent.get_best_move(game.board, possible_moves, current_player)
                 else:
-                    move = self.random_agent.get_best_move(possible_moves)
+                    move = self.random_agent.get_move(possible_moves)
 
                 game.board.apply(move)
 
