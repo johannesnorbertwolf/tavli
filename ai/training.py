@@ -59,12 +59,8 @@ class SelfPlayTDLearner:
             move_scores = self.agent.evaluate_moves(current_state, possible_moves, game.current_player.color)
             best_move_index = np.argmax(move_scores)
             chosen_move = possible_moves[best_move_index]
-            try:
-                index_ = move_scores[best_move_index]
-            except Exception as e:
-                logger.error(f"Error occurred on move {move_count}")
 
-            game_history.append((current_state, chosen_move, game.current_player.color, index_))
+            game_history.append((current_state, chosen_move, game.current_player.color, move_scores[best_move_index]))
 
             game.board.apply(chosen_move)
             game.switch_turn()
