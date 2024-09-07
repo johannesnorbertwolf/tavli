@@ -15,6 +15,7 @@ class Dice:
     def roll(self):
         self.die1.roll()
         self.die2.roll()
+        return (self.die1, self.die2)
 
 
 class Die:

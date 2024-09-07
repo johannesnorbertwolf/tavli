@@ -43,13 +43,10 @@ class Agent:
                 return scores.tolist()
 
 
-    def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> Move:
-        """
-        Returns the index of the best move based on the neural network's evaluation.
-        """
-        scores = self.evaluate_moves(board, possible_moves, color)
-
-        # Find the index of the maximum score
-        best_move_index = int(np.argmax(scores))
-
-        return possible_moves[best_move_index]
+    def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> (Move, float):
+        move_scores = self.evaluate_moves(board, possible_moves, color)
+        if color == Color.BLACK:
+            best_move_index = np.argmax(move_scores)
+        else:  # White
+            best_move_index = np.argmin(move_scores)
+        return (possible_moves[best_move_index], move_scores[best_move_index])

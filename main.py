@@ -19,7 +19,7 @@ def main():
     tdlearner = SelfPlayTDLearner(config)
 
     print("Starting training process...")
-    tdlearner.train(num_episodes=10000)
+    tdlearner.train(num_episodes=100000)
 
     print("Training completed. Starting game...")
 
@@ -29,12 +29,12 @@ def main():
 
     while True:
         display_board(game.board)
-        print(f"{game.current_player.name}'s turn ({game.current_player.color})")
+        print(f"{game.current_player.name}'s turn ({game.current_player})")
 
         game.dice.roll()
         print(f"Rolled: {game.dice.die1} and {game.dice.die2}")
 
-        possible_moves_generator = PossibleMoves(game.board, game.current_player.color, game.dice)
+        possible_moves_generator = PossibleMoves(game.board, game.current_player, game.dice)
         possible_moves = possible_moves_generator.find_moves()
 
         if not possible_moves:
@@ -42,9 +42,9 @@ def main():
             game.switch_turn()
             continue
 
-        if game.current_player.color == Color.WHITE:
+        if game.current_player == Color.WHITE:
             # Human player's turn
-            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, game.current_player.color)
+            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, game.current_player)
 
             # Sort moves based on their scores
             sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
@@ -66,14 +66,14 @@ def main():
                     print("Invalid input. Please enter a valid number.")
         else:
             # AI's turn
-            chosen_move = ai_agent.get_best_move(game.board, possible_moves, game.current_player.color)
-            print(f"AI ({game.current_player.color}) chose move: {chosen_move}")
+            chosen_move, _ = ai_agent.get_best_move(game.board, possible_moves, game.current_player)
+            print(f"AI ({game.current_player}) chose move: {chosen_move}")
 
         game.board.apply(chosen_move)
 
-        if game.check_winner(game.current_player.color):
+        if game.check_winner(game.current_player):
             display_board(game.board)
-            print(f"{game.current_player.name} ({game.current_player.color}) has won the game!")
+            print(f"{game.current_player} ({game.current_player}) has won the game!")
             break
 
         game.switch_turn()
