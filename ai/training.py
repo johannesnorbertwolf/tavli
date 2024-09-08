@@ -18,7 +18,7 @@ class RandomAgent:
         return random.choice(possible_moves)
 
 class SelfPlayTDLearner:
-    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64):
+    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
@@ -29,6 +29,11 @@ class SelfPlayTDLearner:
         self.random_agent = RandomAgent()
         self.agent = Agent(self.board_evaluator, self.board_encoder)
 
+        # Epsilon-greedy exploration
+        self.epsilon = epsilon_start
+        self.epsilon_end = epsilon_end
+        self.epsilon_decay = epsilon_decay
+
     def train(self, num_episodes: int):
         for episode in tqdm(range(num_episodes), desc="Training Progress"):
             self.play_self_play_episode()
@@ -38,9 +43,13 @@ class SelfPlayTDLearner:
                     print(f"Episode {episode} completed. Loss: {loss:.4f}")
                     self.save_model(f"model_checkpoint_{episode}.pth")
 
-                    # # Evaluate against random agent after each episode
-                    # wins = self.evaluate_against_random(num_games=10)
-                    # print(f"Episode {episode}: Won {wins}/10 games against random agent")
+
+                    # Evaluate against random agent after each episode
+                    wins = self.evaluate_against_random(num_games=10)
+                    print(f"Episode {episode}: Won {wins}/10 games against random agent")
+
+            # Decay epsilon
+            self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
 
     def play_self_play_episode(self):
@@ -57,7 +66,12 @@ class SelfPlayTDLearner:
             if not possible_moves:
                 continue
 
-            chosen_move, score = self.agent.get_best_move(current_state, possible_moves, game.current_player)
+            # Epsilon-greedy move selection
+            if random.random() < self.epsilon:
+                chosen_move = random.choice(possible_moves)
+                _, score = self.agent.get_best_move(current_state, [chosen_move], game.current_player)
+            else:
+                chosen_move, score = self.agent.get_best_move(current_state, possible_moves, game.current_player)
 
             game.board.apply(chosen_move)
 
