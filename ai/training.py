@@ -12,13 +12,14 @@ from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from game.game import Game
 from tqdm import tqdm
+import copy
 
 class RandomAgent:
     def get_move(self, possible_moves):
         return random.choice(possible_moves)
 
 class SelfPlayTDLearner:
-    def __init__(self, config, learning_rate=0.001, discount_factor=0.95, batch_size=64, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+    def __init__(self, config, learning_rate=0.001, discount_factor=0.9, batch_size=128, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
@@ -75,7 +76,7 @@ class SelfPlayTDLearner:
 
             game.board.apply(chosen_move)
 
-            game_history.append((current_state, chosen_move, game.current_player, score))
+            game_history.append((copy.deepcopy(game.board), chosen_move, game.current_player, score))
 
         winner_color = game.current_player
         self.process_game_history(game_history, winner_color)
