@@ -87,7 +87,7 @@ class SelfPlayTDLearner:
             if i == 0:
                 discounted_reward = 0 if winner_color == Color.WHITE else 1
             else:
-                reward_from_next_move_score = game_history[i-1][3]
+                reward_from_next_move_score = game_history[-i][3]
 
                 reward_for_winning = 0 if winner_color == Color.WHITE else 1
 
