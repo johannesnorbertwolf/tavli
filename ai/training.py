@@ -13,6 +13,7 @@ from ai.board_evaluator import BoardEvaluator
 from game.game import Game
 from tqdm import tqdm
 import copy
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 class RandomAgent:
     def get_move(self, possible_moves):
@@ -23,12 +24,14 @@ class SelfPlayTDLearner:
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
-        self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=learning_rate)
+        self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=learning_rate, weight_decay=1e-5)
         self.discount_factor = discount_factor
         self.batch_size = batch_size
         self.replay_buffer = deque(maxlen=1000)
         self.random_agent = RandomAgent()
         self.agent = Agent(self.board_evaluator, self.board_encoder)
+
+        self.scheduler = ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=1000, verbose=True)
 
         # Epsilon-greedy exploration
         self.epsilon = epsilon_start
@@ -111,7 +114,7 @@ class SelfPlayTDLearner:
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-
+        self.scheduler.step(loss)
         return loss.item()
 
     def save_model(self, filename):
