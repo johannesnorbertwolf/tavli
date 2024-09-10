@@ -35,3 +35,8 @@ class HalfMove:
 
     def can_merge(self, other: 'HalfMove'):
         return self.to_point == other.from_point
+
+    def can_merge_or_vice_versa(self, other: 'HalfMove'):
+        return self.can_merge(other) or other.can_merge(self)
+
+
