@@ -6,10 +6,7 @@ from ai.agent import Agent
 from domain.color import Color
 
 
-def display_board(board):
-    print("\nCurrent Board State:")
-    print(board)
-    print("\n")
+
 
 
 def main():
@@ -19,7 +16,7 @@ def main():
     tdlearner = SelfPlayTDLearner(config)
 
     print("Starting training process...")
-    tdlearner.train(num_episodes=100000)
+    tdlearner.train(num_episodes=1000)
 
     print("Training completed. Starting game...")
 
@@ -28,11 +25,8 @@ def main():
     ai_agent = Agent(tdlearner.board_evaluator, tdlearner.board_encoder)
 
     while True:
-        display_board(game.board)
-        print(f"{game.current_player.name}'s turn ({game.current_player})")
 
         game.dice.roll()
-        print(f"Rolled: {game.dice.die1} and {game.dice.die2}")
 
         possible_moves_generator = PossibleMoves(game.board, game.current_player, game.dice)
         possible_moves = possible_moves_generator.find_moves()
@@ -47,12 +41,14 @@ def main():
             move_scores = ai_agent.evaluate_moves(game.board, possible_moves, game.current_player)
 
             # Sort moves based on their scores
-            sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
+            sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1])
 
-            print("Possible moves (sorted by AI evaluation):")
-            for idx, (move, score) in enumerate(sorted_moves):
-                win_chance = score * 100  # Convert score to percentage
-                print(f"{idx + 1}: {move} - Estimated win chance: {win_chance:.2f}%")
+            # print("Possible moves (sorted by AI evaluation):")
+            # for idx, (move, score) in enumerate(sorted_moves):
+            #     win_chance = (1-score) * 100  # Convert score to percentage
+            #     print(f"{idx + 1}: {move} - Estimated win chance: {win_chance:.2f}%")
+
+            print(game.print_with_scored_possible_moves(possible_moves, move_scores))
 
             while True:
                 try:
@@ -66,15 +62,16 @@ def main():
                     print("Invalid input. Please enter a valid number.")
         else:
             # AI's turn
+
             chosen_move, _ = ai_agent.get_best_move(game.board, possible_moves, game.current_player)
-            print(f"AI ({game.current_player}) chose move: {chosen_move}")
+            print(game)
 
         game.board.apply(chosen_move)
 
         if game.check_winner(game.current_player):
-            display_board(game.board)
+            print(game)
             print(f"{game.current_player} ({game.current_player}) has won the game!")
-            break
+            game = Game(config)
 
         game.switch_turn()
 
