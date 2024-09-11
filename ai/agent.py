@@ -22,7 +22,7 @@ class Agent:
             board.apply(move)
 
             # Encode the new board state
-            encoded_board = self.board_encoder.encode_board(board, color == Color.WHITE)
+            encoded_board = self.board_encoder.encode_board(board, color.is_white())
             encoded_boards.append(encoded_board)
 
             # Undo the move to restore the original board state

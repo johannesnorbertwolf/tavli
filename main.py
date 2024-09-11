@@ -37,7 +37,7 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
             game.switch_turn()
             continue
 
-        if game.current_player == Color.WHITE:
+        if game.current_player.is_white():
             # Human player's turn
             move_scores = ai_agent.evaluate_moves(game.board, possible_moves, game.current_player)
             sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1])

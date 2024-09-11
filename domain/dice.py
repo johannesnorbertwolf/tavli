@@ -17,6 +17,10 @@ class Dice:
         self.die2.roll()
         return (self.die1, self.die2)
 
+    def is_pasch(self):
+        return self.die1 == self.die2
+
+
 
 class Die:
     def __init__(self, number_of_sides: int, value: int = 0):
@@ -29,6 +33,9 @@ class Die:
 
     def __repr__(self):
         return self.__str__()
+
+    def __eq__(self, other):
+        return self.value == other.value
 
     def roll(self):
         self.value = random.randint(1, self.number_of_sides)

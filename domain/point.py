@@ -62,13 +62,18 @@ class Point:
     def is_double_color(self, color: Color) -> bool:
         return len(self.pieces) > 1 and self.pieces[-1] == self.pieces[-2] == color
 
-    def is_captured_by(self, color: Color):
+    def is_captured_by(self, color: Color) -> bool:
         return len(self.pieces) > 1 and self.pieces[0] != color and self.pieces[1] == color
 
-    def is_captured(self):
+    def is_captured(self) -> bool:
         return len(self.pieces) > 1 and self.pieces[0] != self.pieces[1]
 
-    def get_count(self):
+    def get_count(self) -> int:
         if self.is_captured():
             return len(self.pieces) - 1
         return len(self.pieces)
+
+    def get_number_of_movable_pieces(self, color: Color) -> int:
+        if not self.is_color(color):
+            return 0
+        return self.get_count()

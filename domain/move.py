@@ -4,8 +4,6 @@ from domain.half_move import HalfMove
 
 class Move:
     def __init__(self, half_moves: List[HalfMove]) -> None:
-        if not half_moves or len(half_moves) > 2:
-            raise ValueError("A move must consist of one or two half-moves.")
         self.half_moves = half_moves
 
 
