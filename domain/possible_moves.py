@@ -23,7 +23,8 @@ class PaschGenerator:
             self.last_possible_start = die.value - 1
             self.direction = -1
 
-        self.movable_pieces: dict[int, int] = {i: board.points[i].is_open(color) for i in range(0, self.board_size + 2)}
+        self.die_with_direction = self.die_value * self.direction
+        self.movable_pieces: dict[int, int] = {i: board.points[i].get_number_of_movable_pieces(color) for i in range(0, self.board_size + 2)}
         self.open_points: dict[int, bool] = {i: board.points[i].is_open(color) for i in range(0, self.board_size + 2)}
 
     def find_moves(self):
@@ -35,50 +36,48 @@ class PaschGenerator:
             if not self.can_move_from(first):
                 continue
             self.movable_pieces[first] -= 1
-            self.movable_pieces[first + self.direction * self.die_value] += 1
+            self.movable_pieces[first + self.die_with_direction] += 1
 
             for second in range(first, self.last_possible_start, self.direction):
                 if not self.can_move_from(second):
                     continue
                 second_is_possible = True
                 self.movable_pieces[second] -= 1
-                self.movable_pieces[second + self.direction * self.die_value] += 1
+                self.movable_pieces[second + self.die_with_direction] += 1
 
                 for third in range(second, self.last_possible_start, self.direction):
                     if not self.can_move_from(third):
                         continue
                     third_is_possible = True
                     self.movable_pieces[third] -= 1
-                    self.movable_pieces[third + self.direction * self.die_value] += 1
+                    self.movable_pieces[third + self.die_with_direction] += 1
 
                     for fourth in range(third, self.last_possible_start, self.direction):
                         if not self.can_move_from(fourth):
                             continue
                         fourth_is_possible = True
 
-                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_value], self.color) for start in [first, second, third, fourth] ]))
+                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second, third, fourth] ]))
 
                     if not fourth_is_possible:
-                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_value], self.color) for start in [first, second, third] ]))
+                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second, third] ]))
                     self.movable_pieces[third] += 1
-                    self.movable_pieces[third + self.direction * self.die_value] -= 1
+                    self.movable_pieces[third + self.die_with_direction] -= 1
 
                 if not third_is_possible:
-                    possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_value], self.color) for start in [first, second]]))
+                    possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second]]))
                 self.movable_pieces[second] += 1
-                self.movable_pieces[second + self.direction * self.die_value] -= 1
+                self.movable_pieces[second + self.die_with_direction] -= 1
 
             if not second_is_possible:
-                possible_moves.append(Move([HalfMove(self.board.points[first], self.board.points[first + self.die_value], self.color)]))
+                possible_moves.append(Move([HalfMove(self.board.points[first], self.board.points[first + self.die_with_direction], self.color)]))
             self.movable_pieces[first] += 1
-            self.movable_pieces[first + self.direction * self.die_value] -= 1
+            self.movable_pieces[first + self.die_with_direction] -= 1
 
         return possible_moves
 
     def can_move_from(self, point_index: int):
-        index_ = self.movable_pieces[point_index]
-        value_ = self.open_points[point_index + self.direction * self.die_value]
-        return index_ < 1 or not value_
+        return self.movable_pieces[point_index] > 0 and self.open_points[point_index + self.die_with_direction]
 
 class PossibleMoves:
     def __init__(self, board: GameBoard, color: Color, dice: Dice) -> None:
