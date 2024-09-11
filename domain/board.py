@@ -32,7 +32,7 @@ class GameBoard:
             print("error!")
 
     def undo(self, move: Move):
-        for half_move in move.half_moves:
+        for half_move in move.half_moves[::-1]:
             self.undo_half_move(half_move)
 
     def apply_half_move(self, half_move: HalfMove):
