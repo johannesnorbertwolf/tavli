@@ -49,8 +49,8 @@ class SelfPlayTDLearner:
 
 
                     # Evaluate against random agent after each episode
-                    wins = self.evaluate_against_random(num_games=10)
-                    print(f"Episode {episode}: Won {wins}/10 games against random agent")
+                    wins = self.evaluate_against_random(num_games=100)
+                    print(f"Episode {episode}: Won {wins//1}% games against random agent")
 
             # Decay epsilon
             self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
@@ -129,7 +129,6 @@ class SelfPlayTDLearner:
 
         for _ in range(num_games):
             game = Game(self.config)
-            current_player = Color.WHITE  # AI always plays as White for consistency
 
             while not game.check_winner(game.current_player):
                 game.dice.roll()
@@ -137,22 +136,20 @@ class SelfPlayTDLearner:
 
                 if not possible_moves:
                     game.switch_turn()
-                    current_player = Color.BLACK if current_player == Color.WHITE else Color.WHITE
                     continue
 
-                if current_player == Color.WHITE:
-                    move, _ = ai_agent.get_best_move(game.board, possible_moves, current_player)
+                if game.current_player.is_white():
+                    move, _ = ai_agent.get_best_move(game.board, possible_moves, game.current_player)
                 else:
                     move = self.random_agent.get_move(possible_moves)
 
                 game.board.apply(move)
 
                 if game.check_winner(game.current_player):
-                    if current_player == Color.WHITE:
+                    if game.current_player.is_white():
                         wins += 1
                     break
 
                 game.switch_turn()
-                current_player = Color.BLACK if current_player == Color.WHITE else Color.WHITE
 
         return wins
