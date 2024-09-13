@@ -10,6 +10,7 @@ from domain.possible_moves import PossibleMoves
 from ai.agent import Agent
 from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
+from ai.evaluator import AIEvaluator
 from game.game import Game
 from tqdm import tqdm
 import copy
@@ -20,37 +21,37 @@ class RandomAgent:
         return random.choice(possible_moves)
 
 class SelfPlayTDLearner:
-    def __init__(self, config, learning_rate=0.001, discount_factor=0.9, batch_size=128, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+    def __init__(self, config):
         self.config = config
         self.board_encoder = BoardEncoder(config)
         self.board_evaluator = BoardEvaluator(config)
-        self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=learning_rate, weight_decay=1e-5)
-        self.discount_factor = discount_factor
-        self.batch_size = batch_size
-        self.replay_buffer = deque(maxlen=1000)
-        self.random_agent = RandomAgent()
+        self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), 
+                                          lr=config.get_learning_rate(),
+                                          weight_decay=1e-5)
+        self.discount_factor = config.get_discount_factor()
+        self.batch_size = config.get_batch_size()
+        self.replay_buffer = deque(maxlen=config.get_replay_buffer_size())
         self.agent = Agent(self.board_evaluator, self.board_encoder)
 
         self.scheduler = ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=1000, verbose=True)
 
         # Epsilon-greedy exploration
-        self.epsilon = epsilon_start
-        self.epsilon_end = epsilon_end
-        self.epsilon_decay = epsilon_decay
+        self.epsilon = config.get_epsilon_start()
+        self.epsilon_end = config.get_epsilon_end()
+        self.epsilon_decay = config.get_epsilon_decay()
+
+        self.evaluator = AIEvaluator(config, self.board_evaluator, self.board_encoder)
 
     def train(self, num_episodes: int):
         for episode in tqdm(range(num_episodes), desc="Training Progress"):
             self.play_self_play_episode()
             if len(self.replay_buffer) >= self.batch_size:
                 loss = self.update_model()
-                if episode % 100 == 0:
+                if episode % self.config.get_evaluation_frequency() == 0:
                     print(f"Episode {episode} completed. Loss: {loss:.4f}")
                     self.save_model(f"model_checkpoint_{episode}.pth")
 
-
-                    # Evaluate against random agent after each episode
-                    wins = self.evaluate_against_random(num_games=100)
-                    print(f"Episode {episode}: Won {wins//1}% games against random agent")
+                    self.evaluator.evaluate_against_random(episode, self.config.get_evaluation_games())
 
             # Decay epsilon
             self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
