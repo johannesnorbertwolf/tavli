@@ -7,7 +7,7 @@ from domain.color import Color
 import torch
 
 
-def train_ai(config, num_episodes=1000, model_save_path="trained_model.pth"):
+def train_ai(config, num_episodes, model_save_path="trained_model.pth"):
     print("Initializing AI training...")
     tdlearner = SelfPlayTDLearner(config)
 
@@ -33,6 +33,7 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
         possible_moves = possible_moves_generator.find_moves()
 
         if not possible_moves:
+            print(game.dice)
             print("No valid moves available. Switching turn.")
             game.switch_turn()
             continue
@@ -75,7 +76,7 @@ def main():
     config = ConfigLoader("config/config.yml")
 
 
-    # train_ai(config, 1000)
+    train_ai(config, 1000)
 
     play_against_ai(config)
 
