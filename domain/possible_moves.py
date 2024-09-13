@@ -7,8 +7,7 @@ from typing import List
 
 class PaschGenerator:
     def __init__(self, board: GameBoard, color: Color, die: Die) -> None:
-        # TODO: use config for board_size
-        self.board_size = 10
+        self.board_size = board.board_size
         self.color = color
         self.board = board
 
