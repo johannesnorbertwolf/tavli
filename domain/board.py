@@ -25,11 +25,9 @@ class GameBoard:
         self.points[self.board_size] = Point(self.board_size, Color.BLACK, self.number_of_pieces)
 
     def apply(self, move: Move):
-        try:
-            for half_move in move.half_moves:
-                self.apply_half_move(half_move)
-        except:
-            print("error!")
+        for half_move in move.half_moves:
+            self.apply_half_move(half_move)
+
 
     def undo(self, move: Move):
         for half_move in move.half_moves[::-1]:
