@@ -1,0 +1,261 @@
+Player: Color.BLACK
+Dice: (2, 1)
+Board:
+11: 
+10: XXXX
+ 9: 
+ 8: 
+ 7: X
+ 6: 
+ 5: 
+ 4: 
+ 3: 
+ 2: 
+ 1: OOOOO
+ 0: 
+Move chosen: (10->7)
+Board score: 0.013536259531974792
+Lambda value: 0.5000185268276723.
+TD Error: -0.03309595615137369
+--------------------
+Player: Color.WHITE
+Dice: (2, 2)
+Board:
+11: 
+10: XXXX
+ 9: O
+ 8: 
+ 7: X
+ 6: 
+ 5: 
+ 4: 
+ 3: 
+ 2: 
+ 1: OOOO
+ 0: 
+Move chosen: (1->3,3->5,5->7,7->9)
+Board score: 0.010525359772145748
+Lambda value: 0.5000185268276723.
+TD Error: 0.04323763544671237
+--------------------
+Player: Color.BLACK
+Dice: (3, 4)
+Board:
+11: 
+10: XXXX
+ 9: O
+ 8: 
+ 7: 
+ 6: 
+ 5: 
+ 4: 
+ 3: 
+ 2: 
+ 1: OOOO
+ 0: X
+Move chosen: (7->0)
+Board score: 0.011907432228326797
+Lambda value: 0.5000185268276723.
+TD Error: -0.028018770553171635
+--------------------
+Player: Color.WHITE
+Dice: (1, 1)
+Board:
+11: 
+10: XXXX
+ 9: O
+ 8: 
+ 7: 
+ 6: 
+ 5: 
+ 4: O
+ 3: 
+ 2: O
+ 1: OO
+ 0: X
+Move chosen: (1->2,1->2,2->3,3->4)
+Board score: 0.002811010926961899
+Lambda value: 0.5000185268276723.
+TD Error: 0.0198382998816669
+--------------------
+Player: Color.BLACK
+Dice: (4, 3)
+Board:
+11: 
+10: XXX
+ 9: O
+ 8: 
+ 7: 
+ 6: 
+ 5: 
+ 4: O
+ 3: X
+ 2: O
+ 1: OO
+ 0: X
+Move chosen: (10->3)
+Board score: 0.007418220862746239
+Lambda value: 0.5000185268276723.
+TD Error: -0.029102245345711708
+--------------------
+Player: Color.WHITE
+Dice: (3, 3)
+Board:
+11: O
+10: XXX
+ 9: O
+ 8: 
+ 7: O
+ 6: 
+ 5: 
+ 4: 
+ 3: X
+ 2: 
+ 1: OO
+ 0: X
+Move chosen: (2->5,4->7,5->8,8->11)
+Board score: -0.002025599591434002
+Lambda value: 0.5000185268276723.
+TD Error: -0.060114145278930664
+--------------------
+Player: Color.BLACK
+Dice: (3, 2)
+Board:
+11: O
+10: XX
+ 9: O
+ 8: 
+ 7: O
+ 6: 
+ 5: X
+ 4: 
+ 3: X
+ 2: 
+ 1: OO
+ 0: X
+Move chosen: (10->5)
+Board score: 0.002835754072293639
+Lambda value: 0.5000185268276723.
+TD Error: -0.00419997740536928
+--------------------
+Player: Color.WHITE
+Dice: (2, 1)
+Board:
+11: O
+10: XX
+ 9: O
+ 8: 
+ 7: O
+ 6: 
+ 5: X
+ 4: 
+ 3: XO
+ 2: O
+ 1: 
+ 0: X
+Move chosen: (1->3,1->2)
+Board score: 0.0013967109844088554
+Lambda value: 0.5000185268276723.
+TD Error: -0.029211300681345163
+--------------------
+Player: Color.BLACK
+Dice: (4, 4)
+Board:
+11: O
+10: 
+ 9: O
+ 8: 
+ 7: O
+ 6: 
+ 5: X
+ 4: 
+ 3: XO
+ 2: OXX
+ 1: 
+ 0: X
+Move chosen: (10->6,10->6,6->2,6->2)
+Board score: 0.0016027302481234074
+Lambda value: 0.5000185268276723.
+TD Error: -0.012960647139698266
+--------------------
+Player: Color.WHITE
+Dice: (2, 1)
+Board:
+11: O
+10: 
+ 9: O
+ 8: 
+ 7: O
+ 6: O
+ 5: X
+ 4: 
+ 3: X
+ 2: OXX
+ 1: 
+ 0: X
+Move chosen: (3->6)
+Board score: -0.001161831896752119
+Lambda value: 0.5000185268276723.
+TD Error: 0.06976088043302298
+--------------------
+Player: Color.BLACK
+Dice: (2, 2)
+Board:
+11: O
+10: 
+ 9: O
+ 8: 
+ 7: O
+ 6: O
+ 5: 
+ 4: 
+ 3: X
+ 2: O
+ 1: X
+ 0: XXX
+Move chosen: (5->3,3->1,2->0,2->0)
+Board score: 0.004828463774174452
+Lambda value: 0.5000185268276723.
+TD Error: -0.043727127742022275
+--------------------
+Player: Color.WHITE
+Dice: (2, 2)
+Board:
+11: O
+10: 
+ 9: O
+ 8: OO
+ 7: O
+ 6: 
+ 5: 
+ 4: 
+ 3: X
+ 2: 
+ 1: X
+ 0: XXX
+Move chosen: (2->4,4->6,6->8,6->8)
+Board score: -0.025318842381238937
+Lambda value: 0.5000185268276723.
+TD Error: -0.023420074954628944
+--------------------
+Player: Color.BLACK
+Dice: (1, 1)
+Board:
+11: O
+10: 
+ 9: O
+ 8: OO
+ 7: O
+ 6: 
+ 5: 
+ 4: 
+ 3: 
+ 2: 
+ 1: 
+ 0: XXXXX
+Move chosen: (3->2,2->1,1->0,1->0)
+Board score: -0.02727038972079754
+Lambda value: 0.5000185268276723.
+TD Error: 0.9715259652584791
+--------------------
+Game over. Winner is Color.BLACK.

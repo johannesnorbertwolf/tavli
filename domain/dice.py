@@ -5,7 +5,6 @@ class Dice:
     def __init__(self, number_of_sides: int):
         self.die1 = Die(number_of_sides)
         self.die2 = Die(number_of_sides)
-        random.seed(42)
 
     def __str__(self):
         return str(self.die1) + "," + str(self.die2)

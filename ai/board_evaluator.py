@@ -2,18 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class BoardEvaluator(nn.Module):
     def __init__(self, config):
         super(BoardEvaluator, self).__init__()
         number_of_positions = config.get_board_size() + 2
         neurons_per_position = 4 + config.get_pieces_per_player()
-        input_size = 1 + number_of_positions * neurons_per_position
+        input_size = number_of_positions * neurons_per_position
 
-        # Define layer sizes
-        hidden_size1 = 1024
-        hidden_size2 = 1024  # Keep this the same as hidden_size1 for the residual connection
-        hidden_size3 = 512
+        # Define layer sizes - starting a bit smaller to prevent overfitting
+        hidden_size1 = 512
+        hidden_size2 = 256
+        hidden_size3 = 128
 
         # Input layer
         self.fc1 = nn.Linear(input_size, hidden_size1)
@@ -30,20 +29,22 @@ class BoardEvaluator(nn.Module):
 
     def forward(self, x):
         # First layer
-        out = F.relu(self.fc1(x))
-        out = self.dropout(out)
+        x = self.fc1(x)
+        x = F.relu(x)
+        x = self.dropout(x)
 
-        # Second layer with residual connection
-        residual = out
-        out = F.relu(self.fc2(out))
-        out = self.dropout(out)
-        out += residual  # Residual connection
+        # Second layer
+        x = self.fc2(x)
+        x = F.relu(x)
+        x = self.dropout(x)
 
         # Third layer
-        out = F.relu(self.fc3(out))
-        out = self.dropout(out)
+        x = self.fc3(x)
+        x = F.relu(x)
+        x = self.dropout(x)
 
         # Output layer
-        out = torch.sigmoid(self.fc4(out))
+        # Use tanh to output a value between -1 and 1, matching the reward signal
+        x = torch.tanh(self.fc4(x))
 
-        return out
+        return x

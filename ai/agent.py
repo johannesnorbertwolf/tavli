@@ -1,52 +1,80 @@
 import torch
-import numpy as np
-from typing import List
+import random
+from typing import List, Tuple
 from domain.board import GameBoard
-from domain.move import Move
 from domain.color import Color
+from domain.move import Move
+from ai.board_evaluator import BoardEvaluator
+from ai.board_encoder import BoardEncoder
+
 
 class Agent:
-    def __init__(self, neural_network: torch.nn.Module, board_encoder):
-        self.neural_network = neural_network
+    def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder):
+        self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
 
-    def evaluate_moves(self, board: GameBoard, possible_moves: List[Move], color: Color) -> List[float]:
-        """
-        Returns a list of scores for each possible move by applying and undoing each move.
-        Encodes all board states and runs them through the neural network in a single batch.
-        """
-        encoded_boards = []
+    def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> Tuple[Move, float]:
+        if not possible_moves:
+            return None, 0.0
+
+        best_move = None
+        min_opponent_eval = float('inf')
+        
+        self.board_evaluator.eval() # Set to evaluation mode
+
+        # In the "after-state", it will be the opponent's turn.
+        is_whites_turn_next = not color.is_white()
 
         for move in possible_moves:
-            # Apply the move temporarily to the board
             board.apply(move)
+            
+            encoded_board = self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next)
+            board_tensor = torch.FloatTensor([encoded_board])
+            
+            with torch.no_grad():
+                # This value is the opponent's expected outcome.
+                opponent_value = self.board_evaluator(board_tensor).item()
 
-            # Encode the new board state
-            encoded_board = self.board_encoder.encode_board(board, color.is_white())
-            encoded_boards.append(encoded_board)
-
-            # Undo the move to restore the original board state
+            if opponent_value < min_opponent_eval:
+                min_opponent_eval = opponent_value
+                best_move = move
+            
             board.undo(move)
 
-        # Convert the list of encoded boards to a single NumPy array
-        combined_encoded_boards = np.array(encoded_boards)
+        self.board_evaluator.train() # Set back to training mode
+        
+        # The score to return should be from our perspective, which is the negative of the opponent's score.
+        our_best_score = -min_opponent_eval if best_move is not None else float('-inf')
+        
+        return best_move, our_best_score
 
-        # Convert the NumPy array to a tensor and pass it through the neural network in a batch
-        input_tensor = torch.tensor(combined_encoded_boards, dtype=torch.float32)
-        with torch.no_grad():
-            scores = self.neural_network(input_tensor).squeeze()
+    def evaluate_moves(self, board: GameBoard, possible_moves: List[Move], color: Color) -> List[float]:
+        scores = []
+        self.board_evaluator.eval()  # Set to evaluation mode
+        
+        # In the "after-state", it will be the opponent's turn.
+        is_whites_turn_next = not color.is_white()
 
-            # Ensure we always return a list
-            if scores.dim() == 0:
-                return [scores.item()]
-            else:
-                return scores.tolist()
+        for move in possible_moves:
+            board.apply(move)
+            
+            encoded_board = self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next)
+            board_tensor = torch.FloatTensor([encoded_board])
 
+            with torch.no_grad():
+                # This value is the opponent's expected outcome.
+                opponent_value = self.board_evaluator(board_tensor).item()
+            
+            # The score from our perspective is the negation of the opponent's score.
+            our_value = -opponent_value
+            scores.append(our_value)
+            
+            board.undo(move)
+            
+        self.board_evaluator.train() # Set back to training mode
+        return scores
 
-    def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color) -> (Move, float):
-        move_scores = self.evaluate_moves(board, possible_moves, color)
-        if color == Color.BLACK:
-            best_move_index = np.argmax(move_scores)
-        else:  # White
-            best_move_index = np.argmin(move_scores)
-        return (possible_moves[best_move_index], move_scores[best_move_index])
+class RandomAgent:
+    """An agent that chooses a move randomly from the possible moves."""
+    def get_move(self, possible_moves: List[Move]) -> Move:
+        return random.choice(possible_moves)
