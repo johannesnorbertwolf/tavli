@@ -5,15 +5,19 @@ die_sides: 4
 # Training parameters
 alpha: 0.001               # Learning rate for TD(Lambda)
 discount_factor: 0.95      # How much to value future rewards (gamma)
-batch_size: 128            # Number of experiences to use for each training update
 epsilon_start: 1.0         # Start with 100% random moves
 epsilon_end: 0.01          # End with 1% random moves
 epsilon_decay: 0.9995      # Slower decay to allow for more exploration
-replay_buffer_size: 50000  # Much larger buffer for diverse and stable learning
-evaluation_frequency: 100  # Evaluate the model every 100 episodes
-evaluation_games: 100      # Number of games to play during evaluation
+epsilon_decay_games: 0     # If >0, linearly decay epsilon to epsilon_end over this many games
+exploration_temperature: 1.0  # Softmax temperature during self-play exploration
 num_epochs: 10             # Number of training epochs
 games_per_epoch: 100       # Number of self-play games to generate per epoch
+alpha_decay: 1.0           # Multiply alpha by this factor at each decay step (1.0 disables)
+alpha_decay_every: 0       # If >0, apply alpha_decay every N games
+alpha_min: 0.0             # Floor for alpha when decaying
+replay_buffer_size: 5000   # If >0, enable replay buffer with this max size
+replay_batch_size: 64      # Batch size for replay updates
+replay_updates_per_game: 4 # Number of replay batches to update after each game
 
 # TD(Lambda) parameters
 lambda_start: 0.9          # Start with high reliance on Monte Carlo (final outcome)

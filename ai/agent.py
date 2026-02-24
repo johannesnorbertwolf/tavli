@@ -29,7 +29,7 @@ class Agent:
             board.apply(move)
             
             encoded_board = self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next)
-            board_tensor = torch.FloatTensor([encoded_board])
+            board_tensor = torch.from_numpy(encoded_board).float().unsqueeze(0)
             
             with torch.no_grad():
                 # This value is the opponent's expected outcome.
@@ -43,8 +43,8 @@ class Agent:
 
         self.board_evaluator.train() # Set back to training mode
         
-        # The score to return should be from our perspective, which is the negative of the opponent's score.
-        our_best_score = -min_opponent_eval if best_move is not None else float('-inf')
+        # The score to return should be from our perspective as win probability.
+        our_best_score = 1.0 - min_opponent_eval if best_move is not None else float('-inf')
         
         return best_move, our_best_score
 
@@ -59,14 +59,14 @@ class Agent:
             board.apply(move)
             
             encoded_board = self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next)
-            board_tensor = torch.FloatTensor([encoded_board])
+            board_tensor = torch.from_numpy(encoded_board).float().unsqueeze(0)
 
             with torch.no_grad():
                 # This value is the opponent's expected outcome.
                 opponent_value = self.board_evaluator(board_tensor).item()
             
-            # The score from our perspective is the negation of the opponent's score.
-            our_value = -opponent_value
+            # The score from our perspective is our win probability.
+            our_value = 1.0 - opponent_value
             scores.append(our_value)
             
             board.undo(move)

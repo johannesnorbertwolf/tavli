@@ -10,10 +10,10 @@ from ai.td_lambda_training import TdLambdaTraining
 from domain.board import GameBoard
 from domain.possible_moves import PossibleMoves
 from game.game import Game
-from ai.agent import Agent
+from ai.agent import Agent, RandomAgent
 from domain.color import Color
 
-def train_ai(config):
+def train_ai(config, num_epochs_override=None):
     print("Initializing AI training...")
     board_encoder = BoardEncoder(config)
     board_evaluator = BoardEvaluator(config)
@@ -28,6 +28,8 @@ def train_ai(config):
             print(f"Could not load model: {e}. Starting from scratch.")
 
     training = TdLambdaTraining(board_evaluator, board_encoder, config)
+    if num_epochs_override is not None:
+        training.config.config["num_epochs"] = num_epochs_override
     training.run_training_loop()
 
 def play_against_ai(config, model_load_path="trained_model.pth"):
@@ -68,8 +70,7 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
 
             print("Possible moves (sorted by AI evaluation):")
             for i, (move, score) in enumerate(sorted_moves):
-                display_score = (score + 1) / 2
-                print(f"{i+1}: {move} - Estimated win chance: {display_score*100:.2f}%")
+                print(f"{i+1}: {move} - Estimated win chance: {score*100:.2f}%")
 
             while True:
                 try:
@@ -98,21 +99,84 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
         else:
             game.switch_turn()
 
+def evaluate_against_random(config, model_load_path="trained_model.pth", games_per_color=100):
+    print("Loading trained model for evaluation against random...")
+    board_encoder = BoardEncoder(config)
+    board_evaluator = BoardEvaluator(config)
+
+    if not os.path.exists(model_load_path):
+        print(f"Model file not found at {model_load_path}. Please train the AI first.")
+        return
+
+    board_evaluator.load_state_dict(torch.load(model_load_path))
+    board_evaluator.eval()
+
+    ai_agent = Agent(board_evaluator, board_encoder)
+    random_agent = RandomAgent()
+
+    def play_game(ai_color: Color):
+        game = Game(config, starting_player=ai_color)
+        while not game.is_over():
+            current_player = game.current_player
+            game.dice.roll()
+            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+            if not possible_moves:
+                game.switch_turn()
+                continue
+            if current_player == ai_color:
+                move, _ = ai_agent.get_best_move(game.board, possible_moves, current_player)
+            else:
+                move = random_agent.get_move(possible_moves)
+            game.board.apply(move)
+            game.switch_turn()
+        return game.get_winner()
+
+    for ai_color in (Color.WHITE, Color.BLACK):
+        wins = 0
+        losses = 0
+        for _ in range(games_per_color):
+            winner = play_game(ai_color)
+            if winner == ai_color:
+                wins += 1
+            else:
+                losses += 1
+        print(f"AI as {ai_color}: {wins}-{losses} over {games_per_color} games")
+
 
 def main():
     config = ConfigLoader("config/config.yml")
     
     if len(sys.argv) < 2:
-        print("Usage: python main.py [train|play]")
+        print("Usage: python main.py [train [num_epochs]|play|eval-random [games_per_color]]")
         return
 
     mode = sys.argv[1]
     if mode == 'train':
-        train_ai(config)
+        num_epochs = None
+        if len(sys.argv) >= 3:
+            try:
+                num_epochs = int(sys.argv[2])
+                if num_epochs <= 0:
+                    raise ValueError("num_epochs must be positive")
+            except ValueError:
+                print("Invalid num_epochs. Please provide a positive integer.")
+                return
+        train_ai(config, num_epochs_override=num_epochs)
     elif mode == 'play':
         play_against_ai(config)
+    elif mode in ('eval-random', 'evaluate-random'):
+        games_per_color = 100
+        if len(sys.argv) >= 3:
+            try:
+                games_per_color = int(sys.argv[2])
+                if games_per_color <= 0:
+                    raise ValueError("games_per_color must be positive")
+            except ValueError:
+                print("Invalid games_per_color. Please provide a positive integer.")
+                return
+        evaluate_against_random(config, games_per_color=games_per_color)
     else:
-        print(f"Unknown mode: {mode}. Use 'train' or 'play'.")
+        print(f"Unknown mode: {mode}. Use 'train', 'play', or 'eval-random'.")
 
 if __name__ == "__main__":
     main()

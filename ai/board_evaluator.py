@@ -44,7 +44,7 @@ class BoardEvaluator(nn.Module):
         x = self.dropout(x)
 
         # Output layer
-        # Use tanh to output a value between -1 and 1, matching the reward signal
-        x = torch.tanh(self.fc4(x))
+        # Use sigmoid to output win probability in [0, 1]
+        x = torch.sigmoid(self.fc4(x))
 
         return x
