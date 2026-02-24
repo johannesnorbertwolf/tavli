@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.idea/
+.idx/
+trained_model.pth
+last_game_log.txt
+training_log_td.txt
