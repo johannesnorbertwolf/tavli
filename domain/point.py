@@ -73,6 +73,9 @@ class Point:
             return len(self.pieces) - 1
         return len(self.pieces)
 
+    def get_count_for_color(self, color: Color) -> int:
+        return sum(1 for piece in self.pieces if piece == color)
+
     def get_number_of_movable_pieces(self, color: Color) -> int:
         if not self.is_color(color):
             return 0

@@ -9,3 +9,10 @@ __pycache__/
 trained_model.pth
 last_game_log.txt
 training_log_td.txt
+nohup.out
+training_runs/
+training_state.json
+.stop_training
+local_tools/
+.claude/
+models/

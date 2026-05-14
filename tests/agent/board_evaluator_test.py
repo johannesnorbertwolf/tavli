@@ -1,12 +1,17 @@
 import unittest
 import torch
+from pathlib import Path
 from ai.board_evaluator import BoardEvaluator
+from config.config_loader import ConfigLoader
 
 class TestBoardEvaluator(unittest.TestCase):
     def setUp(self):
-        self.input_size = 128  # Example input size, adjust based on your actual board encoding
-        self.hidden_size = 64  # Example hidden layer size
-        self.model = BoardEvaluator(self.input_size, self.hidden_size)
+        config_path = Path(__file__).resolve().parents[2] / "config-test.yml"
+        from ai.board_encoder import BoardEncoder
+        self.config = ConfigLoader(str(config_path))
+        encoder = BoardEncoder(self.config)
+        self.input_size = encoder.input_size
+        self.model = BoardEvaluator(self.input_size)
 
         # Generate a batch of random board encodings
         self.batch_size = 10

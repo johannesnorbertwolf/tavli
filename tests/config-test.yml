@@ -1,3 +1,4 @@
 board_size: 24
 pieces_per_player: 15
+home_size: 6
 die_sides: 6

@@ -25,6 +25,7 @@ class PaschGenerator:
         self.die_with_direction = self.die_value * self.direction
         self.movable_pieces: dict[int, int] = {i: board.points[i].get_number_of_movable_pieces(color) for i in range(0, self.board_size + 2)}
         self.open_points: dict[int, bool] = {i: board.points[i].is_open(color) for i in range(0, self.board_size + 2)}
+        self.outside_home_count = board.count_checkers_outside_home(color)
 
     def find_moves(self):
         possible_moves: List[Move] = []
@@ -32,27 +33,30 @@ class PaschGenerator:
         third_is_possible = False
         fourth_is_possible = False
         for first in range(self.first_possible_start, self.last_possible_start, self.direction):
-            if not self.can_move_from(first):
+            if not self.can_move_from(first, self.outside_home_count):
                 continue
+            outside_after_first = self.outside_home_count + self.get_outside_home_delta(first)
             self.movable_pieces[first] -= 1
             self.movable_pieces[first + self.die_with_direction] += 1
 
             for second in range(first, self.last_possible_start, self.direction):
-                if not self.can_move_from(second):
+                if not self.can_move_from(second, outside_after_first):
                     continue
                 second_is_possible = True
+                outside_after_second = outside_after_first + self.get_outside_home_delta(second)
                 self.movable_pieces[second] -= 1
                 self.movable_pieces[second + self.die_with_direction] += 1
 
                 for third in range(second, self.last_possible_start, self.direction):
-                    if not self.can_move_from(third):
+                    if not self.can_move_from(third, outside_after_second):
                         continue
                     third_is_possible = True
+                    outside_after_third = outside_after_second + self.get_outside_home_delta(third)
                     self.movable_pieces[third] -= 1
                     self.movable_pieces[third + self.die_with_direction] += 1
 
                     for fourth in range(third, self.last_possible_start, self.direction):
-                        if not self.can_move_from(fourth):
+                        if not self.can_move_from(fourth, outside_after_third):
                             continue
                         fourth_is_possible = True
 
@@ -75,8 +79,22 @@ class PaschGenerator:
 
         return possible_moves
 
-    def can_move_from(self, point_index: int):
-        return self.movable_pieces[point_index] > 0 and self.open_points[point_index + self.die_with_direction]
+    def can_move_from(self, point_index: int, outside_home_count: int):
+        destination = point_index + self.die_with_direction
+        if self.is_off_board(destination) and outside_home_count > 0:
+            return False
+        return self.movable_pieces[point_index] > 0 and self.open_points[destination]
+
+    def is_off_board(self, point_index: int) -> bool:
+        return point_index == 0 or point_index == self.board_size + 1
+
+    def get_outside_home_delta(self, from_point_index: int) -> int:
+        to_point_index = from_point_index + self.die_with_direction
+        if self.board.is_home_point(self.color, from_point_index):
+            return 0
+        if self.board.is_home_point(self.color, to_point_index) or self.is_off_board(to_point_index):
+            return -1
+        return 0
 
 class PossibleMoves:
     def __init__(self, board: GameBoard, color: Color, dice: Dice) -> None:
@@ -86,6 +104,7 @@ class PossibleMoves:
 
     def find_moves(self) -> List[Move]:
         possible_moves = []
+        outside_home_count = self.board.count_checkers_outside_home(self.color)
 
         if self.dice.is_pasch():
             pasch_generator = PaschGenerator(self.board, self.color, self.dice.die1)
@@ -105,6 +124,8 @@ class PossibleMoves:
                     if half_move1.can_merge_or_vice_versa(half_move2):
                         # Merged moves are handled separately.
                         continue
+                    if not self.is_two_half_move_sequence_legal(half_move1, half_move2, outside_home_count):
+                        continue
                     if half_move1.from_point == half_move2.from_point:
                         if half_move1.two_checkers_available():
                             possible_moves.append(Move([half_move1, half_move2]))
@@ -122,15 +143,43 @@ class PossibleMoves:
                 middle_step1 = self.board.points[middle_step1_index]
                 middle_step2 = self.board.points[middle_step2_index]
 
-                if middle_step1.is_open(self.color) or middle_step2.is_open(self.color):
-                    possible_moves.append(Move([half_move]))
+                if not (middle_step1.is_open(self.color) or middle_step2.is_open(self.color)):
+                    continue
+                if not self.is_merged_half_move_legal_with_home_rule(half_move, outside_home_count, middle_step1_index, middle_step2_index):
+                    continue
+                possible_moves.append(Move([half_move]))
 
-        if len(possible_moves) == 0:
-            for half_move in half_moves1 + half_moves2:
-                if half_move.is_valid():
-                    possible_moves.append(Move([half_move]))
+            self._emit_single_die_moves(possible_moves, half_moves1, self.dice.die2.value, outside_home_count)
+            self._emit_single_die_moves(possible_moves, half_moves2, self.dice.die1.value, outside_home_count)
 
         return possible_moves
+
+    def _emit_single_die_moves(
+        self,
+        possible_moves: List[Move],
+        half_moves: List[HalfMove],
+        other_die_value: int,
+        outside_home_count: int,
+    ) -> None:
+        """Emit Move([hm]) for each individually-valid hm whose application leaves the
+        other die with no legal half-move on the resulting board. Implements the
+        Plakoto rule that the player chooses which die to play first; if doing so
+        makes the other die unplayable, the turn ends with one die played."""
+        for hm in half_moves:
+            if not hm.is_valid():
+                continue
+            if not self.is_half_move_legal_with_home_rule(hm, outside_home_count):
+                continue
+            self.board.apply_half_move(hm)
+            new_outside = outside_home_count + self.get_outside_home_delta(hm)
+            other_hms = self.generate_half_moves(other_die_value)
+            has_legal_other = any(
+                other_hm.is_valid() and self.is_half_move_legal_with_home_rule(other_hm, new_outside)
+                for other_hm in other_hms
+            )
+            self.board.undo_half_move(hm)
+            if not has_legal_other:
+                possible_moves.append(Move([hm]))
 
     def generate_half_moves(self, die_value: int) -> List[HalfMove]:
         from_range = self.get_from_range(die_value)
@@ -146,3 +195,62 @@ class PossibleMoves:
         from_point = self.board.points[from_point_index]
         to_point = self.board.points[to_point_index]
         return HalfMove(from_point, to_point, self.color)
+
+    def is_bear_off_move(self, half_move: HalfMove) -> bool:
+        destination = half_move.to_point.position
+        return destination == 0 or destination == self.board.board_size + 1
+
+    def get_outside_home_delta(self, half_move: HalfMove) -> int:
+        from_position = half_move.from_point.position
+        to_position = half_move.to_point.position
+        if self.board.is_home_point(self.color, from_position):
+            return 0
+        if self.board.is_home_point(self.color, to_position) or self.is_off_board_position(to_position):
+            return -1
+        return 0
+
+    def is_off_board_position(self, position: int) -> bool:
+        return position == 0 or position == self.board.board_size + 1
+
+    def is_half_move_legal_with_home_rule(self, half_move: HalfMove, outside_home_count: int) -> bool:
+        return not self.is_bear_off_move(half_move) or outside_home_count == 0
+
+    def is_two_half_move_sequence_legal(self, first: HalfMove, second: HalfMove, outside_home_count: int) -> bool:
+        if self.is_sequence_legal_in_order(first, second, outside_home_count):
+            return True
+        return self.is_sequence_legal_in_order(second, first, outside_home_count)
+
+    def is_sequence_legal_in_order(self, first: HalfMove, second: HalfMove, outside_home_count: int) -> bool:
+        if not self.is_half_move_legal_with_home_rule(first, outside_home_count):
+            return False
+        updated_outside_count = outside_home_count + self.get_outside_home_delta(first)
+        return self.is_half_move_legal_with_home_rule(second, updated_outside_count)
+
+    def is_merged_half_move_legal_with_home_rule(
+        self,
+        merged_half_move: HalfMove,
+        outside_home_count: int,
+        middle_step1_index: int,
+        middle_step2_index: int
+    ) -> bool:
+        if not self.is_bear_off_move(merged_half_move):
+            return True
+        if outside_home_count == 0:
+            return True
+
+        from_position = merged_half_move.from_point.position
+        to_position = merged_half_move.to_point.position
+        if self.is_sequence_legal_by_positions(from_position, middle_step1_index, to_position, outside_home_count):
+            return True
+        return self.is_sequence_legal_by_positions(from_position, middle_step2_index, to_position, outside_home_count)
+
+    def is_sequence_legal_by_positions(
+        self,
+        from_position: int,
+        middle_position: int,
+        to_position: int,
+        outside_home_count: int
+    ) -> bool:
+        first = HalfMove(self.board.points[from_position], self.board.points[middle_position], self.color)
+        second = HalfMove(self.board.points[middle_position], self.board.points[to_position], self.color)
+        return self.is_sequence_legal_in_order(first, second, outside_home_count)

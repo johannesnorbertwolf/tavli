@@ -1,0 +1,24 @@
+board_size: 24
+pieces_per_player: 15
+home_size: 6
+die_sides: 6
+
+# Training parameters (unused in most tests, but required by ConfigLoader)
+alpha: 0.001
+discount_factor: 0.95
+epsilon_start: 1.0
+epsilon_end: 0.01
+epsilon_decay: 0.9995
+epsilon_decay_games: 0
+exploration_temperature: 1.0
+num_epochs: 1
+games_per_epoch: 1
+alpha_decay: 1.0
+alpha_decay_every: 0
+alpha_min: 0.0
+
+# TD(Lambda) parameters
+lambda_start: 0.9
+lambda_end: 0.5
+lambda_decay: 0.999
+

@@ -10,11 +10,25 @@ class GameBoard:
     def __init__(self, config: ConfigLoader):
         self.config = config
         self.board_size = config.get_board_size()
+        self.home_size = config.get_home_size()
         self.number_of_pieces = self.config.get_pieces_per_player()
         self.points: Dict[int, Point] = {i: Point(i) for i in range(0, self.board_size + 2)}  # 1 to 24 points plus two
 
     def __str__(self):
-        lines = [str(self.points[i]) for i in range(self.board_size + 1, -1, -1)]
+        white_home_start = self.board_size - self.home_size + 1
+        black_home_start = self.home_size
+        # Render separators between points, so home boundaries are one step before
+        # the first home point in the descending board printout.
+        # White moves upward (line before white_home_start - 1), Black moves
+        # downward (line before black_home_start).
+        white_home_boundary = white_home_start - 1
+        black_home_boundary = black_home_start
+        boundary_points = {self.board_size, white_home_boundary, black_home_boundary, 0}
+        lines = []
+        for i in range(self.board_size + 1, -1, -1):
+            if i in boundary_points:
+                lines.append("--------------------")
+            lines.append(str(self.points[i]))
         return "\n".join(lines)
 
     def __repr__(self):
@@ -71,4 +85,17 @@ class GameBoard:
             white_starting_point = self.points[1]
             return white_starting_point.is_captured_by(color.BLACK)
 
+    def is_home_point(self, color: Color, point_index: int) -> bool:
+        if color.is_white():
+            return self.board_size - self.home_size + 1 <= point_index <= self.board_size
+        return 1 <= point_index <= self.home_size
 
+    def count_checkers_outside_home(self, color: Color) -> int:
+        outside = 0
+        for point_index in range(1, self.board_size + 1):
+            if not self.is_home_point(color, point_index):
+                outside += self.points[point_index].get_count_for_color(color)
+        return outside
+
+    def all_checkers_in_home(self, color: Color) -> bool:
+        return self.count_checkers_outside_home(color) == 0

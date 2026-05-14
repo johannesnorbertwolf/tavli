@@ -2,6 +2,7 @@ import yaml
 
 class ConfigLoader:
     def __init__(self, config_file):
+        self.config_file = config_file
         with open(config_file, 'r') as file:
             self.config = yaml.safe_load(file)
 
@@ -11,13 +12,15 @@ class ConfigLoader:
     def get_pieces_per_player(self):
         return self.config.get("pieces_per_player", 15)
 
+    def get_home_size(self):
+        return self.config.get("home_size", 6)
+
     def get_die_sides(self):
         return self.config.get("die_sides", 6)
 
     def get_hidden_size(self):
         return self.config.get("hidden_size", 128)
 
-    # New methods for training parameters
     def get_alpha(self):
         return self.config.get("alpha", 0.001)
 
@@ -45,16 +48,15 @@ class ConfigLoader:
     def get_games_per_epoch(self):
         return self.config.get("games_per_epoch", 100)
 
-    def get_replay_buffer_size(self):
-        return self.config.get("replay_buffer_size", 0)
+    def get_model_save_every_epochs(self):
+        return int(self.config.get("model_save_every_epochs", 0))
 
-    def get_replay_batch_size(self):
-        return self.config.get("replay_batch_size", 32)
+    def get_max_grad_norm(self):
+        return float(self.config.get("max_grad_norm", 0.0))
 
-    def get_replay_updates_per_game(self):
-        return self.config.get("replay_updates_per_game", 0)
+    def get_hidden_sizes(self):
+        return list(self.config.get("hidden_sizes", [512, 256, 128]))
 
-    # TD(Lambda) parameters
     def get_lambda_start(self):
         return self.config.get("lambda_start", 0.9)
 
@@ -69,3 +71,42 @@ class ConfigLoader:
 
     def get_alpha_min(self):
         return self.config.get("alpha_min", 0.0)
+
+    def get_training_seed(self):
+        return self.config.get("training_seed")
+
+    def get_eval_every_epochs(self):
+        return self.config.get("eval_every_epochs", 10)
+
+    def get_eval_games_per_color(self):
+        return self.config.get("eval_games_per_color", 10)
+
+    def get_lambda_decay_games(self):
+        return self.config.get("lambda_decay_games", 0)
+
+    def get_training_state_path(self):
+        return self.config.get("training_state_path", "training_state.json")
+
+    def get_state_save_every_games(self):
+        return self.config.get("state_save_every_games", 100)
+
+    def get_eval_against_random(self):
+        return self.config.get("eval_against_random", False)
+
+    def get_eval_against_gold(self):
+        return self.config.get("eval_against_gold", True)
+
+    def get_eval_candidate_lookahead_plies(self):
+        return int(self.config.get("eval_candidate_lookahead_plies", 1))
+
+    def get_eval_gold_lookahead_plies(self):
+        return int(self.config.get("eval_gold_lookahead_plies", 1))
+
+    def get_num_self_play_workers(self):
+        return int(self.config.get("num_self_play_workers", 1))
+
+    def get_gold_model_path(self):
+        return self.config.get("gold_model_path", "models/gold_v1.pth")
+
+    def get_eval_seed(self):
+        return self.config.get("eval_seed")

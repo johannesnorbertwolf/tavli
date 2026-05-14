@@ -1,25 +1,39 @@
-board_size: 10
-pieces_per_player: 5
-die_sides: 4
+board_size: 24
+pieces_per_player: 15
+home_size: 6
+die_sides: 6
 
 # Training parameters
-alpha: 0.001               # Learning rate for TD(Lambda)
-discount_factor: 0.95      # How much to value future rewards (gamma)
+alpha: 0.0003              # Learning rate for TD(Lambda), reduced for better stability
+discount_factor: 1.0       # No discounting — correct for a finite terminal-reward game
 epsilon_start: 1.0         # Start with 100% random moves
-epsilon_end: 0.01          # End with 1% random moves
+epsilon_end: 0.05          # End with 5% random moves to keep opening exploration
 epsilon_decay: 0.9995      # Slower decay to allow for more exploration
 epsilon_decay_games: 0     # If >0, linearly decay epsilon to epsilon_end over this many games
 exploration_temperature: 1.0  # Softmax temperature during self-play exploration
 num_epochs: 10             # Number of training epochs
 games_per_epoch: 100       # Number of self-play games to generate per epoch
-alpha_decay: 1.0           # Multiply alpha by this factor at each decay step (1.0 disables)
-alpha_decay_every: 0       # If >0, apply alpha_decay every N games
-alpha_min: 0.0             # Floor for alpha when decaying
-replay_buffer_size: 5000   # If >0, enable replay buffer with this max size
-replay_batch_size: 64      # Batch size for replay updates
-replay_updates_per_game: 4 # Number of replay batches to update after each game
+max_grad_norm: 1.0         # Clip global L2 norm of eligibility traces; 0 disables
+hidden_sizes: [256, 128, 64]  # Net2Net-expanded from [128, 64]
+alpha_decay: 0.9999        # Multiply alpha by this every N games
+alpha_decay_every: 1000    # Apply alpha_decay every N games
+alpha_min: 0.00005         # Floor for alpha
+training_seed: null        # Set to an integer for reproducible benchmark runs
+eval_every_epochs: 10      # Run quick eval against random every N epochs
+eval_games_per_color: 100  # Eval budget per color at each eval point
+eval_seed: null            # Optional fixed eval seed; null means choose a new random seed each evaluation run
+eval_against_random: false # Keep optional random baseline eval
+eval_against_gold: true    # Main progress metric: current model vs fixed gold model
+eval_candidate_lookahead_plies: 1 # Expectimax lookahead for candidate at eval
+eval_gold_lookahead_plies: 1      # Expectimax lookahead for gold opponent at eval
+num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
+gold_model_path: models/gold_v7.pth # Frozen reference model checkpoint
+training_state_path: training_state.json # Persisted scheduler state for resumed training
+state_save_every_games: 100 # Save scheduler state every N games
+model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)
+lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this test
 
 # TD(Lambda) parameters
-lambda_start: 0.9          # Start with high reliance on Monte Carlo (final outcome)
-lambda_end: 0.5            # End with more reliance on TD (AI's own predictions)
+lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit assignment
+lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_decay: 0.999        # Decay rate for lambda per episode
