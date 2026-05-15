@@ -4,7 +4,6 @@ from domain.color import Color
 
 class Point:
     def __init__(self, position: int, color: Color = Color.WHITE, count: int = 0) -> None:
-        # Handle single constructor signature with default arguments
         self.position = position
         self.pieces: list[color] = [color] * count if count else []
 

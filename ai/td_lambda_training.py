@@ -55,6 +55,8 @@ class TdLambdaTraining:
         self.random_agent = RandomAgent()
         self.device = next(self.board_evaluator.parameters()).device
         self.gold_agent = None
+        self.td_leaf_enabled = self.config.get_td_leaf_enabled()
+        self.td_leaf_lookahead_plies = self.config.get_td_leaf_lookahead_plies()
 
         self.model_save_path = "trained_model.pth"
 
@@ -293,6 +295,7 @@ class TdLambdaTraining:
         movers = traj["movers"]
         terminal_winner_white = bool(traj["terminal_winner_white"])
         plies = traj["plies"]
+        td_leaf_targets = traj.get("td_leaf_targets")
         T = len(movers)
 
         if T == 0:
@@ -317,10 +320,14 @@ class TdLambdaTraining:
                 reward_from_mover = 1.0 if mover_won else 0.0
                 next_value_from_mover = 0.0
             else:
-                self.board_evaluator.eval()
-                next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_next))
-                self.board_evaluator.train()
-                next_value = next_value_tensor.item()
+                td_leaf_target = td_leaf_targets[i] if td_leaf_targets is not None else None
+                if td_leaf_target is None:
+                    self.board_evaluator.eval()
+                    next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_next))
+                    self.board_evaluator.train()
+                    next_value = next_value_tensor.item()
+                else:
+                    next_value = float(td_leaf_target)
                 reward_from_mover = 0.0
                 next_value_from_mover = 1.0 - next_value
 
@@ -422,10 +429,17 @@ class TdLambdaTraining:
                 reward_from_mover_perspective = reward if current_player == Color.WHITE else 1 - reward
                 next_value_from_mover_perspective = 0.0
             else:
-                self.board_evaluator.eval()
-                next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_board_next))
-                self.board_evaluator.train()
-                next_value = next_value_tensor.item()
+                if self.td_leaf_enabled:
+                    self.board_evaluator.eval()
+                    next_value = self.agent.value_with_lookahead(
+                        game.board, game.current_player, depth=self.td_leaf_lookahead_plies
+                    )
+                    self.board_evaluator.train()
+                else:
+                    self.board_evaluator.eval()
+                    next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_board_next))
+                    self.board_evaluator.train()
+                    next_value = next_value_tensor.item()
                 reward_from_mover_perspective = 0.0
                 next_value_from_mover_perspective = 1.0 - next_value
 

@@ -27,57 +27,30 @@ class PaschGenerator:
         self.open_points: dict[int, bool] = {i: board.points[i].is_open(color) for i in range(0, self.board_size + 2)}
         self.outside_home_count = board.count_checkers_outside_home(color)
 
-    def find_moves(self):
-        possible_moves: List[Move] = []
-        second_is_possible = False
-        third_is_possible = False
-        fourth_is_possible = False
-        for first in range(self.first_possible_start, self.last_possible_start, self.direction):
-            if not self.can_move_from(first, self.outside_home_count):
+    def find_moves(self) -> List[Move]:
+        return [
+            Move([HalfMove(self.board.points[p], self.board.points[p + self.die_with_direction], self.color)
+                  for p in path])
+            for path in self._search([], self.outside_home_count)
+        ]
+
+    def _search(self, path: list, outside_count: int) -> list:
+        """Return all maximal continuations of path (up to 4 moves total)."""
+        if len(path) == 4:
+            return [path]
+        start = path[-1] if path else self.first_possible_start
+        extensions = []
+        for pos in range(start, self.last_possible_start, self.direction):
+            if not self.can_move_from(pos, outside_count):
                 continue
-            outside_after_first = self.outside_home_count + self.get_outside_home_delta(first)
-            self.movable_pieces[first] -= 1
-            self.movable_pieces[first + self.die_with_direction] += 1
-
-            for second in range(first, self.last_possible_start, self.direction):
-                if not self.can_move_from(second, outside_after_first):
-                    continue
-                second_is_possible = True
-                outside_after_second = outside_after_first + self.get_outside_home_delta(second)
-                self.movable_pieces[second] -= 1
-                self.movable_pieces[second + self.die_with_direction] += 1
-
-                for third in range(second, self.last_possible_start, self.direction):
-                    if not self.can_move_from(third, outside_after_second):
-                        continue
-                    third_is_possible = True
-                    outside_after_third = outside_after_second + self.get_outside_home_delta(third)
-                    self.movable_pieces[third] -= 1
-                    self.movable_pieces[third + self.die_with_direction] += 1
-
-                    for fourth in range(third, self.last_possible_start, self.direction):
-                        if not self.can_move_from(fourth, outside_after_third):
-                            continue
-                        fourth_is_possible = True
-
-                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second, third, fourth] ]))
-
-                    if not fourth_is_possible:
-                        possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second, third] ]))
-                    self.movable_pieces[third] += 1
-                    self.movable_pieces[third + self.die_with_direction] -= 1
-
-                if not third_is_possible:
-                    possible_moves.append(Move([HalfMove(self.board.points[start], self.board.points[start + self.die_with_direction], self.color) for start in [first, second]]))
-                self.movable_pieces[second] += 1
-                self.movable_pieces[second + self.die_with_direction] -= 1
-
-            if not second_is_possible:
-                possible_moves.append(Move([HalfMove(self.board.points[first], self.board.points[first + self.die_with_direction], self.color)]))
-            self.movable_pieces[first] += 1
-            self.movable_pieces[first + self.die_with_direction] -= 1
-
-        return possible_moves
+            dest = pos + self.die_with_direction
+            self.movable_pieces[pos] -= 1
+            self.movable_pieces[dest] += 1
+            deeper = self._search(path + [pos], outside_count + self.get_outside_home_delta(pos))
+            extensions.extend(deeper if deeper else [path + [pos]])
+            self.movable_pieces[pos] += 1
+            self.movable_pieces[dest] -= 1
+        return extensions
 
     def can_move_from(self, point_index: int, outside_home_count: int):
         destination = point_index + self.die_with_direction
@@ -110,47 +83,46 @@ class PossibleMoves:
             pasch_generator = PaschGenerator(self.board, self.color, self.dice.die1)
             return pasch_generator.find_moves()
 
-        else:
-            half_moves1 = self.generate_half_moves(self.dice.die1.value)
-            half_moves2 = self.generate_half_moves(self.dice.die2.value)
+        half_moves1 = self.generate_half_moves(self.dice.die1.value)
+        half_moves2 = self.generate_half_moves(self.dice.die2.value)
 
-            for half_move1 in half_moves1:
-                if not half_move1.is_valid():
+        for half_move1 in half_moves1:
+            if not half_move1.is_valid():
+                continue
+
+            for half_move2 in half_moves2:
+                if not half_move2.is_valid():
+                    continue
+                if half_move1.can_merge_or_vice_versa(half_move2):
+                    # Merged moves are handled separately.
+                    continue
+                if not self.is_two_half_move_sequence_legal(half_move1, half_move2, outside_home_count):
+                    continue
+                if half_move1.from_point == half_move2.from_point:
+                    if half_move1.two_checkers_available():
+                        possible_moves.append(Move([half_move1, half_move2]))
                     continue
 
-                for half_move2 in half_moves2:
-                    if not half_move2.is_valid():
-                        continue
-                    if half_move1.can_merge_or_vice_versa(half_move2):
-                        # Merged moves are handled separately.
-                        continue
-                    if not self.is_two_half_move_sequence_legal(half_move1, half_move2, outside_home_count):
-                        continue
-                    if half_move1.from_point == half_move2.from_point:
-                        if half_move1.two_checkers_available():
-                            possible_moves.append(Move([half_move1, half_move2]))
-                        continue
+                possible_moves.append(Move([half_move1, half_move2]))
 
-                    possible_moves.append(Move([half_move1, half_move2]))
+        merged_half_moves = self.generate_half_moves(self.dice.die1.value + self.dice.die2.value)
 
-            merged_half_moves = self.generate_half_moves(self.dice.die1.value + self.dice.die2.value)
+        for half_move in merged_half_moves:
+            if not half_move.is_valid():
+                continue
+            middle_step1_index = half_move.from_point.position + self.dice.die1.value if self.color.is_white() else half_move.from_point.position - self.dice.die1.value
+            middle_step2_index = half_move.from_point.position + self.dice.die2.value if self.color.is_white() else half_move.from_point.position - self.dice.die2.value
+            middle_step1 = self.board.points[middle_step1_index]
+            middle_step2 = self.board.points[middle_step2_index]
 
-            for half_move in merged_half_moves:
-                if not half_move.is_valid():
-                    continue
-                middle_step1_index = half_move.from_point.position + self.dice.die1.value if self.color.is_white() else half_move.from_point.position - self.dice.die1.value
-                middle_step2_index = half_move.from_point.position + self.dice.die2.value if self.color.is_white() else half_move.from_point.position - self.dice.die2.value
-                middle_step1 = self.board.points[middle_step1_index]
-                middle_step2 = self.board.points[middle_step2_index]
+            if not (middle_step1.is_open(self.color) or middle_step2.is_open(self.color)):
+                continue
+            if not self.is_merged_half_move_legal_with_home_rule(half_move, outside_home_count, middle_step1_index, middle_step2_index):
+                continue
+            possible_moves.append(Move([half_move]))
 
-                if not (middle_step1.is_open(self.color) or middle_step2.is_open(self.color)):
-                    continue
-                if not self.is_merged_half_move_legal_with_home_rule(half_move, outside_home_count, middle_step1_index, middle_step2_index):
-                    continue
-                possible_moves.append(Move([half_move]))
-
-            self._emit_single_die_moves(possible_moves, half_moves1, self.dice.die2.value, outside_home_count)
-            self._emit_single_die_moves(possible_moves, half_moves2, self.dice.die1.value, outside_home_count)
+        self._emit_single_die_moves(possible_moves, half_moves1, self.dice.die2.value, outside_home_count)
+        self._emit_single_die_moves(possible_moves, half_moves2, self.dice.die1.value, outside_home_count)
 
         return possible_moves
 
