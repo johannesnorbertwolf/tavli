@@ -36,14 +36,10 @@ def _select_self_play_move(agent, board, possible_moves, current_player, epsilon
     return possible_moves[int(np.random.choice(len(possible_moves), p=probs))]
 
 
-def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
-                         td_leaf_enabled=False, td_leaf_depth=1):
+def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature):
     """Play one self-play game to a real terminal. Returns a trajectory dict:
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
-    - `td_leaf_targets`: per-ply expectimax value at s_{i+1} from the new
-      to-move player's perspective; `None` at terminal plies or when TD-leaf
-      is disabled. Length T.
     - `terminal_winner_white`: True if White won.
     """
     t0 = time.perf_counter()
@@ -51,7 +47,6 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
 
     states = [encoder.encode_board(game.board, game.current_player == Color.WHITE)]
     movers = []
-    td_leaf_targets = []
 
     while True:
         current_player = game.current_player
@@ -69,19 +64,10 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         movers.append(is_white_to_move)
         states.append(encoder.encode_board(game.board, game.current_player == Color.WHITE))
 
-        terminal = game.is_over()
-        if td_leaf_enabled and not terminal:
-            td_leaf_targets.append(
-                agent.value_with_lookahead(game.board, game.current_player, depth=td_leaf_depth)
-            )
-        else:
-            td_leaf_targets.append(None)
-
-        if terminal:
+        if game.is_over():
             return {
                 "states": states,
                 "movers": movers,
-                "td_leaf_targets": td_leaf_targets,
                 "terminal_winner_white": (game.get_winner() == Color.WHITE),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,
@@ -98,8 +84,6 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes))
     evaluator.eval()
     agent = Agent(evaluator, encoder)
-    td_leaf_enabled = config.get_td_leaf_enabled()
-    td_leaf_depth = config.get_td_leaf_lookahead_plies()
 
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)
@@ -112,6 +96,5 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
             return
         weights, epsilon, exploration_temperature = msg
         evaluator.load_state_dict({k: torch.from_numpy(v) for k, v in weights.items()})
-        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
-                                    td_leaf_enabled=td_leaf_enabled, td_leaf_depth=td_leaf_depth)
+        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)
         traj_q.put((worker_id, traj))

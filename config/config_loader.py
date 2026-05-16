@@ -110,9 +110,3 @@ class ConfigLoader:
 
     def get_eval_seed(self):
         return self.config.get("eval_seed")
-
-    def get_td_leaf_enabled(self):
-        return bool(self.config.get("td_leaf_enabled", False))
-
-    def get_td_leaf_lookahead_plies(self):
-        return int(self.config.get("td_leaf_lookahead_plies", 1))

@@ -1,19 +1,14 @@
 Initializing AI training...
 Loading existing model from trained_model.pth...
-Model loaded successfully (checkpoint network=mlp, encoder=unary_v3).
-Loaded gold model from models/gold_v8.pth
-Loaded training state from training_state.json: games=7561100, lambda=0.0000, epsilon=0.0500, alpha=0.000238
-Parallel self-play: 6 workers
-Epoch 1/100000
-Epoch 1 timing: 86.31s total, 1.16 games/s, 125.60 plies/s
-Epoch 1 mean |TD error|: 0.028710
-Model checkpoint saved at epoch 1
-Epoch 2/100000
-Epoch 2 timing: 82.07s total, 1.22 games/s, 134.50 plies/s
-Epoch 2 mean |TD error|: 0.029089
-Model checkpoint saved at epoch 2
-Epoch 3/100000
-Epoch 3 timing: 97.06s total, 1.03 games/s, 115.51 plies/s
-Epoch 3 mean |TD error|: 0.027521
-Model checkpoint saved at epoch 3
-Epoch 4/100000
+Model loaded successfully.
+Epoch 1/10
+Epoch 2/10
+Epoch 3/10
+Epoch 4/10
+Epoch 5/10
+Epoch 6/10
+Epoch 7/10
+Epoch 8/10
+Epoch 9/10
+Epoch 10/10
+Model saved to trained_model.pth

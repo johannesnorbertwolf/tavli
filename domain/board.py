@@ -55,6 +55,19 @@ class GameBoard:
         half_move.to_point.pop()
         half_move.from_point.push(half_move.color)
 
+    def is_point_open(self, point):
+        return len(self.points[point]) == 0 or (
+                    len(self.points[point]) == 1 and self.points[point][0] == self.points[point][0])
+
+    def pin_checker(self, from_point, to_point):
+        if len(self.points[to_point]) == 1 and self.points[to_point][0] != self.points[from_point][0]:
+            self.points[to_point] = [self.points[from_point].pop()]
+
+    def release_pinned_checker(self, point):
+        if len(self.points[point]) == 1:
+            return self.points[point].pop()
+        return None
+
     def has_won(self, color: Color):
         return self.all_players_in_goal(color) or self.captured_starting_position(color)
 
@@ -67,10 +80,10 @@ class GameBoard:
     def captured_starting_position(self, color: Color):
         if color.is_white():
             black_starting_point = self.points[self.board_size]
-            return black_starting_point.is_captured_by(Color.WHITE)
+            return black_starting_point.is_captured_by(color.WHITE)
         else:
             white_starting_point = self.points[1]
-            return white_starting_point.is_captured_by(Color.BLACK)
+            return white_starting_point.is_captured_by(color.BLACK)
 
     def is_home_point(self, color: Color, point_index: int) -> bool:
         if color.is_white():

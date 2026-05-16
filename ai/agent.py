@@ -61,24 +61,16 @@ class Agent:
         return scores
 
     def _evaluate_moves_2ply_batch(self, board: GameBoard, possible_moves: List[Move], color: Color) -> List[float]:
-        """Expectimax over the 21 distinct dice outcomes. For each candidate move, the opponent
-        picks the response that minimizes our value; we average across dice weighted by probability.
-
-        Convention (shared with `_evaluate_moves_batch` and `value_with_lookahead`): every encoded
-        state is encoded from the perspective of the player who is next to move at that state. So
-        after the candidate plays `m_c` and the opponent plays `m_o`, the resulting state's
-        next-to-move is *us* (the mover); we encode from our perspective and `V` represents our win
-        rate. Opponent picks `min(V)`; mover-terminal-loss responses force `V = 0`."""
+        """Expectimax over the 21 distinct dice outcomes. For each candidate move, opponent picks
+        the response that maximizes their own value; we average across dice weighted by probability."""
         device = self._model_device()
         opponent_color = Color.BLACK if color.is_white() else Color.WHITE
         is_our_turn = color.is_white()
+        is_opp_turn = not is_our_turn
 
         dice = Dice(_DIE_SIDES)
 
         all_encoded: List[np.ndarray] = []
-        # Parallel to `all_encoded`: True iff this slot is an opponent terminal-win response.
-        # The encoded board is a placeholder (the network's output is overwritten with 0.0).
-        terminal_loss: List[bool] = []
         # plans[i] is None when candidate i is a deterministic win (score = 1.0); otherwise
         # it is the list of (start, end, weight, kind) tuples for the dice-outcome rollout.
         plans: List[Optional[List[Tuple[int, int, float, str]]]] = []
@@ -99,22 +91,15 @@ class Agent:
                 if not opp_moves:
                     # Opponent must pass; our turn next on the same board.
                     all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
-                    terminal_loss.append(False)
                     end = len(all_encoded)
                     cand_plan.append((start, end, weight, "pass"))
                 else:
                     for m_o in opp_moves:
                         board.apply(m_o)
-                        if board.has_won(opponent_color):
-                            # Opponent wins outright with this response: our value is 0 here.
-                            all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
-                            terminal_loss.append(True)
-                        else:
-                            all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
-                            terminal_loss.append(False)
+                        all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_opp_turn))
                         board.undo(m_o)
                     end = len(all_encoded)
-                    cand_plan.append((start, end, weight, "opp_min"))
+                    cand_plan.append((start, end, weight, "opp_max"))
             plans.append(cand_plan)
             board.undo(m_c)
 
@@ -122,11 +107,6 @@ class Agent:
             board_batch = torch.from_numpy(np.stack(all_encoded)).float().to(device)
             with torch.no_grad():
                 values = self.board_evaluator(board_batch).squeeze(1).detach().cpu().numpy()
-            if any(terminal_loss):
-                values = values.copy()
-                for k, is_loss in enumerate(terminal_loss):
-                    if is_loss:
-                        values[k] = 0.0
         else:
             values = np.zeros(0, dtype=np.float32)
 
@@ -140,53 +120,10 @@ class Agent:
                 if kind == "pass":
                     val_d = float(values[start])
                 else:
-                    val_d = float(values[start:end].min())
+                    val_d = 1.0 - float(values[start:end].max())
                 expected += weight * val_d
             scores.append(expected)
         return scores
-
-    def value_with_lookahead(self, board: GameBoard, color: Color, depth: int = 1) -> float:
-        """Expectimax value of `board` for `color`-to-move, BEFORE dice are rolled.
-
-        With `depth=1`: enumerate the 21 distinct dice outcomes, find `color`'s
-        legal moves under each, score them at 1-ply (`_evaluate_moves_batch`),
-        take the max, and average weighted by dice probability. If `color` has
-        no legal moves under some dice outcome, the turn passes and we score
-        the position from the opponent's perspective.
-
-        Used by TD-leaf training: the bootstrap target `V(s_{i+1})` is replaced
-        with this search-improved value, so the network is trained to agree
-        with its own short-horizon search."""
-        if depth < 1:
-            device = self._model_device()
-            encoded = self.board_encoder.encode_board(board, color.is_white())
-            with torch.no_grad():
-                return float(self.board_evaluator(
-                    torch.from_numpy(encoded).float().unsqueeze(0).to(device)
-                ).item())
-
-        opp_color = Color.BLACK if color.is_white() else Color.WHITE
-        dice = Dice(_DIE_SIDES)
-        expected = 0.0
-
-        for (i, j, weight) in _DICE_OUTCOMES:
-            dice.die1.value = i
-            dice.die2.value = j
-            possible = PossibleMoves(board, color, dice).find_moves()
-            if not possible:
-                # Pass: turn flips to opponent. Score from opp's perspective and invert.
-                device = self._model_device()
-                encoded = self.board_encoder.encode_board(board, opp_color.is_white())
-                with torch.no_grad():
-                    v_opp = float(self.board_evaluator(
-                        torch.from_numpy(encoded).float().unsqueeze(0).to(device)
-                    ).item())
-                expected += weight * (1.0 - v_opp)
-                continue
-            scores = self._evaluate_moves_batch(board, possible, color)
-            expected += weight * max(scores)
-
-        return expected
 
     def get_best_move(self, board: GameBoard, possible_moves: List[Move], color: Color, lookahead_plies: int = 1) -> Tuple[Move, float]:
         if not possible_moves:

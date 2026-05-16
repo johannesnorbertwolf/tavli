@@ -141,42 +141,6 @@ class TestAgentEvaluateMoves(unittest.TestCase):
         scores = agent.evaluate_moves(self.board, possible_moves, Color.WHITE, lookahead_plies=2)
         self.assertAlmostEqual(scores[winning_index], 1.0, places=6)
 
-    def test_opponent_terminal_win_short_circuited_at_2ply(self):
-        """Symmetric to `test_bear_off_last_piece_scores_1_at_1ply`, but for the opponent's
-        side of the 2-ply tree. If opponent can win outright with their response, the scorer
-        must treat that response's value as 0 (we lose) instead of using the network's raw
-        output. Without the short-circuit, a constant 0.5 network masks the loss and
-        candidate scores stay at ~0.5; with it, almost every dice outcome contains a
-        terminal-loss response and candidate scores collapse toward 0."""
-        board_size = self.board.board_size
-        for i in range(0, board_size + 2):
-            self.board.points[i] = Point(i)
-
-        # Black: 14 borne off + 1 piece at slot 2. Black bears off the last piece with
-        # any die >= 2 (only piece left, so overshoots are legal).
-        self.board.points[0] = Point(0, Color.BLACK, 14)
-        self.board.points[2] = Point(2, Color.BLACK, 1)
-        # White: all 15 packed deep in white's home — far from a winning bear-off this turn.
-        self.board.points[19] = Point(19, Color.WHITE, 15)
-
-        dice = Dice(self.config.get_die_sides())
-        dice.die1 = Die(self.config.get_die_sides(), 3)
-        dice.die2 = Die(self.config.get_die_sides(), 5)
-        possible_moves = PossibleMoves(self.board, Color.WHITE, dice).find_moves()
-        self.assertTrue(len(possible_moves) > 0)
-
-        # ConstantEvaluator(0.5): every non-terminal V is 0.5. Without the short-circuit, every
-        # opp response (including the winning bear-off) is scored 0.5 and the 2-ply score for
-        # any candidate is exactly 0.5. With the short-circuit, every dice outcome where black
-        # has at least one bear-off response is driven to 0 (mover loses), so the candidate
-        # score is strictly less than 0.5.
-        agent = Agent(ConstantEvaluator(value=0.5), self.encoder)
-        scores = agent.evaluate_moves(self.board, possible_moves, Color.WHITE, lookahead_plies=2)
-        self.assertLess(
-            max(scores), 0.45,
-            f"Expected 2-ply scores below 0.5 after opp-terminal short-circuit; got {max(scores)}",
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

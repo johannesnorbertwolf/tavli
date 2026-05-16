@@ -27,17 +27,13 @@ eval_against_gold: true    # Main progress metric: current model vs fixed gold m
 eval_candidate_lookahead_plies: 1 # Expectimax lookahead for candidate at eval
 eval_gold_lookahead_plies: 1      # Expectimax lookahead for gold opponent at eval
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
-gold_model_path: models/gold_v8.pth # Frozen reference model checkpoint
+gold_model_path: models/gold_v7.pth # Frozen reference model checkpoint
 training_state_path: training_state.json # Persisted scheduler state for resumed training
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)
 lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this test
 
 # TD(Lambda) parameters
-lambda_start: 0.0          # TD(0) experiment: one-step bootstrapping only
-lambda_end: 0.0            # TD(0) experiment: one-step bootstrapping only
+lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit assignment
+lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_decay: 0.999        # Decay rate for lambda per episode
-
-# TD-leaf: replace bootstrap V(s') with expectimax search value at s'
-td_leaf_enabled: true        # Bootstrap TD targets via search at s_{i+1}
-td_leaf_lookahead_plies: 1   # Search depth at the leaf; 1 = enumerate 21 dice outcomes
