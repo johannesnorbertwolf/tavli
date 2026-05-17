@@ -15,7 +15,10 @@ class BoardEvaluator(nn.Module):
             nn.Linear(sizes[i], sizes[i + 1]) for i in range(len(sizes) - 1)
         ])
 
-    def forward(self, x):
+    def forward_logits(self, x):
         for layer in self.layers[:-1]:
             x = F.relu(layer(x))
-        return torch.sigmoid(self.layers[-1](x))
+        return self.layers[-1](x)
+
+    def forward(self, x):
+        return torch.sigmoid(self.forward_logits(x))

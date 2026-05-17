@@ -7,6 +7,7 @@ NETWORK_TYPE = "mlp"
 ENCODER_VERSION_LEGACY = "legacy_unary_v1"
 ENCODER_VERSION_CURRENT = "unary_v3"
 HIDDEN_SIZES_LEGACY = [512, 256, 128]
+CHECKPOINT_FORMAT_VERSION = 2  # bumped when optimizer_state_dict was added
 
 
 def _is_metadata_checkpoint(obj: Any) -> bool:
@@ -47,6 +48,8 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
             "encoder_version": obj.get("encoder_version", ENCODER_VERSION_LEGACY),
             "hidden_sizes": obj.get("hidden_sizes", HIDDEN_SIZES_LEGACY),
             "board_spec": obj.get("board_spec", {}),
+            "optimizer_state_dict": obj.get("optimizer_state_dict"),
+            "format_version": obj.get("format_version", 1),
         }
         return _migrate_state_dict(obj["state_dict"]), meta
 
@@ -56,18 +59,23 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
         "encoder_version": ENCODER_VERSION_LEGACY,
         "hidden_sizes": HIDDEN_SIZES_LEGACY,
         "board_spec": {},
+        "optimizer_state_dict": None,
+        "format_version": 1,
     }
     return _migrate_state_dict(obj), meta
 
 
-def save_checkpoint(path: str, evaluator, config) -> None:
+def save_checkpoint(path: str, evaluator, config, optimizer=None) -> None:
     payload = {
         "state_dict": evaluator.state_dict(),
         "network_type": NETWORK_TYPE,
         "encoder_version": ENCODER_VERSION_CURRENT,
         "hidden_sizes": evaluator.hidden_sizes,
         "board_spec": _board_spec_from_config(config),
+        "format_version": CHECKPOINT_FORMAT_VERSION,
     }
+    if optimizer is not None:
+        payload["optimizer_state_dict"] = optimizer.state_dict()
     torch.save(payload, path)
 
 

@@ -22,3 +22,11 @@ lambda_start: 0.9
 lambda_end: 0.5
 lambda_decay: 0.999
 
+# Optimizer + replay buffer (Adam)
+learning_rate: 0.0003
+lr_warmup_steps: 0
+replay_buffer_capacity: 100
+minibatch_size: 8
+updates_per_game: 1
+min_buffer_to_train: 0
+

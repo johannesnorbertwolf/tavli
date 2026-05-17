@@ -110,3 +110,21 @@ class ConfigLoader:
 
     def get_eval_seed(self):
         return self.config.get("eval_seed")
+
+    def get_learning_rate(self):
+        return float(self.config.get("learning_rate", 0.0003))
+
+    def get_lr_warmup_steps(self):
+        return int(self.config.get("lr_warmup_steps", 1000))
+
+    def get_replay_buffer_capacity(self):
+        return int(self.config.get("replay_buffer_capacity", 50000))
+
+    def get_minibatch_size(self):
+        return int(self.config.get("minibatch_size", 128))
+
+    def get_updates_per_game(self):
+        return int(self.config.get("updates_per_game", 5))
+
+    def get_min_buffer_to_train(self):
+        return int(self.config.get("min_buffer_to_train", 2000))

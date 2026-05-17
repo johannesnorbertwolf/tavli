@@ -27,7 +27,7 @@ eval_against_gold: true    # Main progress metric: current model vs fixed gold m
 eval_candidate_lookahead_plies: 1 # Expectimax lookahead for candidate at eval
 eval_gold_lookahead_plies: 1      # Expectimax lookahead for gold opponent at eval
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
-gold_model_path: models/gold_v8.pth # Frozen reference model checkpoint
+gold_model_path: models/gold_v9.pth # Frozen reference model checkpoint
 training_state_path: training_state.json # Persisted scheduler state for resumed training
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)

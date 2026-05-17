@@ -26,18 +26,19 @@ Test config is at `config-test.yml` (minimal: 1 epoch, 1 game, no gold eval).
 
 ## Architecture
 
-### Training loop (`ai/td_lambda_training.py::train_one_game`)
+### Training loop (`ai/td_lambda_training.py`)
 
-Standard TD(λ) with manual eligibility traces (no optimizer). Per ply:
-1. Encode current board → forward pass → `value_tensor` (kept for backward)
-2. Select move via epsilon-greedy (softmax exploration when epsilon fires)
-3. Apply move, encode next board → get `next_value`
-4. Flip next value to mover's perspective: `next_value_from_mover = 1 - next_value`
-5. TD error: `δ = r + γ·next_value_from_mover - value`
-6. `value_tensor.backward()` → accumulate into eligibility traces with global L2 clipping
-7. `param += α · δ · trace`
+Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
+1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], terminal_winner_white}`. Weights do not change mid-game.
+2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`). The post-terminal state's target is 0 (mover_T is the loser).
+3. All `T+1` `(encoded_state, target)` pairs are pushed into a `ReplayBuffer` (capacity ~50k, ring buffer, uniform sampling).
+4. `_train_minibatches` runs `updates_per_game` Adam steps of `binary_cross_entropy_with_logits(forward_logits, target)`. Optional linear LR warmup `0.1·lr → lr` over `lr_warmup_steps` optimizer steps. `max_grad_norm` clips the gradient L2 norm pre-Adam (not the eligibility trace as the old code did).
 
-After the terminal ply, a second update grounds the opponent's terminal value to the actual outcome.
+Perspective helper: from mover_i's view, `U(j, i) = V[j]` if `mover_j == mover_i` else `1 - V[j]`. λ-return at state i with `N = T - i`:
+`G^λ_i = (1-λ) · Σ_{n=1..N-1} λ^{n-1}·G^{(n)}_i + λ^{N-1}·G^{(N)}_i`
+with `G^{(n)}_i = U(i+n, i)` if `i+n < T`, else `1` if mover_i won else `0`.
+
+The replay buffer is not persisted across restarts (refills naturally). Adam optimizer state IS persisted inside `trained_model.pth` alongside `state_dict` (format_version=2; old checkpoints without optimizer state load fine and Adam starts fresh).
 
 The training loop owns `.eval()` / `.train()` mode — `Agent` methods are mode-agnostic.
 
@@ -74,19 +75,41 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 
 ### Network (`ai/board_evaluator.py`)
 
-`BoardEvaluator(input_size, hidden_sizes)` builds a simple MLP with ReLU hidden layers and sigmoid output (win probability ∈ [0,1]). Hidden sizes are configurable via `config.yml` (`hidden_sizes: [128, 64]` default). Layers stored in `nn.ModuleList` as `self.layers`.
+`BoardEvaluator(input_size, hidden_sizes)` builds a simple MLP with ReLU hidden layers and sigmoid output (win probability ∈ [0,1]). Hidden sizes are configurable via `config.yml` (`hidden_sizes: [128, 64]` default). Layers stored in `nn.ModuleList` as `self.layers`. Two forwards: `forward(x)` returns sigmoid probabilities (used by `Agent` / eval); `forward_logits(x)` returns pre-sigmoid logits (used by the training loop with `binary_cross_entropy_with_logits` for numerical stability).
 
 ### Key config knobs
 
 | Key | Effect |
 |---|---|
 | `discount_factor` | γ — use `1.0` for terminal-reward games |
-| `lambda_start/end` | TD(λ) trace decay |
+| `lambda_start/end` | TD(λ) — forward-view weighting of n-step returns |
 | `epsilon_start/end/decay` | Exploration schedule |
-| `max_grad_norm` | Global L2 clip on eligibility traces (0 = off) |
+| `max_grad_norm` | Global L2 clip on gradients pre-Adam (0 = off) |
 | `hidden_sizes` | Network width list, e.g. `[128, 64]` |
+| `learning_rate` | Adam lr |
+| `lr_warmup_steps` | Linear warmup `0.1·lr → lr` over this many optimizer steps (0 = off) |
+| `replay_buffer_capacity` | Sample capacity of replay buffer |
+| `minibatch_size` | SGD minibatch size |
+| `updates_per_game` | Adam steps run per ingested trajectory |
+| `min_buffer_to_train` | Don't start training until buffer holds this many samples |
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
 | `gold_model_path` | Reference model for eval |
+
+The `alpha`, `alpha_decay`, `alpha_decay_every`, `alpha_min` keys are deprecated (left readable for old `training_state.json` resumes) and ignored by the Adam path.
+
+### Model files and gold standards
+
+**Current trained model**: `trained_model.pth` in the repo root. This is the live model updated by training. It contains both the network `state_dict` and Adam optimizer state (format_version=2).
+
+**Gold standard checkpoints**: `models/gold_v1.pth` … `models/gold_vN.pth`. These are frozen reference models used as eval opponents. Higher number = newer/better. The current gold reference is whichever version `gold_model_path` points to in `config/config.yml` — check that file to see which is active (currently `gold_v9.pth`).
+
+**To promote the current trained model to a new gold standard**:
+```bash
+cp trained_model.pth models/gold_vN.pth          # increment N
+# then update config/config.yml: gold_model_path: models/gold_vN.pth
+```
+
+Gold models grow in size when the network architecture changes (e.g. v9 is 1.9 MB vs v8's 652 KB because hidden_sizes grew from [128,64] to [256,128,64]).
 
 ### Eval and logging
 

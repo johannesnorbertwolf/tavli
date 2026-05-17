@@ -1,8 +1,15 @@
 import torch
+import torch.nn.functional as F
 from ai.agent import Agent, RandomAgent
 from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
-from ai.checkpoint_io import save_checkpoint, ENCODER_VERSION_LEGACY, HIDDEN_SIZES_LEGACY, _migrate_state_dict
+from ai.checkpoint_io import (
+    save_checkpoint,
+    ENCODER_VERSION_LEGACY,
+    HIDDEN_SIZES_LEGACY,
+    _migrate_state_dict,
+    load_state_dict,
+)
 from domain.color import Color
 from game.game import Game
 from tqdm import tqdm
@@ -13,6 +20,101 @@ import time
 import json
 import os
 
+
+class ReplayBuffer:
+    """Ring buffer of (encoded_state, target) pairs. Pure numpy, uniform sampling."""
+
+    def __init__(self, capacity: int, state_dim: int):
+        self.capacity = int(capacity)
+        self.state_dim = int(state_dim)
+        self.states = np.zeros((self.capacity, self.state_dim), dtype=np.float32)
+        self.targets = np.zeros(self.capacity, dtype=np.float32)
+        self.size = 0
+        self.cursor = 0
+
+    def __len__(self):
+        return self.size
+
+    def push(self, state: np.ndarray, target: float):
+        self.states[self.cursor] = state
+        self.targets[self.cursor] = target
+        self.cursor = (self.cursor + 1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
+
+    def push_many(self, states: np.ndarray, targets: np.ndarray):
+        n = states.shape[0]
+        for i in range(n):
+            self.push(states[i], float(targets[i]))
+
+    def sample(self, batch_size: int):
+        if self.size == 0:
+            return None, None
+        k = min(batch_size, self.size)
+        idx = np.random.randint(0, self.size, size=k)
+        return self.states[idx], self.targets[idx]
+
+
+def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
+                            terminal_winner_white: bool, lambda_: float) -> np.ndarray:
+    """Compute λ-returns for each non-terminal state in a trajectory.
+
+    Args:
+        values: shape (T+1,), bootstrap V[s_i] from network at trajectory ingest.
+        movers: shape (T,), bool — True if White is the mover at state i.
+        terminal_winner_white: who won the game.
+        lambda_: TD(λ) trace decay.
+
+    Returns:
+        targets: shape (T+1,), one target per state.
+            - For i in [0, T): λ-return from mover_i's perspective.
+            - For i == T (post-terminal state): target = 0
+              (mover_T is the loser; their win prob is 0).
+    """
+    T = len(movers)
+    targets = np.zeros(T + 1, dtype=np.float32)
+
+    # Post-terminal state: encoded from the loser's perspective. Target = 0.
+    targets[T] = 0.0
+
+    if T == 0:
+        return targets
+
+    lam = float(lambda_)
+    for i in range(T):
+        mover_i_white = bool(movers[i])
+        N = T - i  # steps until (and including) terminal
+        # Build n-step returns G^{(n)}_i for n = 1..N
+        # G^{(n)}_i = U(s_{i+n}, mover_i) for i+n < T (bootstrap),
+        # or U_terminal(mover_i) for i+n == T.
+        # All from mover_i's perspective: U(j, mover_i) = V[j] if mover_j == mover_i else 1 - V[j].
+        # U_terminal: 1 if mover_i won, else 0.
+        terminal_value = 1.0 if (mover_i_white == bool(terminal_winner_white)) else 0.0
+
+        # Vectorized λ-return: G^λ_i = (1-λ) Σ_{n=1..N-1} λ^{n-1} G^{(n)}_i + λ^{N-1} G^{(N)}_i
+        # Compute G^{(n)}_i for n=1..N as a vector.
+        bootstrap_g = np.empty(N, dtype=np.float32)
+        for n in range(1, N + 1):
+            j = i + n
+            if j == T:
+                bootstrap_g[n - 1] = terminal_value
+            else:
+                v = float(values[j])
+                mover_j_white = bool(movers[j])
+                bootstrap_g[n - 1] = v if (mover_j_white == mover_i_white) else (1.0 - v)
+
+        if N == 1:
+            targets[i] = bootstrap_g[0]
+        else:
+            # weights: (1-λ) * λ^{n-1} for n=1..N-1, plus λ^{N-1} for n=N
+            n_range = np.arange(N, dtype=np.float64)
+            lam_pow = lam ** n_range  # λ^0, λ^1, ..., λ^{N-1}
+            weights = (1.0 - lam) * lam_pow
+            weights[-1] = lam ** (N - 1)
+            targets[i] = float(np.dot(weights, bootstrap_g.astype(np.float64)))
+
+    return targets
+
+
 class TdLambdaTraining:
     def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder, config):
         self.board_evaluator = board_evaluator
@@ -21,7 +123,6 @@ class TdLambdaTraining:
         self.agent = Agent(self.board_evaluator, self.board_encoder)
 
         # TD(Lambda) parameters
-        self.alpha = self.config.get_alpha()
         self.lambda_start = self.config.get_lambda_start()
         self.lambda_end = self.config.get_lambda_end()
         self.lambda_ = self.lambda_start
@@ -32,15 +133,20 @@ class TdLambdaTraining:
         self.epsilon_decay = self.config.get_epsilon_decay()
         self.epsilon_decay_games = self.config.get_epsilon_decay_games()
         self.exploration_temperature = self.config.get_exploration_temperature()
-        self.alpha_decay = self.config.get_alpha_decay()
-        self.alpha_decay_every = self.config.get_alpha_decay_every()
-        self.alpha_min = self.config.get_alpha_min()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
         self.state_save_every_games = max(0, int(self.config.get_state_save_every_games()))
         self.global_game_num = 0
         self.max_grad_norm = self.config.get_max_grad_norm()
         self.model_save_every_epochs = max(0, int(self.config.get_model_save_every_epochs()))
+
+        # Optimizer + replay knobs
+        self.learning_rate = float(self.config.get_learning_rate())
+        self.lr_warmup_steps = max(0, int(self.config.get_lr_warmup_steps()))
+        self.replay_capacity = max(1, int(self.config.get_replay_buffer_capacity()))
+        self.minibatch_size = max(1, int(self.config.get_minibatch_size()))
+        self.updates_per_game = max(0, int(self.config.get_updates_per_game()))
+        self.min_buffer_to_train = max(0, int(self.config.get_min_buffer_to_train()))
 
         self.eval_every_epochs = max(1, int(self.config.get_eval_every_epochs()))
         self.eval_games_per_color = max(1, int(self.config.get_eval_games_per_color()))
@@ -58,7 +164,13 @@ class TdLambdaTraining:
 
         self.model_save_path = "trained_model.pth"
 
+        # Replay buffer + Adam optimizer
+        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size)
+        self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=self.learning_rate)
+        self.optimizer_steps = 0
+
         self._try_load_gold_agent()
+        self._try_load_optimizer_state()
         self._load_training_state()
         self._update_lambda()
 
@@ -112,10 +224,6 @@ class TdLambdaTraining:
         else:
             self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
 
-        if self.alpha_decay_every and self.alpha_decay_every > 0:
-            if (game_num + 1) % self.alpha_decay_every == 0:
-                self.alpha = max(self.alpha_min, self.alpha * self.alpha_decay)
-
     def _update_lambda(self):
         if self.lambda_decay_games <= 0:
             self.lambda_ = self.lambda_start
@@ -123,12 +231,26 @@ class TdLambdaTraining:
         progress = min(self.global_game_num, self.lambda_decay_games) / self.lambda_decay_games
         self.lambda_ = self.lambda_end + (self.lambda_start - self.lambda_end) * np.exp(-1.0 * progress * 10.0)
 
+    def _current_lr(self) -> float:
+        if self.lr_warmup_steps <= 0:
+            return self.learning_rate
+        step = self.optimizer_steps
+        if step >= self.lr_warmup_steps:
+            return self.learning_rate
+        # Linear warmup from 0.1·lr → lr
+        frac = step / float(self.lr_warmup_steps)
+        return self.learning_rate * (0.1 + 0.9 * frac)
+
+    def _set_lr(self, lr: float):
+        for pg in self.optimizer.param_groups:
+            pg["lr"] = lr
+
     def _save_training_state(self):
         state = {
             "global_game_num": int(self.global_game_num),
             "lambda": float(self.lambda_),
             "epsilon": float(self.epsilon),
-            "alpha": float(self.alpha),
+            "optimizer_steps": int(self.optimizer_steps),
         }
         tmp_path = f"{self.training_state_path}.tmp"
         with open(tmp_path, "w") as fh:
@@ -144,14 +266,28 @@ class TdLambdaTraining:
             self.global_game_num = int(state.get("global_game_num", 0))
             self.lambda_ = float(state.get("lambda", self.lambda_))
             self.epsilon = float(state.get("epsilon", self.epsilon))
-            self.alpha = float(state.get("alpha", self.alpha))
+            self.optimizer_steps = int(state.get("optimizer_steps", 0))
             print(
                 f"Loaded training state from {self.training_state_path}: "
                 f"games={self.global_game_num}, lambda={self.lambda_:.4f}, "
-                f"epsilon={self.epsilon:.4f}, alpha={self.alpha:.6f}"
+                f"epsilon={self.epsilon:.4f}, optimizer_steps={self.optimizer_steps}"
             )
         except Exception as exc:
             print(f"Could not load training state from {self.training_state_path}: {exc}. Starting fresh.")
+
+    def _try_load_optimizer_state(self):
+        if not os.path.exists(self.model_save_path):
+            return
+        try:
+            _, meta = load_state_dict(self.model_save_path, device=self.device)
+            opt_state = meta.get("optimizer_state_dict")
+            if opt_state is not None:
+                self.optimizer.load_state_dict(opt_state)
+                print(f"Loaded Adam optimizer state from {self.model_save_path}")
+            else:
+                print(f"Checkpoint at {self.model_save_path} has no optimizer state; starting Adam fresh")
+        except Exception as exc:
+            print(f"Could not load optimizer state from {self.model_save_path}: {exc}. Starting Adam fresh.")
 
     def _evaluate_against_random(self, games_per_color: int):
         def play_game(ai_color: Color):
@@ -287,8 +423,13 @@ class TdLambdaTraining:
         avg_rate = (white_rate + black_rate) / 2.0
         return white_rate, black_rate, avg_rate
 
-    def _apply_trajectory(self, traj):
-        """Run TD(λ) updates from a worker trajectory ending at a real terminal."""
+    def _ingest_trajectory(self, traj):
+        """Compute λ-returns from a worker (or local) trajectory and push to replay buffer.
+
+        Returns stats dict: plies, td_abs_sum, td_count, game_seconds.
+        td_abs_sum/td_count measure |target - V(s)| on the freshly-computed targets
+        (analogous to mean |TD error| in the old code), useful for tracking learning progress.
+        """
         states = traj["states"]
         movers = traj["movers"]
         terminal_winner_white = bool(traj["terminal_winner_white"])
@@ -298,77 +439,57 @@ class TdLambdaTraining:
         if T == 0:
             return {"plies": 0, "td_abs_sum": 0.0, "td_count": 0, "game_seconds": traj.get("game_seconds", 0.0)}
 
-        eligibility_traces = {p: torch.zeros_like(p.data) for p in self.board_evaluator.parameters()}
-        td_abs_sum = 0.0
-        td_count = 0
-
+        # Forward-pass all states once to get bootstrap V values.
+        states_np = np.stack(states)  # shape (T+1, state_dim)
         self.board_evaluator.eval()
-        value_tensor = self.board_evaluator(self._to_model_tensor(states[0]))
+        with torch.no_grad():
+            values = self.board_evaluator(torch.from_numpy(states_np).float().to(self.device)).squeeze(-1).cpu().numpy()
         self.board_evaluator.train()
-        value = value_tensor.item()
 
-        for i in range(T):
-            is_terminal = (i == T - 1)
-            encoded_next = states[i + 1]
-            mover_is_white = movers[i]
+        movers_arr = np.array(movers, dtype=bool)
+        targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_)
 
-            if is_terminal:
-                mover_won = (terminal_winner_white == mover_is_white)
-                reward_from_mover = 1.0 if mover_won else 0.0
-                next_value_from_mover = 0.0
-            else:
-                self.board_evaluator.eval()
-                next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_next))
-                self.board_evaluator.train()
-                next_value = next_value_tensor.item()
-                reward_from_mover = 0.0
-                next_value_from_mover = 1.0 - next_value
+        # Push all T+1 (state, target) pairs into replay buffer.
+        self.replay.push_many(states_np, targets)
 
-            td_error = reward_from_mover + self.gamma * next_value_from_mover - value
-            td_abs_sum += abs(td_error)
-            td_count += 1
+        td_abs_sum = float(np.sum(np.abs(targets - values)))
+        td_count = T + 1
 
-            self.board_evaluator.zero_grad()
-            value_tensor.backward()
+        return {
+            "plies": plies,
+            "td_abs_sum": td_abs_sum,
+            "td_count": td_count,
+            "game_seconds": traj.get("game_seconds", 0.0),
+        }
 
-            with torch.no_grad():
-                for param in self.board_evaluator.parameters():
-                    if param.grad is not None:
-                        eligibility_traces[param] = self.gamma * self.lambda_ * eligibility_traces[param] + param.grad
+    def _train_minibatches(self):
+        """Run self.updates_per_game Adam SGD steps from the replay buffer."""
+        if self.updates_per_game <= 0:
+            return
+        if len(self.replay) < max(1, self.min_buffer_to_train):
+            return
+        for _ in range(self.updates_per_game):
+            states_np, targets_np = self.replay.sample(self.minibatch_size)
+            if states_np is None:
+                return
+            states_t = torch.from_numpy(states_np).float().to(self.device)
+            targets_t = torch.from_numpy(targets_np).float().to(self.device)
 
-                if self.max_grad_norm > 0:
-                    total_norm = sum(t.norm() ** 2 for t in eligibility_traces.values()) ** 0.5
-                    scale = self.max_grad_norm / max(total_norm, self.max_grad_norm)
-                    for param in eligibility_traces:
-                        eligibility_traces[param] = eligibility_traces[param] * scale
+            self._set_lr(self._current_lr())
+            self.optimizer.zero_grad()
+            logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
+            loss = F.binary_cross_entropy_with_logits(logits, targets_t)
+            loss.backward()
+            if self.max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(self.board_evaluator.parameters(), self.max_grad_norm)
+            self.optimizer.step()
+            self.optimizer_steps += 1
 
-                for param in self.board_evaluator.parameters():
-                    if param.grad is not None:
-                        param.data += self.alpha * td_error * eligibility_traces[param]
-
-            if is_terminal:
-                # Ground opponent's terminal state to actual outcome
-                self.board_evaluator.zero_grad()
-                self.board_evaluator.eval()
-                value_tensor_next = self.board_evaluator(self._to_model_tensor(encoded_next))
-                self.board_evaluator.train()
-                value_next = value_tensor_next.item()
-                opponent_target = 1.0 - reward_from_mover
-                td_error_next = opponent_target - value_next
-                td_abs_sum += abs(td_error_next)
-                td_count += 1
-                value_tensor_next.backward()
-                with torch.no_grad():
-                    for param in self.board_evaluator.parameters():
-                        if param.grad is not None:
-                            param.data += self.alpha * td_error_next * param.grad
-            else:
-                self.board_evaluator.eval()
-                value_tensor = self.board_evaluator(self._to_model_tensor(encoded_next))
-                self.board_evaluator.train()
-                value = value_tensor.item()
-
-        return {"plies": plies, "td_abs_sum": td_abs_sum, "td_count": td_count, "game_seconds": traj.get("game_seconds", 0.0)}
+    def _apply_trajectory(self, traj):
+        """Ingest a trajectory and run a round of minibatch SGD updates."""
+        stats = self._ingest_trajectory(traj)
+        self._train_minibatches()
+        return stats
 
     def _get_worker_fn(self):
         from ai.self_play_worker import worker_main
@@ -378,104 +499,39 @@ class TdLambdaTraining:
         weights = {k: v.detach().cpu().numpy().copy() for k, v in self.board_evaluator.state_dict().items()}
         weight_q.put((weights, float(self.epsilon), float(self.exploration_temperature)))
 
-    def train_one_game(self, verbose_log_file=None):
-        """Self-play one full game to a real terminal."""
+    def _play_one_game_local(self, verbose_log_file=None):
+        """Self-play one full game in-process, collecting a trajectory dict matching the
+        worker's output format. No mid-game weight updates."""
         game = Game(self.config)
         log_fh = None
         if verbose_log_file:
             log_fh = open(verbose_log_file, 'w')
         game_start_time = time.perf_counter()
-        plies = 0
-        td_abs_sum = 0.0
-        td_count = 0
 
-        eligibility_traces = {param: torch.zeros_like(param.data) for param in self.board_evaluator.parameters()}
+        states = [self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE)]
+        movers = []
 
-        encoded_board = self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE)
         self.board_evaluator.eval()
-        value_tensor = self.board_evaluator(self._to_model_tensor(encoded_board))
-        self.board_evaluator.train()
-        value = value_tensor.item()
+        try:
+            while True:
+                current_player = game.current_player
+                is_white_to_move = current_player == Color.WHITE
 
-        while True:
-            plies += 1
-            current_player = game.current_player
+                dice = game.dice.roll()
+                possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
 
-            dice = game.dice.roll()
-            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+                move, score = None, None
+                if not possible_moves:
+                    game.switch_turn()
+                    move = "pass"
+                else:
+                    move, score = self._select_move_self_play(game.board, possible_moves, current_player)
+                    game.board.apply(move)
+                    game.switch_turn()
 
-            move, score = None, None
-            if not possible_moves:
-                game.switch_turn()
-                move = "pass"
-            else:
-                move, score = self._select_move_self_play(game.board, possible_moves, current_player)
-                game.board.apply(move)
-                game.switch_turn()
+                movers.append(is_white_to_move)
+                states.append(self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE))
 
-            is_real_terminal = game.is_over()
-            encoded_board_next = self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE)
-
-            if is_real_terminal:
-                winner = game.get_winner()
-                reward = 1 if winner == Color.WHITE else 0
-                reward_from_mover_perspective = reward if current_player == Color.WHITE else 1 - reward
-                next_value_from_mover_perspective = 0.0
-            else:
-                self.board_evaluator.eval()
-                next_value_tensor = self.board_evaluator(self._to_model_tensor(encoded_board_next))
-                self.board_evaluator.train()
-                next_value = next_value_tensor.item()
-                reward_from_mover_perspective = 0.0
-                next_value_from_mover_perspective = 1.0 - next_value
-
-            td_error = reward_from_mover_perspective + self.gamma * next_value_from_mover_perspective - value
-            td_abs_sum += abs(td_error)
-            td_count += 1
-
-            self.board_evaluator.zero_grad()
-            value_tensor.backward()
-
-            with torch.no_grad():
-                for param in self.board_evaluator.parameters():
-                    if param.grad is not None:
-                        eligibility_traces[param] = self.gamma * self.lambda_ * eligibility_traces[param] + param.grad
-
-                if self.max_grad_norm > 0:
-                    total_norm = sum(t.norm() ** 2 for t in eligibility_traces.values()) ** 0.5
-                    scale = self.max_grad_norm / max(total_norm, self.max_grad_norm)
-                    for param in eligibility_traces:
-                        eligibility_traces[param] = eligibility_traces[param] * scale
-
-                for param in self.board_evaluator.parameters():
-                    if param.grad is not None:
-                        param.data += self.alpha * td_error * eligibility_traces[param]
-
-            if is_real_terminal:
-                # Ground opponent's terminal state to actual outcome
-                self.board_evaluator.zero_grad()
-                self.board_evaluator.eval()
-                value_tensor_next = self.board_evaluator(self._to_model_tensor(encoded_board_next))
-                self.board_evaluator.train()
-                value_next = value_tensor_next.item()
-
-                opponent_color = game.current_player
-                target_opponent = reward if opponent_color == Color.WHITE else 1 - reward
-                td_error_next = target_opponent - value_next
-                td_abs_sum += abs(td_error_next)
-                td_count += 1
-                value_tensor_next.backward()
-
-                with torch.no_grad():
-                    for param in self.board_evaluator.parameters():
-                        if param.grad is not None:
-                            param.data += self.alpha * td_error_next * param.grad
-
-                if log_fh:
-                    log_fh.write(f"Game over. Winner is {game.get_winner()}.\n")
-                    log_fh.close()
-                break
-            else:
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
                     log_fh.write(f"Dice: {dice}\n")
@@ -485,22 +541,27 @@ class TdLambdaTraining:
                         log_fh.write(f"Board score: {score}\n")
                     log_fh.write(f"Lambda value: {self.lambda_}.\n")
                     log_fh.write(f"Epsilon value: {self.epsilon}.\n")
-                    log_fh.write(f"TD Error: {td_error}\n")
                     log_fh.write("-" * 20 + "\n")
 
-                self.board_evaluator.eval()
-                value_tensor = self.board_evaluator(self._to_model_tensor(encoded_board_next))
-                self.board_evaluator.train()
-                value = value_tensor.item()
-                encoded_board = encoded_board_next
+                if game.is_over():
+                    if log_fh:
+                        log_fh.write(f"Game over. Winner is {game.get_winner()}.\n")
+                    return {
+                        "states": states,
+                        "movers": movers,
+                        "terminal_winner_white": (game.get_winner() == Color.WHITE),
+                        "plies": len(movers),
+                        "game_seconds": time.perf_counter() - game_start_time,
+                    }
+        finally:
+            self.board_evaluator.train()
+            if log_fh:
+                log_fh.close()
 
-        return {
-            "game_seconds": time.perf_counter() - game_start_time,
-            "plies": plies,
-            "td_abs_sum": td_abs_sum,
-            "td_count": td_count,
-        }
-
+    def train_one_game(self, verbose_log_file=None):
+        """Self-play one full game to a real terminal, then apply replay+Adam updates."""
+        traj = self._play_one_game_local(verbose_log_file=verbose_log_file)
+        return self._apply_trajectory(traj)
 
     def run_training_loop(self):
         if self.num_self_play_workers > 1:
@@ -548,50 +609,15 @@ class TdLambdaTraining:
                 f"Epoch {epoch + 1} timing: {epoch_seconds:.2f}s total, "
                 f"{epoch_games_per_second:.2f} games/s, {epoch_plies_per_second:.2f} plies/s"
             )
-            print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}")
+            print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps})")
             self._save_training_state()
 
             if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                save_checkpoint(self.model_save_path, self.board_evaluator, self.config)
+                save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
                 print(f"Model checkpoint saved at epoch {epoch + 1}")
 
             if (epoch + 1) % self.eval_every_epochs == 0:
-                if self.eval_against_random:
-                    white_rate, black_rate, avg_rate = self._evaluate_against_random(self.eval_games_per_color)
-                    print(
-                        f"Eval vs random @ epoch {epoch + 1}: "
-                        f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                        f"({self.eval_games_per_color} games/color)"
-                    )
-                if self.eval_against_gold:
-                    gold_eval = self._evaluate_against_gold(self.eval_games_per_color)
-                    if gold_eval is None:
-                        print(
-                            f"Eval vs gold @ epoch {epoch + 1}: skipped "
-                            f"(missing or unloadable gold model: {self.gold_model_path})"
-                        )
-                        self._append_gold_eval_log(
-                            epoch_num=epoch + 1,
-                            games_per_color=self.eval_games_per_color,
-                            white_rate=0.0,
-                            black_rate=0.0,
-                            avg_rate=0.0,
-                            status="skipped",
-                        )
-                    else:
-                        white_rate, black_rate, avg_rate = gold_eval
-                        print(
-                            f"Eval vs gold @ epoch {epoch + 1}: "
-                            f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                            f"({self.eval_games_per_color} games/color)"
-                        )
-                        self._append_gold_eval_log(
-                            epoch_num=epoch + 1,
-                            games_per_color=self.eval_games_per_color,
-                            white_rate=white_rate,
-                            black_rate=black_rate,
-                            avg_rate=avg_rate,
-                        )
+                self._run_eval(epoch + 1)
 
         total_seconds = time.perf_counter() - overall_start
         total_games_per_second = run_total_games / total_seconds if total_seconds > 0 else 0.0
@@ -605,9 +631,43 @@ class TdLambdaTraining:
         )
         print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-        save_checkpoint(self.model_save_path, self.board_evaluator, self.config)
+        save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
         self._save_training_state()
         print(f"Model saved to {self.model_save_path}")
+
+    def _run_eval(self, epoch_num: int):
+        if self.eval_against_random:
+            white_rate, black_rate, avg_rate = self._evaluate_against_random(self.eval_games_per_color)
+            print(
+                f"Eval vs random @ epoch {epoch_num}: "
+                f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
+                f"({self.eval_games_per_color} games/color)"
+            )
+        if self.eval_against_gold:
+            gold_eval = self._evaluate_against_gold(self.eval_games_per_color)
+            if gold_eval is None:
+                print(
+                    f"Eval vs gold @ epoch {epoch_num}: skipped "
+                    f"(missing or unloadable gold model: {self.gold_model_path})"
+                )
+                self._append_gold_eval_log(
+                    epoch_num=epoch_num,
+                    games_per_color=self.eval_games_per_color,
+                    white_rate=0.0, black_rate=0.0, avg_rate=0.0,
+                    status="skipped",
+                )
+            else:
+                white_rate, black_rate, avg_rate = gold_eval
+                print(
+                    f"Eval vs gold @ epoch {epoch_num}: "
+                    f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
+                    f"({self.eval_games_per_color} games/color)"
+                )
+                self._append_gold_eval_log(
+                    epoch_num=epoch_num,
+                    games_per_color=self.eval_games_per_color,
+                    white_rate=white_rate, black_rate=black_rate, avg_rate=avg_rate,
+                )
 
     def _run_training_loop_parallel(self):
         import multiprocessing as mp
@@ -683,46 +743,15 @@ class TdLambdaTraining:
                     f"Epoch {epoch + 1} timing: {epoch_seconds:.2f}s total, "
                     f"{epoch_games_per_second:.2f} games/s, {epoch_plies_per_second:.2f} plies/s"
                 )
-                print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}")
+                print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps})")
                 self._save_training_state()
 
                 if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                    save_checkpoint(self.model_save_path, self.board_evaluator, self.config)
+                    save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
                     print(f"Model checkpoint saved at epoch {epoch + 1}")
 
                 if (epoch + 1) % self.eval_every_epochs == 0:
-                    if self.eval_against_random:
-                        white_rate, black_rate, avg_rate = self._evaluate_against_random(self.eval_games_per_color)
-                        print(
-                            f"Eval vs random @ epoch {epoch + 1}: "
-                            f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                            f"({self.eval_games_per_color} games/color)"
-                        )
-                    if self.eval_against_gold:
-                        gold_eval = self._evaluate_against_gold(self.eval_games_per_color)
-                        if gold_eval is None:
-                            print(
-                                f"Eval vs gold @ epoch {epoch + 1}: skipped "
-                                f"(missing or unloadable gold model: {self.gold_model_path})"
-                            )
-                            self._append_gold_eval_log(
-                                epoch_num=epoch + 1,
-                                games_per_color=self.eval_games_per_color,
-                                white_rate=0.0, black_rate=0.0, avg_rate=0.0,
-                                status="skipped",
-                            )
-                        else:
-                            white_rate, black_rate, avg_rate = gold_eval
-                            print(
-                                f"Eval vs gold @ epoch {epoch + 1}: "
-                                f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                                f"({self.eval_games_per_color} games/color)"
-                            )
-                            self._append_gold_eval_log(
-                                epoch_num=epoch + 1,
-                                games_per_color=self.eval_games_per_color,
-                                white_rate=white_rate, black_rate=black_rate, avg_rate=avg_rate,
-                            )
+                    self._run_eval(epoch + 1)
 
             total_seconds = time.perf_counter() - overall_start
             total_games_per_second = run_total_games / total_seconds if total_seconds > 0 else 0.0
@@ -736,7 +765,7 @@ class TdLambdaTraining:
             )
             print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-            save_checkpoint(self.model_save_path, self.board_evaluator, self.config)
+            save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
             self._save_training_state()
             print(f"Model saved to {self.model_save_path}")
         finally:
