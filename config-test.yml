@@ -30,3 +30,8 @@ minibatch_size: 8
 updates_per_game: 1
 min_buffer_to_train: 0
 
+# Prioritized replay
+priority_alpha: 0.6
+priority_beta_start: 0.4
+priority_beta_end: 1.0
+priority_beta_anneal_steps: 10

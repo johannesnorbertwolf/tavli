@@ -22,36 +22,68 @@ import os
 
 
 class ReplayBuffer:
-    """Ring buffer of (encoded_state, target) pairs. Pure numpy, uniform sampling."""
+    """Ring buffer of (encoded_state, target) pairs, sampled with priority^alpha.
 
-    def __init__(self, capacity: int, state_dim: int):
+    Sampling probability is `priority^alpha / Σ(priority^alpha)`. alpha=0 collapses
+    to uniform sampling; alpha=1 is pure proportional. Each sample() also returns
+    importance-sampling weights `w_i = (size · p_i)^(-beta)`, normalized by max(w),
+    to correct the gradient bias introduced by non-uniform sampling.
+
+    New entries get the current max priority so they are seen at least once before
+    their priority is refreshed. Call update_priorities() after each minibatch step
+    with the fresh |TD error| values for the sampled indices.
+    """
+
+    _MIN_PRIORITY = 1e-6
+
+    def __init__(self, capacity: int, state_dim: int, alpha: float = 0.6):
         self.capacity = int(capacity)
         self.state_dim = int(state_dim)
+        self.alpha = float(alpha)
         self.states = np.zeros((self.capacity, self.state_dim), dtype=np.float32)
         self.targets = np.zeros(self.capacity, dtype=np.float32)
+        self.priorities = np.zeros(self.capacity, dtype=np.float64)
         self.size = 0
         self.cursor = 0
+        self._max_priority = 1.0
 
     def __len__(self):
         return self.size
 
-    def push(self, state: np.ndarray, target: float):
+    def push(self, state: np.ndarray, target: float, priority=None):
+        p = max(abs(float(priority)), self._MIN_PRIORITY) if priority is not None else self._max_priority
+        self._max_priority = max(self._max_priority, p)
         self.states[self.cursor] = state
         self.targets[self.cursor] = target
+        self.priorities[self.cursor] = p
         self.cursor = (self.cursor + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
 
-    def push_many(self, states: np.ndarray, targets: np.ndarray):
+    def push_many(self, states: np.ndarray, targets: np.ndarray, priorities=None):
         n = states.shape[0]
         for i in range(n):
-            self.push(states[i], float(targets[i]))
+            p = float(priorities[i]) if priorities is not None else None
+            self.push(states[i], float(targets[i]), p)
 
-    def sample(self, batch_size: int):
+    def sample(self, batch_size: int, beta: float = 1.0):
         if self.size == 0:
-            return None, None
+            return None, None, None, None
         k = min(batch_size, self.size)
-        idx = np.random.randint(0, self.size, size=k)
-        return self.states[idx], self.targets[idx]
+        raw = self.priorities[:self.size]
+        scaled = raw ** self.alpha
+        probs = scaled / scaled.sum()
+        idx = np.random.choice(self.size, size=k, replace=False, p=probs)
+
+        # IS weights: w_i = (N · p_i)^(-beta), normalized so max(w) == 1
+        weights = (self.size * probs[idx]) ** (-float(beta))
+        weights = weights / weights.max()
+        return self.states[idx], self.targets[idx], idx, weights.astype(np.float32)
+
+    def update_priorities(self, indices: np.ndarray, td_errors: np.ndarray):
+        new_p = np.maximum(np.abs(np.asarray(td_errors, dtype=np.float64)), self._MIN_PRIORITY)
+        self.priorities[indices] = new_p
+        if new_p.size > 0:
+            self._max_priority = max(self._max_priority, float(new_p.max()))
 
 
 def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
@@ -148,6 +180,12 @@ class TdLambdaTraining:
         self.updates_per_game = max(0, int(self.config.get_updates_per_game()))
         self.min_buffer_to_train = max(0, int(self.config.get_min_buffer_to_train()))
 
+        # Prioritized replay knobs
+        self.priority_alpha = max(0.0, float(self.config.get_priority_alpha()))
+        self.priority_beta_start = float(self.config.get_priority_beta_start())
+        self.priority_beta_end = float(self.config.get_priority_beta_end())
+        self.priority_beta_anneal_steps = max(0, int(self.config.get_priority_beta_anneal_steps()))
+
         self.eval_every_epochs = max(1, int(self.config.get_eval_every_epochs()))
         self.eval_games_per_color = max(1, int(self.config.get_eval_games_per_color()))
         self.eval_seed = self.config.get_eval_seed()
@@ -165,7 +203,7 @@ class TdLambdaTraining:
         self.model_save_path = "trained_model.pth"
 
         # Replay buffer + Adam optimizer
-        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size)
+        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size, alpha=self.priority_alpha)
         self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=self.learning_rate)
         self.optimizer_steps = 0
 
@@ -230,6 +268,12 @@ class TdLambdaTraining:
             return
         progress = min(self.global_game_num, self.lambda_decay_games) / self.lambda_decay_games
         self.lambda_ = self.lambda_end + (self.lambda_start - self.lambda_end) * np.exp(-1.0 * progress * 10.0)
+
+    def _current_priority_beta(self) -> float:
+        if self.priority_beta_anneal_steps <= 0:
+            return self.priority_beta_end
+        frac = min(1.0, self.optimizer_steps / float(self.priority_beta_anneal_steps))
+        return self.priority_beta_start + (self.priority_beta_end - self.priority_beta_start) * frac
 
     def _current_lr(self) -> float:
         if self.lr_warmup_steps <= 0:
@@ -449,10 +493,11 @@ class TdLambdaTraining:
         movers_arr = np.array(movers, dtype=bool)
         targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_)
 
-        # Push all T+1 (state, target) pairs into replay buffer.
-        self.replay.push_many(states_np, targets)
+        # Push all T+1 (state, target) pairs; priority = |TD error| at ingest time.
+        td_errors = np.abs(targets - values)
+        self.replay.push_many(states_np, targets, td_errors)
 
-        td_abs_sum = float(np.sum(np.abs(targets - values)))
+        td_abs_sum = float(np.sum(td_errors))
         td_count = T + 1
 
         return {
@@ -469,21 +514,29 @@ class TdLambdaTraining:
         if len(self.replay) < max(1, self.min_buffer_to_train):
             return
         for _ in range(self.updates_per_game):
-            states_np, targets_np = self.replay.sample(self.minibatch_size)
+            beta = self._current_priority_beta()
+            states_np, targets_np, indices, weights_np = self.replay.sample(self.minibatch_size, beta=beta)
             if states_np is None:
                 return
             states_t = torch.from_numpy(states_np).float().to(self.device)
             targets_t = torch.from_numpy(targets_np).float().to(self.device)
+            weights_t = torch.from_numpy(weights_np).float().to(self.device)
 
             self._set_lr(self._current_lr())
             self.optimizer.zero_grad()
             logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
-            loss = F.binary_cross_entropy_with_logits(logits, targets_t)
+            per_sample = F.binary_cross_entropy_with_logits(logits, targets_t, reduction="none")
+            loss = (weights_t * per_sample).mean()
+            # Capture pre-step predictions for priority refresh (saves a second forward pass).
+            pre_preds = torch.sigmoid(logits).detach().cpu().numpy()
             loss.backward()
             if self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.board_evaluator.parameters(), self.max_grad_norm)
             self.optimizer.step()
             self.optimizer_steps += 1
+
+            fresh_td_errors = np.abs(targets_np - pre_preds)
+            self.replay.update_priorities(indices, fresh_td_errors)
 
     def _apply_trajectory(self, traj):
         """Ingest a trajectory and run a round of minibatch SGD updates."""

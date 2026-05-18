@@ -128,3 +128,15 @@ class ConfigLoader:
 
     def get_min_buffer_to_train(self):
         return int(self.config.get("min_buffer_to_train", 2000))
+
+    def get_priority_alpha(self):
+        return float(self.config.get("priority_alpha", 0.6))
+
+    def get_priority_beta_start(self):
+        return float(self.config.get("priority_beta_start", 0.4))
+
+    def get_priority_beta_end(self):
+        return float(self.config.get("priority_beta_end", 1.0))
+
+    def get_priority_beta_anneal_steps(self):
+        return int(self.config.get("priority_beta_anneal_steps", 100000))

@@ -81,8 +81,10 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 ### I7. Categorical value head
 **Why**: Output {loss, normal win, pin-trap win} as 3 logits, cross-entropy loss. Forces representation to separate win modes that have different positional signatures. Light architectural change.
 
-### I8. Prioritized replay from #D2
+### I8. Prioritized replay from #D2 — DONE ✓
 **Why**: Once #D2 is logging hard positions, up-weight those samples in the replay buffer (needs #I1 first). Effectively a hard-example mining loop.
+
+**Outcome**: Implemented. `ReplayBuffer` now tracks per-sample priority (= |TD error| at push time). Sampling is proportional to priority instead of uniform. After each Adam step, fresh |TD errors| update priorities for the sampled batch so the buffer stays current as weights change. New samples always enter at max-priority to guarantee they are seen at least once.
 
 ---
 

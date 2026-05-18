@@ -45,3 +45,9 @@ replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
 updates_per_game: 5            # Adam SGD steps run per ingested trajectory
 min_buffer_to_train: 2000      # Don't start training until buffer holds at least this many samples
+
+# Prioritized replay (I8): sample probability ∝ priority^alpha; importance-sampling weights anneal β over training
+priority_alpha: 0.6                # 0 = uniform sampling, 1 = pure proportional; Schaul et al. use 0.6
+priority_beta_start: 0.4           # IS correction strength at start of training
+priority_beta_end: 1.0             # Full IS correction at end of anneal
+priority_beta_anneal_steps: 100000 # Linearly anneal β over this many optimizer steps
