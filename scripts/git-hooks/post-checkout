@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Auto-seed newly-created worktrees with the model + state from the main repo.
+#
+# Fires on every `git checkout` and also on `git worktree add` (which checks
+# out a branch in the new worktree). The setup script is idempotent and skips
+# any files that already exist, so this is safe to invoke on every checkout.
+
+# post-checkout args: $1 = prev_HEAD, $2 = new_HEAD, $3 = flag (1 = branch checkout)
+[[ "${3:-0}" != "1" ]] && exit 0
+
+worktree_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+setup="$worktree_root/scripts/setup_worktree.sh"
+
+[[ -x "$setup" ]] && exec "$setup"
