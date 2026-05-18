@@ -1,82 +1,113 @@
 import unittest
-from pathlib import Path
-from domain.board import GameBoard
-from domain.point import Point
-from domain.color import Color
-from config.config_loader import ConfigLoader
+
+from domain import Board, WHITE, BLACK, HalfMove, Move
 
 
-class TestGameBoard(unittest.TestCase):
-    def setUp(self):
-        config_path = Path(__file__).resolve().parents[2] / "config-test.yml"
-        config = ConfigLoader(str(config_path))
-        self.board = GameBoard(config)
-        self.board.initialize_board()
+def _make(board_size: int = 24, home_size: int = 6, pieces: int = 15) -> Board:
+    return Board(board_size=board_size, home_size=home_size, pieces_per_player=pieces)
 
-    def test_initial_setup(self):
-        self.assertEqual(len(self.board.points[24]), 15)
-        self.assertEqual(self.board.points[24].is_white(), False)
-        self.assertEqual(len(self.board.points[1]), 15)
-        self.assertEqual(self.board.points[1].is_white(), True)
 
-    def test_string(self):
-        actual = str(self.board)
-        expected = """25: 
---------------------
-24: XXXXXXXXXXXXXXX
-23: 
-22: 
-21: 
-20: 
-19: 
---------------------
-18: 
-17: 
-16: 
-15: 
-14: 
-13: 
-12: 
-11: 
-10: 
- 9: 
- 8: 
- 7: 
---------------------
- 6: 
- 5: 
- 4: 
- 3: 
- 2: 
- 1: OOOOOOOOOOOOOOO
---------------------
- 0: """
-        self.assertEqual(actual, expected)
+class TestBoardState(unittest.TestCase):
+    def test_initial_position(self):
+        b = Board.initial(board_size=24, home_size=6, pieces_per_player=15)
+        self.assertEqual(b.n[1], 15)
+        self.assertEqual(b.color[1], WHITE)
+        self.assertEqual(b.n[24], 15)
+        self.assertEqual(b.color[24], BLACK)
+        self.assertEqual(b.borne_off[WHITE], 0)
+        self.assertEqual(b.borne_off[BLACK], 0)
 
-    def test_white_wins_by_bearing_off(self):
-        board_size = self.board.board_size
-        pieces = self.board.number_of_pieces
-        for i in range(0, board_size + 2):
-            self.board.points[i] = Point(i)
-        self.board.points[board_size + 1] = Point(board_size + 1, Color.WHITE, pieces)
-        self.assertTrue(self.board.has_won(Color.WHITE))
-        self.assertFalse(self.board.has_won(Color.BLACK))
+    def test_apply_undo_simple_move_is_symmetric(self):
+        b = _make()
+        b.set_point(5, WHITE, 3)
+        b.set_point(6, WHITE, 1)
+        snap = (b.n[:], b.color[:], b.pinned[:], dict(b.borne_off))
 
-    def test_black_wins_by_bearing_off(self):
-        board_size = self.board.board_size
-        pieces = self.board.number_of_pieces
-        for i in range(0, board_size + 2):
-            self.board.points[i] = Point(i)
-        self.board.points[0] = Point(0, Color.BLACK, pieces)
-        self.assertTrue(self.board.has_won(Color.BLACK))
-        self.assertFalse(self.board.has_won(Color.WHITE))
+        token = b.apply(Move((HalfMove(5, 6),)), WHITE)
+        self.assertEqual(b.n[5], 2)
+        self.assertEqual(b.n[6], 2)
+        self.assertEqual(b.color[6], WHITE)
 
-    def test_white_wins_by_capturing_start(self):
-        board_size = self.board.board_size
-        # Black starting point captured by white: [Black, White]
-        self.board.points[board_size] = Point(board_size, Color.BLACK, 1)
-        self.board.points[board_size].push(Color.WHITE)
-        self.assertTrue(self.board.has_won(Color.WHITE))
+        b.undo(token)
+        self.assertEqual((b.n[:], b.color[:], b.pinned[:], dict(b.borne_off)), snap)
 
-if __name__ == '__main__':
+    def test_pinning_via_push(self):
+        b = _make()
+        b.set_point(5, WHITE, 1)
+        b.set_point(6, BLACK, 1)  # a blot to be pinned
+        token = b.apply(Move((HalfMove(5, 6),)), WHITE)
+        self.assertEqual(b.n[6], 1)            # one owner (white) on top
+        self.assertEqual(b.color[6], WHITE)
+        self.assertTrue(b.pinned[6])
+        self.assertTrue(b.is_captured_by(6, WHITE))
+        # Pinned black can't move.
+        self.assertEqual(b.movable_count(6, BLACK), 0)
+
+        b.undo(token)
+        self.assertEqual(b.n[6], 1)
+        self.assertEqual(b.color[6], BLACK)
+        self.assertFalse(b.pinned[6])
+
+    def test_pin_released_when_last_owner_leaves(self):
+        b = _make()
+        # 6 is owned by W with 1 owner + B pinned underneath
+        b.set_point(6, WHITE, 1, pinned=True)
+        b.set_point(7, WHITE, 0)
+        # Move 6 -> 7. The white owner leaves 6; the trapped black becomes a blot.
+        token = b.apply(Move((HalfMove(6, 7),)), WHITE)
+        self.assertEqual(b.n[6], 1)
+        self.assertEqual(b.color[6], BLACK)
+        self.assertFalse(b.pinned[6])
+        self.assertEqual(b.n[7], 1)
+        self.assertEqual(b.color[7], WHITE)
+
+        b.undo(token)
+        self.assertEqual(b.color[6], WHITE)
+        self.assertTrue(b.pinned[6])
+        self.assertEqual(b.n[7], 0)
+
+    def test_bear_off_updates_borne_off_and_undoes(self):
+        b = _make()
+        b.set_point(24, WHITE, 1)
+        token = b.apply(Move((HalfMove(24, 25),)), WHITE)
+        self.assertEqual(b.borne_off[WHITE], 1)
+        self.assertEqual(b.n[25], 1)
+        self.assertEqual(b.color[25], WHITE)
+
+        b.undo(token)
+        self.assertEqual(b.borne_off[WHITE], 0)
+        self.assertEqual(b.n[25], 0)
+        self.assertEqual(b.n[24], 1)
+
+    def test_count_outside_home_includes_pinned_checkers(self):
+        b = _make()
+        # White owns 10 with 2 whites + pinned black underneath. Black home is 1-6.
+        # So the pinned black at 10 is outside-home for black.
+        b.set_point(10, WHITE, 2, pinned=True)
+        b.set_point(5, BLACK, 13)  # 13 blacks already in home
+        self.assertEqual(b.count_outside_home(BLACK), 1)
+        self.assertEqual(b.count_outside_home(WHITE), 2)
+
+    def test_has_won_by_bear_off(self):
+        b = _make()
+        b.borne_off[WHITE] = 15
+        self.assertTrue(b.has_won(WHITE))
+        self.assertFalse(b.has_won(BLACK))
+
+    def test_has_won_by_capturing_starting_point(self):
+        b = _make()
+        # White pins black's starting point (24).
+        b.set_point(24, WHITE, 2, pinned=True)
+        self.assertTrue(b.has_won(WHITE))
+        self.assertFalse(b.has_won(BLACK))
+
+    def test_clone_is_independent(self):
+        b = Board.initial(board_size=24, home_size=6, pieces_per_player=15)
+        c = b.clone()
+        c.set_point(5, WHITE, 1)
+        self.assertEqual(b.n[5], 0)
+        self.assertEqual(c.n[5], 1)
+
+
+if __name__ == "__main__":
     unittest.main()

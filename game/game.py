@@ -1,28 +1,28 @@
-from domain.board import GameBoard
+from domain.board import Board
 from domain.dice import Dice
-from domain.color import Color
+from domain.constants import WHITE, BLACK
 from config.config_loader import ConfigLoader
 
 
 class Game:
-    def __init__(self, config: ConfigLoader, starting_player: Color = Color.BLACK):
-        self.board = GameBoard(config)
-        self.board.initialize_board()
+    def __init__(self, config: ConfigLoader, starting_player: int = BLACK):
+        self.board = Board.initial(config)
         self.dice = Dice(config.get_die_sides())
         self.player = starting_player
 
     def __str__(self):
-        result = f"{self.current_player.name}'s turn ({self.current_player})\n"
+        color_name = "White" if self.player == WHITE else "Black"
+        result = f"{color_name}'s turn\n"
         result += f"Rolled: {self.dice.die1} and {self.dice.die2}\n"
         result += str(self.board)
         return result
 
     def print_with_scored_possible_moves(self, possible_moves, move_scores):
-        result = f"{self.current_player.name}'s turn ({self.current_player})\n"
+        color_name = "White" if self.player == WHITE else "Black"
+        result = f"{color_name}'s turn\n"
         result += f"Rolled: {self.dice.die1} and {self.dice.die2}\n"
         result += "Possible moves (sorted by AI evaluation):\n"
 
-        # Always sort moves from highest score to lowest, as a higher score is always better
         sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
 
         for idx, (move, score) in enumerate(sorted_moves):
@@ -36,17 +36,17 @@ class Game:
         return self.player
 
     def switch_turn(self):
-        self.player = Color.BLACK if self.player == Color.WHITE else Color.WHITE
+        self.player = -self.player
 
     def is_over(self):
-        return self.board.has_won(Color.WHITE) or self.board.has_won(Color.BLACK)
+        return self.board.has_won(WHITE) or self.board.has_won(BLACK)
 
     def get_winner(self):
-        if self.board.has_won(Color.WHITE):
-            return Color.WHITE
-        if self.board.has_won(Color.BLACK):
-            return Color.BLACK
+        if self.board.has_won(WHITE):
+            return WHITE
+        if self.board.has_won(BLACK):
+            return BLACK
         return None
 
-    def check_winner(self, color: Color):
+    def check_winner(self, color: int):
         return self.board.has_won(color)

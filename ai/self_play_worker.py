@@ -18,8 +18,8 @@ from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from ai.checkpoint_io import ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
-from domain.color import Color
-from domain.possible_moves import PossibleMoves
+from domain.constants import WHITE
+from domain.move_generation import legal_moves
 from game.game import Game
 
 
@@ -45,30 +45,30 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     t0 = time.perf_counter()
     game = Game(config)
 
-    states = [encoder.encode_board(game.board, game.current_player == Color.WHITE)]
+    states = [encoder.encode_board(game.board, game.current_player == WHITE)]
     movers = []
 
     while True:
         current_player = game.current_player
-        is_white_to_move = current_player == Color.WHITE
+        is_white_to_move = current_player == WHITE
 
         game.dice.roll()
-        possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+        possible_moves = legal_moves(game.board, current_player, game.dice)
         if not possible_moves:
             game.switch_turn()
         else:
             move = _select_self_play_move(agent, game.board, possible_moves, current_player,
                                           epsilon, exploration_temperature)
-            game.board.apply(move)
+            token = game.board.apply(move, current_player)
             game.switch_turn()
         movers.append(is_white_to_move)
-        states.append(encoder.encode_board(game.board, game.current_player == Color.WHITE))
+        states.append(encoder.encode_board(game.board, game.current_player == WHITE))
 
         if game.is_over():
             return {
                 "states": states,
                 "movers": movers,
-                "terminal_winner_white": (game.get_winner() == Color.WHITE),
+                "terminal_winner_white": (game.get_winner() == WHITE),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,
             }

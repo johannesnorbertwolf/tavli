@@ -1,9 +1,9 @@
 from typing import List
 
-from domain_v2.board import Board
-from domain_v2.constants import WHITE
-from domain_v2.dice import Dice
-from domain_v2.move import HalfMove, Move
+from domain.board import Board
+from domain.constants import WHITE
+from domain.dice import Dice
+from domain.move import HalfMove, Move
 
 
 def legal_moves(board: Board, color: int, dice: Dice) -> List[Move]:

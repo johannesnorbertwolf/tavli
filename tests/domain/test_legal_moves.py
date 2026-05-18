@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from domain_v2 import Board, Dice, HalfMove, Move, WHITE, BLACK, legal_moves
+from domain import Board, Dice, HalfMove, Move, WHITE, BLACK, legal_moves
 from config.config_loader import ConfigLoader
 
 

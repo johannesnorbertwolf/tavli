@@ -1,7 +1,7 @@
 import numpy as np
 
-from domain.color import Color
-from domain.board import GameBoard
+from domain.board import Board
+from domain.constants import WHITE, BLACK
 from config.config_loader import ConfigLoader
 
 # Encoder versions kept for backward compatibility.
@@ -32,46 +32,46 @@ class BoardEncoder:
     def input_size(self) -> int:
         return self._raw_size + self._smart_size
 
-    def encode_board(self, board: GameBoard, is_whites_turn: bool) -> np.ndarray:
+    def encode_board(self, board: Board, is_whites_turn: bool) -> np.ndarray:
         if self.version == LEGACY_V1:
             return self._encode_legacy(board, is_whites_turn)
         return self._encode_modern(board, is_whites_turn)
 
-    def _encode_legacy(self, board: GameBoard, is_whites_turn: bool) -> np.ndarray:
+    def _encode_legacy(self, board: Board, is_whites_turn: bool) -> np.ndarray:
         out = np.zeros(self._raw_size, dtype=np.float32)
         ps = self.point_size
-        our = Color.WHITE if is_whites_turn else Color.BLACK
-        their = Color.BLACK if is_whites_turn else Color.WHITE
+        our = WHITE if is_whites_turn else BLACK
+        their = BLACK if is_whites_turn else WHITE
         n = self._num_points
 
         for slot in range(n):
-            point_index = slot if is_whites_turn else (n - 1 - slot)
-            point = board.points[point_index]
-            if point.is_empty():
+            pi = slot if is_whites_turn else (n - 1 - slot)
+            if board.n[pi] == 0:
                 continue
             base = slot * ps
-            is_ours = point.is_color(our)
+            is_ours = board.color[pi] == our
             # legacy color bits: [1, 0] = ours, [1, 1] = theirs
             out[base] = 1.0
             if not is_ours:
                 out[base + 1] = 1.0
-            if point.is_captured_by(our):
+            if board.pinned[pi] and board.color[pi] == our:
                 out[base + 2] = 1.0
-            if point.is_captured_by(their):
+            if board.pinned[pi] and board.color[pi] == their:
                 out[base + 3] = 1.0
-            count = point.get_count()
+            count = board.n[pi]
             if count:
                 out[base + 4 : base + 4 + count] = 1.0
         return out
 
-    def _encode_modern(self, board: GameBoard, is_whites_turn: bool) -> np.ndarray:
+    def _encode_modern(self, board: Board, is_whites_turn: bool) -> np.ndarray:
         is_v3 = self.version == UNARY_V3
         out = np.zeros(self.input_size, dtype=np.float32)
         ps = self.point_size
         bs = self.board_size
         ppp = self.pieces_per_player
         n = self._num_points
-        our = Color.WHITE if is_whites_turn else Color.BLACK
+        our = WHITE if is_whites_turn else BLACK
+        their = BLACK if is_whites_turn else WHITE
 
         # In flipped (current-player) coordinates:
         #   slot 0       = opponent's bear-off
@@ -95,10 +95,9 @@ class BoardEncoder:
         their_run = 0; their_max_prime = 0
 
         for slot in range(n):
-            point_index = slot if is_whites_turn else (n - 1 - slot)
-            point = board.points[point_index]
+            pi = slot if is_whites_turn else (n - 1 - slot)
 
-            if point.is_empty():
+            if board.n[pi] == 0:
                 if is_v3:
                     if our_run > our_max_prime:
                         our_max_prime = our_run
@@ -109,12 +108,13 @@ class BoardEncoder:
                 continue
 
             base = slot * ps
-            is_ours = point.is_color(our)
-            count = point.get_count()
-            captured_by_our = point.is_captured_by(our)
-            captured_by_their = (
-                False if captured_by_our else point.is_captured()  # mutually exclusive
-            )
+            ni = board.n[pi]
+            ci = board.color[pi]
+            pi_pinned = board.pinned[pi]
+            is_ours = ci == our
+            count = ni
+            captured_by_our = pi_pinned and ci == our
+            captured_by_their = pi_pinned and ci == their
 
             # Per-point raw encoding (unary_v2 layout):
             #   [color_bit, captured_by_us, captured_by_them, unary_count...]
@@ -147,7 +147,7 @@ class BoardEncoder:
             # prime / home accounting since these aren't on-board positions.
             if slot == 0:
                 their_borne += their_count
-                our_borne += our_count  # shouldn't normally happen, kept for safety
+                our_borne += our_count
                 if our_run > our_max_prime:
                     our_max_prime = our_run
                 if their_run > their_max_prime:
@@ -157,7 +157,7 @@ class BoardEncoder:
                 continue
             if slot == last_slot:
                 our_borne += our_count
-                their_borne += their_count  # same safety note
+                their_borne += their_count
                 if our_run > our_max_prime:
                     our_max_prime = our_run
                 if their_run > their_max_prime:
