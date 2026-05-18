@@ -15,4 +15,3 @@ training_state.json
 .stop_training
 local_tools/
 .claude/
-models/
