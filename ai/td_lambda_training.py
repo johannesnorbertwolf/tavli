@@ -10,10 +10,10 @@ from ai.checkpoint_io import (
     _migrate_state_dict,
     load_state_dict,
 )
-from domain.color import Color
+from domain.constants import WHITE, BLACK
+from domain.move_generation import legal_moves
 from game.game import Game
 from tqdm import tqdm
-from domain.possible_moves import PossibleMoves
 import numpy as np
 import random
 import time
@@ -290,12 +290,12 @@ class TdLambdaTraining:
             print(f"Could not load optimizer state from {self.model_save_path}: {exc}. Starting Adam fresh.")
 
     def _evaluate_against_random(self, games_per_color: int):
-        def play_game(ai_color: Color):
-            game = Game(self.config, starting_player=Color.WHITE)
+        def play_game(ai_color: int):
+            game = Game(self.config, starting_player=WHITE)
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
-                possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+                possible_moves = legal_moves(game.board, current_player, game.dice)
                 if not possible_moves:
                     game.switch_turn()
                     continue
@@ -308,7 +308,7 @@ class TdLambdaTraining:
                 else:
                     move = self.random_agent.get_move(possible_moves)
 
-                game.board.apply(move)
+                game.board.apply(move, current_player)
                 game.switch_turn()
             return game.get_winner()
 
@@ -321,13 +321,13 @@ class TdLambdaTraining:
             np.random.seed(eval_seed)
             white_wins = 0
             for _ in range(games_per_color):
-                if play_game(Color.WHITE) == Color.WHITE:
+                if play_game(WHITE) == WHITE:
                     white_wins += 1
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             black_wins = 0
             for _ in range(games_per_color):
-                if play_game(Color.BLACK) == Color.BLACK:
+                if play_game(BLACK) == BLACK:
                     black_wins += 1
         finally:
             random.setstate(py_state)
@@ -369,12 +369,12 @@ class TdLambdaTraining:
         if self.gold_agent is None:
             return None
 
-        def play_game(candidate_color: Color):
-            game = Game(self.config, starting_player=Color.WHITE)
+        def play_game(candidate_color: int):
+            game = Game(self.config, starting_player=WHITE)
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
-                possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+                possible_moves = legal_moves(game.board, current_player, game.dice)
                 if not possible_moves:
                     game.switch_turn()
                     continue
@@ -390,7 +390,7 @@ class TdLambdaTraining:
                         lookahead_plies=self.eval_gold_lookahead_plies,
                     )
 
-                game.board.apply(move)
+                game.board.apply(move, current_player)
                 game.switch_turn()
             return game.get_winner()
 
@@ -404,13 +404,13 @@ class TdLambdaTraining:
             np.random.seed(eval_seed)
             white_wins = 0
             for _ in range(games_per_color):
-                if play_game(Color.WHITE) == Color.WHITE:
+                if play_game(WHITE) == WHITE:
                     white_wins += 1
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             black_wins = 0
             for _ in range(games_per_color):
-                if play_game(Color.BLACK) == Color.BLACK:
+                if play_game(BLACK) == BLACK:
                     black_wins += 1
         finally:
             random.setstate(py_state)
@@ -508,17 +508,17 @@ class TdLambdaTraining:
             log_fh = open(verbose_log_file, 'w')
         game_start_time = time.perf_counter()
 
-        states = [self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE)]
+        states = [self.board_encoder.encode_board(game.board, game.current_player == WHITE)]
         movers = []
 
         self.board_evaluator.eval()
         try:
             while True:
                 current_player = game.current_player
-                is_white_to_move = current_player == Color.WHITE
+                is_white_to_move = current_player == WHITE
 
                 dice = game.dice.roll()
-                possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+                possible_moves = legal_moves(game.board, current_player, game.dice)
 
                 move, score = None, None
                 if not possible_moves:
@@ -526,11 +526,11 @@ class TdLambdaTraining:
                     move = "pass"
                 else:
                     move, score = self._select_move_self_play(game.board, possible_moves, current_player)
-                    game.board.apply(move)
+                    game.board.apply(move, current_player)
                     game.switch_turn()
 
                 movers.append(is_white_to_move)
-                states.append(self.board_encoder.encode_board(game.board, game.current_player == Color.WHITE))
+                states.append(self.board_encoder.encode_board(game.board, game.current_player == WHITE))
 
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
@@ -549,7 +549,7 @@ class TdLambdaTraining:
                     return {
                         "states": states,
                         "movers": movers,
-                        "terminal_winner_white": (game.get_winner() == Color.WHITE),
+                        "terminal_winner_white": (game.get_winner() == WHITE),
                         "plies": len(movers),
                         "game_seconds": time.perf_counter() - game_start_time,
                     }

@@ -13,10 +13,10 @@ from ai.board_encoder import BoardEncoder
 from ai.checkpoint_io import load_agent_from_checkpoint, load_state_dict, ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
 from ai.td_lambda_training import TdLambdaTraining
-from domain.possible_moves import PossibleMoves
+from domain.move_generation import legal_moves
 from game.game import Game
 from ai.agent import RandomAgent
-from domain.color import Color
+from domain.constants import WHITE, BLACK
 
 
 def _percentile(sorted_values, p):
@@ -557,7 +557,7 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
         game.dice.roll()
         dice_values = (game.dice.die1.value, game.dice.die2.value)
 
-        possible_moves = PossibleMoves(game.board, game.current_player, game.dice).find_moves()
+        possible_moves = legal_moves(game.board, game.current_player, game.dice)
 
         if not possible_moves:
             print(game.board)
@@ -567,8 +567,8 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
             game.switch_turn()
             continue
 
-        if game.current_player == Color.WHITE:
-            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, Color.WHITE, lookahead_plies=2)
+        if game.current_player == WHITE:
+            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, WHITE, lookahead_plies=2)
             sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
             print_board_with_moves(game.board, game.current_player, dice_values, sorted_moves)
             while True:
@@ -581,19 +581,19 @@ def play_against_ai(config, model_load_path="trained_model.pth"):
                 except ValueError:
                     print("Invalid input. Please enter a valid number.")
         else:
-            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, Color.BLACK, lookahead_plies=2)
+            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, BLACK, lookahead_plies=2)
             sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
             print_board_with_moves(game.board, game.current_player, dice_values, sorted_moves)
             chosen_move = sorted_moves[0][0]
             print(f"AI chose move: {chosen_move}")
 
-        game.board.apply(chosen_move)
+        game.board.apply(chosen_move, game.current_player)
 
         if game.is_over():
             print(game.board)
             winner = game.get_winner()
-            print(f"\n{winner} has won the game!")
-            human_won = (winner == Color.WHITE)
+            print(f"\n{'White' if winner == WHITE else 'Black'} has won the game!")
+            human_won = (winner == WHITE)
             result = "win" if human_won else "loss"
             _log_human_game(model_load_path, result)
             _print_human_record()
@@ -620,12 +620,12 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
     py_state = random.getstate()
     np_state = np.random.get_state()
 
-    def play_game(ai_color: Color):
-        game = Game(config, starting_player=Color.WHITE)
+    def play_game(ai_color: int):
+        game = Game(config, starting_player=WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+            possible_moves = legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -633,12 +633,12 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
                 move, _ = ai_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=candidate_lookahead)
             else:
                 move = random_agent.get_move(possible_moves)
-            game.board.apply(move)
+            game.board.apply(move, current_player)
             game.switch_turn()
         return game.get_winner()
 
     try:
-        for ai_color in (Color.WHITE, Color.BLACK):
+        for ai_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             wins = 0
@@ -682,12 +682,12 @@ def evaluate_against_gold(
     py_state = random.getstate()
     np_state = np.random.get_state()
 
-    def play_game(candidate_color: Color):
-        game = Game(config, starting_player=Color.WHITE)
+    def play_game(candidate_color: int):
+        game = Game(config, starting_player=WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+            possible_moves = legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -695,12 +695,12 @@ def evaluate_against_gold(
                 move, _ = candidate_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=candidate_lookahead)
             else:
                 move, _ = gold_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=gold_lookahead)
-            game.board.apply(move)
+            game.board.apply(move, current_player)
             game.switch_turn()
         return game.get_winner()
 
     try:
-        for candidate_color in (Color.WHITE, Color.BLACK):
+        for candidate_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             wins = 0

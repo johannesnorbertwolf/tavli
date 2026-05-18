@@ -18,8 +18,8 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 
 Tests use `unittest` — run from repo root:
 ```bash
-.venv/bin/python -m unittest tests/domain/test_possible_moves.py -v   # single file
-.venv/bin/python -m unittest discover tests/ -v                        # all tests
+.venv/bin/python -m unittest tests/domain/test_legal_moves.py -v   # single file
+.venv/bin/python -m unittest discover tests/ -v                     # all tests
 ```
 
 Test config is at `config-test.yml` (minimal: 1 epoch, 1 game, no gold eval).
@@ -71,7 +71,7 @@ When constructing a `BoardEvaluator` for a loaded checkpoint, always derive `inp
 
 When bumping encoder version mid-project, training cannot resume from an old `trained_model.pth` (input dimension mismatch); `main.py` catches the load error and starts fresh. Delete `trained_model.pth` and `training_state.json` to start a clean run.
 
-Future encoder optimization ideas (GPU fixed-features layer, incremental caching on `GameBoard`) are documented in `docs/encoder_optimization_ideas.md`.
+Future encoder optimization ideas (GPU fixed-features layer, incremental caching on `Board`) are documented in `docs/encoder_optimization_ideas.md`.
 
 ### Network (`ai/board_evaluator.py`)
 

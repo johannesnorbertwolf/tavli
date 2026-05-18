@@ -1,63 +1,75 @@
 import unittest
 import numpy as np
-from domain.color import Color
-from domain.point import Point
-from domain.board import GameBoard
+from domain.board import Board
+from domain.constants import WHITE, BLACK
 from config.config_loader import ConfigLoader
-from ai.board_encoder import BoardEncoder
+from ai.board_encoder import BoardEncoder, LEGACY_V1, UNARY_V2, UNARY_V3
+
+CONFIG_PATH = "config-test.yml"
+
 
 class TestBoardEncoder(unittest.TestCase):
     def setUp(self):
-        # Setting up a mock configuration
-        self.config = ConfigLoader("../config-test.yml")  # Adjust path if needed
-        self.board = GameBoard(self.config)
-        self.encoder = BoardEncoder(self.config)
+        self.config = ConfigLoader(CONFIG_PATH)
+        self.board = Board.initial(self.config)
 
-    def test_encode_empty_point(self):
-        # Test encoding of an empty point
-        empty_point = Point(position=1)  # No pieces on the point
-        expected_encoding = [0, 0, 0, 0] + [0] * self.config.get_pieces_per_player()
-        self.assertEqual(self.encoder.encode_point(empty_point), expected_encoding)
+    def test_encode_initial_board_legacy_v1(self):
+        encoder = BoardEncoder(self.config, version=LEGACY_V1)
+        encoded = encoder.encode_board(self.board, is_whites_turn=True)
+        self.assertEqual(len(encoded), encoder.input_size)
+        self.assertEqual(encoded.dtype, np.float32)
 
-    def test_encode_point_with_white_pieces(self):
-        # Test encoding of a point with white pieces
-        white_point = Point(position=1, color=Color.WHITE, count=3)
-        expected_encoding = [1, 0, 0, 0] + [1, 1, 1] + [0] * (self.config.get_pieces_per_player() - 3)
-        self.assertEqual(self.encoder.encode_point(white_point), expected_encoding)
+    def test_encode_initial_board_unary_v2(self):
+        encoder = BoardEncoder(self.config, version=UNARY_V2)
+        encoded = encoder.encode_board(self.board, is_whites_turn=True)
+        self.assertEqual(len(encoded), encoder.input_size)
 
-    def test_encode_point_with_black_pieces(self):
-        # Test encoding of a point with black pieces
-        black_point = Point(position=1, color=Color.BLACK, count=2)
-        expected_encoding = [1, 1, 0, 0] + [1, 1] + [0] * (self.config.get_pieces_per_player() - 2)
-        self.assertEqual(self.encoder.encode_point(black_point), expected_encoding)
+    def test_encode_initial_board_unary_v3(self):
+        encoder = BoardEncoder(self.config, version=UNARY_V3)
+        encoded = encoder.encode_board(self.board, is_whites_turn=True)
+        self.assertEqual(len(encoded), encoder.input_size)
 
-    def test_encode_point_captured_by_white(self):
-        # Test encoding of a point captured by white
-        white_capturing_point = Point(position=1, color=Color.WHITE, count=1)
-        white_capturing_point.push(Color.BLACK)  # Simulate capturing
-        expected_encoding = [1, 1, 0, 1] + [1] + [0] * (self.config.get_pieces_per_player() - 1)
-        self.assertEqual(self.encoder.encode_point(white_capturing_point), expected_encoding)
+    def test_input_size_legacy_v1(self):
+        encoder = BoardEncoder(self.config, version=LEGACY_V1)
+        board_size = self.config.get_board_size()
+        pieces = self.config.get_pieces_per_player()
+        expected = (board_size + 2) * (4 + pieces)
+        self.assertEqual(encoder.input_size, expected)
 
-    def test_encode_board(self):
-        # Test encoding of an initialized board
-        self.board.initialize_board()
-        encoded_board = self.encoder.encode_board(self.board, True)
+    def test_input_size_unary_v3(self):
+        encoder = BoardEncoder(self.config, version=UNARY_V3)
+        board_size = self.config.get_board_size()
+        pieces = self.config.get_pieces_per_player()
+        expected = (board_size + 2) * (3 + pieces) + 18
+        self.assertEqual(encoder.input_size, expected)
 
-        # Manually encode the board's initial state
-        manual_encoded_board = [0]
-        for i in range(0, self.board.board_size + 2):
-            point = self.board.points[i]
-            manual_encoded_board.extend(self.encoder.encode_point(point))
+    def test_perspective_flip(self):
+        encoder = BoardEncoder(self.config, version=UNARY_V3)
+        encoded_white = encoder.encode_board(self.board, is_whites_turn=True)
+        encoded_black = encoder.encode_board(self.board, is_whites_turn=False)
+        # Initial position is symmetric; both perspectives should be identical.
+        np.testing.assert_array_almost_equal(encoded_white, encoded_black)
 
-        manual_encoded_board = np.array(manual_encoded_board)
-        np.testing.assert_array_equal(encoded_board, manual_encoded_board)
+    def test_encode_captured_point(self):
+        encoder = BoardEncoder(self.config, version=UNARY_V2)
+        board = Board.from_config(self.config)
+        # Place white at slot 5 with a pinned black below.
+        board.set_point(5, WHITE, 2, pinned=True)
+        encoded = encoder.encode_board(board, is_whites_turn=True)
+        self.assertEqual(encoded.dtype, np.float32)
+        # captured_by_us bit should be set at point 5's base offset.
+        ps = encoder.point_size
+        n = self.config.get_board_size() + 2
+        slot = 5  # white's turn: slot == point index
+        base = slot * ps
+        self.assertEqual(encoded[base + 1], 1.0)  # captured_by_us
 
-    def test_encoded_board_length(self):
-        # Ensure that the length of the encoded board matches the expected length
-        self.board.initialize_board()
-        encoded_board = self.encoder.encode_board(self.board, True)
-        expected_length = (self.config.get_board_size() + 2) * (4 + self.config.get_pieces_per_player()) + 1
-        self.assertEqual(len(encoded_board), expected_length)
+    def test_empty_board_all_zeros(self):
+        encoder = BoardEncoder(self.config, version=LEGACY_V1)
+        board = Board.from_config(self.config)
+        encoded = encoder.encode_board(board, is_whites_turn=True)
+        np.testing.assert_array_equal(encoded, np.zeros(encoder.input_size, dtype=np.float32))
+
 
 if __name__ == "__main__":
     unittest.main()

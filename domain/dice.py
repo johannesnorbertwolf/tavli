@@ -1,42 +1,51 @@
 import random
-
-
-class Dice:
-    def __init__(self, number_of_sides: int):
-        self.die1 = Die(number_of_sides)
-        self.die2 = Die(number_of_sides)
-
-    def __str__(self):
-        return str(self.die1) + "," + str(self.die2)
-
-    def __repr__(self):
-        return self.__str__()
-
-    def roll(self):
-        self.die1.roll()
-        self.die2.roll()
-        return (self.die1, self.die2)
-
-    def is_pasch(self):
-        return self.die1 == self.die2
-
+from typing import Optional
 
 
 class Die:
-    def __init__(self, number_of_sides: int, value: int = 0):
+    __slots__ = ("sides", "value")
+
+    def __init__(self, sides: int = 6, value: int = 0) -> None:
+        self.sides = sides
         self.value = value
-        self.number_of_sides = number_of_sides
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Die) and self.value == other.value
 
-    def __str__(self):
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+    def __repr__(self) -> str:
         return str(self.value)
 
-    def __repr__(self):
-        return self.__str__()
-
-    def __eq__(self, other):
-        return self.value == other.value
-
-    def roll(self):
-        self.value = random.randint(1, self.number_of_sides)
+    def roll(self, rng: Optional[random.Random] = None) -> int:
+        r = rng if rng is not None else random
+        self.value = r.randint(1, self.sides)
         return self.value
+
+
+class Dice:
+    __slots__ = ("die1", "die2", "sides", "rng")
+
+    def __init__(self, sides: int = 6, rng: Optional[random.Random] = None) -> None:
+        self.sides = sides
+        self.die1 = Die(sides)
+        self.die2 = Die(sides)
+        self.rng = rng
+
+    def __repr__(self) -> str:
+        return f"{self.die1},{self.die2}"
+
+    def roll(self, rng: Optional[random.Random] = None) -> tuple:
+        r = rng if rng is not None else self.rng
+        self.die1.roll(r)
+        self.die2.roll(r)
+        return (self.die1, self.die2)
+
+    def set(self, v1: int, v2: int) -> None:
+        """Test/equivalence helper: force dice values without rolling."""
+        self.die1.value = v1
+        self.die2.value = v2
+
+    def is_pasch(self) -> bool:
+        return self.die1.value == self.die2.value
