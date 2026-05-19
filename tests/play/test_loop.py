@@ -215,8 +215,9 @@ class TestNoMovesPrompt(unittest.TestCase):
         self.assertEqual(s.ply_count(), 1)
         self.assertTrue(s.history[-1].was_pass)
 
-    def test_u_undoes(self):
+    def test_u_when_no_prior_human_decision_is_noop(self):
         # human=BLACK so that after white's opening ply, it's the human's turn.
+        # The human hasn't made any decision yet, so 'u' from no-moves is a no-op.
         s = _new_session(dice_mode=DiceMode.MANUAL, human_color=Color.BLACK)
         s.set_dice(3, 5)
         s.commit_move(s.possible_moves()[0])  # white plays ply 1
@@ -224,7 +225,7 @@ class TestNoMovesPrompt(unittest.TestCase):
         io = FakeIO(["u"])
         act = loop._no_moves(s, io)
         self.assertEqual(act.kind, "advance")
-        self.assertEqual(s.ply_count(), 0)
+        self.assertEqual(s.ply_count(), 1)
 
 
 if __name__ == "__main__":

@@ -156,6 +156,59 @@ class TestUndoTerminal(unittest.TestCase):
         self.assertIsNone(s.winner())
 
 
+class TestUndoToMyDecision(unittest.TestCase):
+    """Loop-level 'u' semantics: rewind to the human's previous decision point."""
+
+    def test_after_human_and_ai_plies_pops_both(self):
+        s = _new_session(dice_mode=DiceMode.AUTO, human_color=Color.WHITE)
+        s.set_dice(3, 5)
+        s.commit_move(s.possible_moves()[0])  # human (W)
+        s.set_dice(4, 6)
+        s.commit_move(s.possible_moves()[0])  # AI (B)
+        self.assertEqual(s.ply_count(), 2)
+        popped = s.undo_to_my_decision()
+        self.assertEqual(popped, 2)
+        self.assertEqual(s.ply_count(), 0)
+        self.assertEqual(s.current_player(), Color.WHITE)
+        # AUTO mode restores the human's original dice.
+        self.assertEqual(s.current_dice(), (3, 5))
+
+    def test_no_human_ply_yet_is_noop(self):
+        # Human is BLACK; AI (white) has played one ply but the human hasn't decided.
+        s = _new_session(human_color=Color.BLACK)
+        s.set_dice(3, 5)
+        s.commit_move(s.possible_moves()[0])  # W (AI)
+        self.assertEqual(s.ply_count(), 1)
+        popped = s.undo_to_my_decision()
+        self.assertEqual(popped, 0)
+        self.assertEqual(s.ply_count(), 1)
+        self.assertEqual(s.current_player(), Color.BLACK)
+
+    def test_initial_state_is_noop(self):
+        s = _new_session(human_color=Color.WHITE)
+        self.assertEqual(s.undo_to_my_decision(), 0)
+        self.assertEqual(s.undo_to_my_decision(5), 0)
+        self.assertEqual(s.ply_count(), 0)
+
+    def test_multi_step_unwinds_full_pairs(self):
+        s = _new_session(dice_mode=DiceMode.AUTO, human_color=Color.WHITE)
+        s.set_dice(3, 5)
+        s.commit_move(s.possible_moves()[0])  # W ply 1
+        s.set_dice(4, 6)
+        s.commit_move(s.possible_moves()[0])  # B ply 2
+        s.set_dice(2, 1)
+        s.commit_move(s.possible_moves()[0])  # W ply 3
+        s.set_dice(5, 3)
+        s.commit_move(s.possible_moves()[0])  # B ply 4
+        self.assertEqual(s.ply_count(), 4)
+
+        popped = s.undo_to_my_decision(2)
+        # Two human-decision rewinds: pop (B4, W3), then (B2, W1). 4 plies total.
+        self.assertEqual(popped, 4)
+        self.assertEqual(s.ply_count(), 0)
+        self.assertEqual(s.current_player(), Color.WHITE)
+        self.assertEqual(s.current_dice(), (3, 5))
+
 class TestUndoPin(unittest.TestCase):
     """Undo restores a pinned checker correctly (release on top.pop)."""
 

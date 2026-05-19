@@ -10,9 +10,6 @@ from domain.possible_moves import PossibleMoves
 from game.game import Game
 
 
-PLAY_LOOKAHEAD_PLIES = 2
-
-
 class DiceMode(Enum):
     AUTO = "auto"
     MANUAL = "manual"
@@ -141,7 +138,7 @@ class PlaySession:
         moves = self.possible_moves()
         if not moves:
             return []
-        eff_depth = depth if depth is not None else PLAY_LOOKAHEAD_PLIES
+        eff_depth = depth if depth is not None else self.eval_depth
         scores = self.agent.evaluate_moves(
             self.game.board, moves, self.current_player(), lookahead_plies=eff_depth
         )
@@ -216,6 +213,34 @@ class PlaySession:
             self._pending_dice = None
         self.dirty_since_save = True
         return popped
+
+    def undo_to_my_decision(self, n: int = 1) -> int:
+        """Pop plies back to the human's previous decision point. Returns plies popped.
+
+        Each step rewinds past the most recent decision the human made — typically
+        popping both the AI's last ply and the human's preceding ply. No-op if the
+        human hasn't made a move yet (e.g. at game start, or AI opening).
+        """
+        if n < 1:
+            return 0
+        total = 0
+        for _ in range(n):
+            target = self._find_prior_human_decision_index()
+            if target is None:
+                break
+            plies_to_pop = (len(self.history) - 1) - target
+            if plies_to_pop <= 0:
+                break
+            total += self.undo(plies_to_pop)
+        return total
+
+    def _find_prior_human_decision_index(self) -> Optional[int]:
+        """Index i (i < len(history)-1) of the latest snapshot whose next_player is
+        the human. Landing on history[i] means it's the human's turn to decide again."""
+        for i in range(len(self.history) - 2, -1, -1):
+            if self.history[i].next_player == self.human_color:
+                return i
+        return None
 
     # ---- history display --------------------------------------------
 

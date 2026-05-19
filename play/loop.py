@@ -104,10 +104,11 @@ def _human_turn(session: PlaySession, io: IO, agent_loader: Optional[AgentLoader
             if cmd.depth is not None:
                 session.eval_depth = cmd.depth
             forced_depth = session.eval_depth
+            io.output(f"(re-ranking at depth {forced_depth}…)")
             continue
 
         if isinstance(cmd, parser.Undo):
-            popped = session.undo(cmd.n)
+            popped = session.undo_to_my_decision(cmd.n)
             io.output(_undo_message(popped))
             return Action("advance")
 
@@ -151,7 +152,7 @@ def _dice_prompt(session: PlaySession, io: IO, agent_loader: Optional[AgentLoade
 
         cmd = parser.parse_command(line)
         if isinstance(cmd, parser.Undo):
-            popped = session.undo(cmd.n)
+            popped = session.undo_to_my_decision(cmd.n)
             io.output(_undo_message(popped))
             return Action("advance")
         if isinstance(cmd, parser.History):
@@ -193,7 +194,7 @@ def _no_moves(session: PlaySession, io: IO) -> Action:
                 n = max(1, int(rest))
             except ValueError:
                 n = 1
-        session.undo(n)
+        session.undo_to_my_decision(n)
         return Action("advance")
     session.commit_pass()
     return Action("advance")
@@ -219,7 +220,7 @@ def _post_game(session: PlaySession, io: IO) -> Action:
         line = io.input("[u/undo, h/history, save <n>, q] > ")
         cmd = parser.parse_command(line)
         if isinstance(cmd, parser.Undo):
-            popped = session.undo(cmd.n)
+            popped = session.undo_to_my_decision(cmd.n)
             io.output(_undo_message(popped))
             return Action("advance")
         if isinstance(cmd, parser.History):

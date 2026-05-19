@@ -49,9 +49,10 @@ def format_header(session) -> str:
     ply = session.ply_count() + 1
     player = "White" if session.current_player().is_white() else "Black"
     dice = session.current_dice()
+    depth_suffix = f" — eval depth {session.eval_depth}"
     if dice is None:
-        return f"Ply {ply} — {player} to move"
-    return f"Ply {ply} — {player} to move — dice {dice[0]} {dice[1]}"
+        return f"Ply {ply} — {player} to move{depth_suffix}"
+    return f"Ply {ply} — {player} to move — dice {dice[0]} {dice[1]}{depth_suffix}"
 
 
 def format_footer() -> str:
