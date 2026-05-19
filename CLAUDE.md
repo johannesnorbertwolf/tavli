@@ -119,3 +119,11 @@ Each eval run appends one line to `training_runs/eval_gold_history.log`:
 ```
 
 `local_tools/` contains SVG graph generators and a file-watch daemon for live dashboards during training.
+
+## Documentation Policy
+
+Every significant source file must have a corresponding documentation entry in its directory's `CLAUDE.md`. Documentation should be detailed enough that the file could be reimplemented from it alone.
+
+**Significant files** (must always be documented): training loop, encoder, evaluator, agent, checkpoint I/O, game runner, board, move generation, dice. Not `__init__.py`, config loaders, or utility scripts.
+
+**In plan mode**: always include a "Documentation updates" step in the plan, and ask the user whether to update the docs alongside the implementation changes.
