@@ -86,3 +86,32 @@ def format_history(session) -> str:
     if not lines:
         return "(no history yet)"
     return "\n".join(lines)
+
+
+def format_drill_position(blunder_num: int, total: int, b: dict) -> str:
+    """Header + board + what-was-played line for a single drill blunder."""
+    snap = b["snap"]
+    lines = [
+        f"── Blunder {blunder_num}/{total} — Ply {b['ply_num']} — dice {snap.dice_for_this_ply[0]} {snap.dice_for_this_ply[1]} ──",
+        b["board_str"],
+        f"You played: {b['played_move']}  ({b['played_score']*100:.1f}%)  ← there's a {b['gap']*100:.1f}% better move",
+    ]
+    return "\n".join(lines)
+
+
+def format_blunder_block(
+    ply_num: int,
+    dice: tuple,
+    board_str: str,
+    played_move,
+    played_score: float,
+    best_move,
+    best_score: float,
+) -> str:
+    gap = best_score - played_score
+    return "\n".join([
+        f"Ply {ply_num} — dice {dice[0]} {dice[1]}  (gap: +{gap*100:.1f}%)",
+        board_str,
+        f"  Played: {played_move}  ({played_score*100:.1f}%)",
+        f"  Best:   {best_move}  ({best_score*100:.1f}%)",
+    ])

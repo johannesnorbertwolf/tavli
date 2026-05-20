@@ -131,3 +131,9 @@ class ConfigLoader:
 
     def get_play_eval_lookahead_plies(self):
         return int(self.config.get("play", {}).get("eval_lookahead_plies", 4))
+
+    def get_play_drill_correct_floor(self):
+        return float(self.config.get("play", {}).get("drill_correct_floor", 0.01))
+
+    def get_play_drill_correct_relative(self):
+        return float(self.config.get("play", {}).get("drill_correct_relative", 0.03))

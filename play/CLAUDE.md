@@ -141,6 +141,59 @@ The default depth comes from `play.eval_lookahead_plies` in `config/config.yml` 
 
 Source: [loop.py:103-108](loop.py), [session.py::ranked_moves](session.py).
 
+#### `drill [N]` — interactive blunder training
+
+Available **only at the post-game prompt** (after someone has won). Like `review`, it scans all your plies and flags moves that were more than N% worse than the best (relative gap; default 10%). But instead of showing a summary, it steps through each blunder interactively, asking you to find a better move.
+
+At each flagged position the board is shown with what you played and the size of the gap. You then enter the source point(s) of the move you'd like to try:
+
+```
+── Blunder 1/3 — Ply 5 — dice 3 5 ──
+<board>
+You played: (18->21,18->23)  (62.3%)  ← there's a 11.8% better move
+Your move (solution / skip / back) > 8 18
+```
+
+**Move input format:** enter only the **source point(s)**, space-separated. The system derives the destinations from the current dice.
+
+| Input | Meaning |
+|---|---|
+| `18 6` | Move a piece from 18, and another from 6 (two-piece move) |
+| `8` | Move a single piece from 8 (merged or single-die move) |
+| `1 1 1 1` | Move four pieces from point 1 (doubles) |
+
+If both orderings of the same source points are legal (rare), the choices are listed numbered and you pick one (`1`, `2`, …).
+
+**Feedback:**
+- Optimal (within the configured tolerance): `Excellent! — that's the best move.` or `Great choice! — very close to optimal.`
+- Suboptimal: `Not quite (X%) — think a little harder!` — keeps prompting.
+- Illegal sources: `No legal move from those positions.`
+
+**Other commands at the drill prompt:**
+- `solution` — reveal the best move and advance to the next blunder.
+- `skip` — skip this blunder and advance.
+- `back` — go back to the previous blunder (clamps at the first).
+
+After all blunders are resolved (solved or skipped), `Drill complete.` is printed.
+
+The "correct" tolerance is configured via `play.drill_correct_floor` and `play.drill_correct_relative` in `config/config.yml` (defaults: 0.01 floor, 0.03 relative). See §7.
+
+Source: [loop.py::_handle_drill](loop.py), [loop.py::_drill_inner](loop.py), [renderer.py::format_drill_position](renderer.py), [parser.py::parse_move_input](parser.py).
+
+#### `review [N]` — post-game blunder analysis
+
+Available **only at the post-game prompt** (after someone has won). Replays every ply you played and flags moves where your choice was more than N% below the agent's best option.
+
+- `review` — use the default threshold of 10%.
+- `review 15` — flag blunders where your move was ≥15% worse than the best.
+- `N` must be ≥1.
+
+For each flagged ply, the output shows the board state at that moment, the move you played and its win-probability, and the agent's best move and its win-probability. After scanning all plies, a count of blunders is printed, or `— well played!` if none were found.
+
+The replay uses the same eval depth as the session (`session.eval_depth`, default 4). For long games this can take a few seconds.
+
+Source: [loop.py::_handle_review](loop.py), [renderer.py::format_blunder_block](renderer.py).
+
 #### `save <name>` — write the current session to disk
 
 Writes the session to `saved_games/<name>.json`. The `.json` suffix is auto-appended if you omit it.
@@ -241,18 +294,20 @@ The AI auto-passes silently. You'll see a one-line message: `Black (AI) has no v
 When someone wins, the board is printed with `Game over. White wins.` (or `Black wins.`) followed by a post-game prompt:
 
 ```
-[u/undo, h/history, save <n>, q] >
+[u/undo, h/history, review [N], save <n>, q] >
 ```
 
 Accepted commands:
 
 - `u` / `undo [N]` — un-ends the game and lets you keep playing from before the winning move. The terminal state flips back to non-terminal.
 - `h` / `history` — print the ply log.
+- `review [N]` — scan every human ply and flag moves that were ≥N% worse than the agent's best (relative gap). Default threshold 10%. See §4.
+- `drill [N]` — same blunder detection as `review`, but interactive: step through each flagged position and try to find the better move. Enter source points as space-separated numbers (e.g. `18 6`). See §4.
 - `save <name>` — save the (terminal) session.
 - `q` / `quit` — exit (with the same dirty-quit prompt as during play).
 - `?` / `help` — short reminder of what's accepted here.
 
-Not accepted: move ranks (no moves to play), `e`/`eval`, `load`. Anything else prints `post-game accepts: u/undo, h/history, save <n>, q/quit`.
+Not accepted: move ranks (no moves to play), `e`/`eval`, `load`. Anything else prints `post-game accepts: u/undo, h/history, review [N], drill [N], save <n>, q/quit`.
 
 When you exit a completed game, one line is appended to `training_runs/human_game_history.log` recording the result, and a stats summary box is printed.
 
@@ -265,6 +320,8 @@ Relevant entries in `config/config.yml`:
 | Key | Default | Effect |
 |---|---|---|
 | `play.eval_lookahead_plies` | `4` | Default lookahead depth for ranked moves and what `e` reverts to with no argument. |
+| `play.drill_correct_floor` | `0.01` | Absolute floor for the drill "correct" tolerance (1 pp). Prevents impossible standards in nearly-lost positions. |
+| `play.drill_correct_relative` | `0.03` | Fraction of `best_score` for "correct" tolerance. At best=0.70, correct means within 0.021 (2.1 pp). |
 | `die_sides` | `6` | Range cap for dice input validation. |
 | `board_size`, `pieces_per_player`, `home_size` | 24 / 15 / 6 | Standard Plakoto board parameters; not play-UI-specific but affect what moves are legal. |
 | `hidden_sizes`, `learning_rate`, etc. | (training) | Don't affect the play loop — the loaded model's saved architecture is what's used. |

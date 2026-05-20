@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,16 @@ class Help:
 
 
 @dataclass(frozen=True)
+class Review:
+    threshold: float  # fraction, e.g. 0.10 for 10%
+
+
+@dataclass(frozen=True)
+class Drill:
+    threshold: float  # fraction, e.g. 0.10 for 10%
+
+
+@dataclass(frozen=True)
 class Quit:
     pass
 
@@ -48,11 +58,13 @@ class Unparseable:
     reason: str
 
 
-Command = Union[PlayMove, Undo, History, Eval, Save, Load, Help, Quit, Unparseable]
+Command = Union[PlayMove, Undo, History, Eval, Save, Load, Review, Drill, Help, Quit, Unparseable]
 
 
 _UNDO_RE = re.compile(r"^(?:undo|u)\s*(\d+)?$")
 _EVAL_RE = re.compile(r"^(?:eval|e)(?:\s*(\S+))?$")
+_REVIEW_RE = re.compile(r"^review(?:\s+(\d+))?$")
+_DRILL_RE = re.compile(r"^drill(?:\s+(\d+))?$")
 
 
 def parse_command(line: str) -> Command:
@@ -95,6 +107,20 @@ def parse_command(line: str) -> Command:
             return Unparseable(f"eval depth must be >= 1, got {depth}")
         return Eval(depth)
 
+    m = _REVIEW_RE.match(lower)
+    if m:
+        pct = int(m.group(1)) if m.group(1) is not None else 10
+        if pct < 1:
+            return Unparseable(f"review threshold must be >= 1%, got {pct}")
+        return Review(threshold=pct / 100)
+
+    m = _DRILL_RE.match(lower)
+    if m:
+        pct = int(m.group(1)) if m.group(1) is not None else 10
+        if pct < 1:
+            return Unparseable(f"drill threshold must be >= 1%, got {pct}")
+        return Drill(threshold=pct / 100)
+
     if lower in ("?", "help"):
         return Help()
 
@@ -121,6 +147,18 @@ class InvalidDiceInput(ValueError):
 
 
 _DICE_RE = re.compile(r"^(\d)\D*(\d)$")
+
+
+def parse_move_input(line: str) -> Optional[List[int]]:
+    """Parse space-separated source positions for drill move input.
+
+    '15 16' → [15, 16]   (two-piece move from points 15 and 16)
+    '8'     → [8]         (merged / single-die move from point 8)
+    '1 1 1 1' → [1, 1, 1, 1]  (four-piece pasch from point 1)
+    ''      → None
+    """
+    tokens = re.findall(r"\d+", (line or "").strip())
+    return [int(t) for t in tokens] if tokens else None
 
 
 def parse_dice(line: str, die_sides: int = 6) -> Tuple[int, int]:

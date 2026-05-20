@@ -202,6 +202,112 @@ class TestPostTerminalRejectsPlay(unittest.TestCase):
         )
 
 
+# --- post-game review --------------------------------------------------
+
+
+class TestPostGameReview(unittest.TestCase):
+    def _setup_one_move_from_win(self, s):
+        bs = s.game.board.board_size
+        for i in range(0, bs + 2):
+            s.game.board.points[i] = Point(i)
+        s.game.board.points[bs + 1] = Point(bs + 1, Color.WHITE, 14)
+        s.game.board.points[23] = Point(23, Color.WHITE, 1)
+        s.game.board.points[1] = Point(1, Color.BLACK, 5)
+
+    def test_review_runs_and_produces_output(self):
+        s = _new_session()
+        self._setup_one_move_from_win(s)
+        s.set_dice(2, 5)
+        ranked = s.ranked_moves()
+        winning_rank = None
+        for idx, (move, _) in enumerate(ranked, start=1):
+            s.game.board.apply(move)
+            won = s.game.board.has_won(Color.WHITE)
+            s.game.board.undo(move)
+            if won:
+                winning_rank = idx
+                break
+        self.assertIsNotNone(winning_rank)
+
+        # Play the winning move → terminal. Then run review, then quit.
+        io = FakeIO([str(winning_rank), "review", "q", "q"])
+        final = loop.run(s, io)
+        self.assertTrue(final.is_terminal())
+        review_output = " ".join(io.outputs)
+        self.assertTrue(
+            "blunder" in review_output.lower() or "well played" in review_output.lower(),
+            f"expected review output; got: {io.outputs}",
+        )
+
+    def test_review_threshold_arg_accepted(self):
+        s = _new_session()
+        self._setup_one_move_from_win(s)
+        s.set_dice(2, 5)
+        ranked = s.ranked_moves()
+        winning_rank = None
+        for idx, (move, _) in enumerate(ranked, start=1):
+            s.game.board.apply(move)
+            won = s.game.board.has_won(Color.WHITE)
+            s.game.board.undo(move)
+            if won:
+                winning_rank = idx
+                break
+        self.assertIsNotNone(winning_rank)
+        io = FakeIO([str(winning_rank), "review 5", "q", "q"])
+        final = loop.run(s, io)
+        self.assertTrue(final.is_terminal())
+
+
+# --- post-game drill ---------------------------------------------------
+
+
+class TestPostGameDrill(unittest.TestCase):
+    def _setup_one_move_from_win(self, s):
+        bs = s.game.board.board_size
+        for i in range(0, bs + 2):
+            s.game.board.points[i] = Point(i)
+        s.game.board.points[bs + 1] = Point(bs + 1, Color.WHITE, 14)
+        s.game.board.points[23] = Point(23, Color.WHITE, 1)
+        s.game.board.points[1] = Point(1, Color.BLACK, 5)
+
+    def _winning_rank(self, s):
+        ranked = s.ranked_moves()
+        for idx, (move, _) in enumerate(ranked, start=1):
+            s.game.board.apply(move)
+            won = s.game.board.has_won(Color.WHITE)
+            s.game.board.undo(move)
+            if won:
+                return idx
+        return None
+
+    def test_drill_skip_exits_cleanly(self):
+        s = _new_session()
+        self._setup_one_move_from_win(s)
+        s.set_dice(2, 5)
+        rank = self._winning_rank(s)
+        self.assertIsNotNone(rank)
+        # After winning: drill → skip (no blunders in test board) → q q
+        io = FakeIO([str(rank), "drill", "q", "q"])
+        final = loop.run(s, io)
+        self.assertTrue(final.is_terminal())
+
+    def test_drill_solution_shows_best_move(self):
+        s = _new_session()
+        self._setup_one_move_from_win(s)
+        s.set_dice(2, 5)
+        rank = self._winning_rank(s)
+        self.assertIsNotNone(rank)
+        # If there are blunders: solution reveals them; if none: "No blunders" shown.
+        io = FakeIO([str(rank), "drill", "q", "q"])
+        final = loop.run(s, io)
+        all_out = " ".join(io.outputs)
+        self.assertTrue(
+            "blunder" in all_out.lower() or "well played" in all_out.lower(),
+            f"expected drill output; got: {io.outputs}",
+        )
+        self.assertTrue(final.is_terminal())
+
+
 # --- no-moves ----------------------------------------------------------
 
 

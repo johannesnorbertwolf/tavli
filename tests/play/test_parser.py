@@ -2,12 +2,15 @@ import unittest
 
 from play.parser import (
     parse_command,
+    parse_move_input,
     PlayMove,
     Undo,
     History,
     Eval,
     Save,
     Load,
+    Review,
+    Drill,
     Help,
     Quit,
     Unparseable,
@@ -125,6 +128,51 @@ class TestParseCommand(unittest.TestCase):
                 result = parse_command(s)
                 self.assertIsInstance(result, Unparseable)
                 self.assertTrue(result.reason, f"reason empty for {s!r}")
+
+
+# ---- review / drill commands ------------------------------------------
+
+
+class TestReviewDrillCommands(unittest.TestCase):
+    def test_review_default_threshold(self):
+        self.assertEqual(parse_command("review"), Review(threshold=0.10))
+
+    def test_review_custom_threshold(self):
+        self.assertEqual(parse_command("review 15"), Review(threshold=0.15))
+
+    def test_drill_default_threshold(self):
+        self.assertEqual(parse_command("drill"), Drill(threshold=0.10))
+
+    def test_drill_custom_threshold(self):
+        self.assertEqual(parse_command("drill 5"), Drill(threshold=0.05))
+
+    def test_drill_zero_threshold_is_unparseable(self):
+        self.assertIsInstance(parse_command("drill 0"), Unparseable)
+
+
+# ---- parse_move_input --------------------------------------------------
+
+
+class TestParseMoveInput(unittest.TestCase):
+    def test_two_positions(self):
+        self.assertEqual(parse_move_input("15 16"), [15, 16])
+
+    def test_single_position(self):
+        self.assertEqual(parse_move_input("8"), [8])
+
+    def test_doubles_four_positions(self):
+        self.assertEqual(parse_move_input("1 1 1 1"), [1, 1, 1, 1])
+
+    def test_empty_returns_none(self):
+        self.assertIsNone(parse_move_input(""))
+
+    def test_command_word_returns_none(self):
+        self.assertIsNone(parse_move_input("solution"))
+        self.assertIsNone(parse_move_input("skip"))
+        self.assertIsNone(parse_move_input("back"))
+
+    def test_whitespace_ignored(self):
+        self.assertEqual(parse_move_input("  3   5  "), [3, 5])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+from domain.half_move import HalfMove
+from domain.move import Move
 from play import parser, persistence, renderer
 from play.session import DiceMode, PlaySession
 
@@ -217,7 +219,7 @@ def _post_game(session: PlaySession, io: IO) -> Action:
     io.output(str(session.game.board))
     io.output(f"Game over. {label} wins.")
     while True:
-        line = io.input("[u/undo, h/history, save <n>, q] > ")
+        line = io.input("[u/undo, h/history, review [N], drill [N], save <n>, q] > ")
         cmd = parser.parse_command(line)
         if isinstance(cmd, parser.Undo):
             popped = session.undo_to_my_decision(cmd.n)
@@ -225,6 +227,12 @@ def _post_game(session: PlaySession, io: IO) -> Action:
             return Action("advance")
         if isinstance(cmd, parser.History):
             io.output(renderer.format_history(session))
+            continue
+        if isinstance(cmd, parser.Review):
+            _handle_review(session, io, cmd.threshold)
+            continue
+        if isinstance(cmd, parser.Drill):
+            _handle_drill(session, io, cmd.threshold)
             continue
         if isinstance(cmd, parser.Save):
             _handle_save(session, io, cmd.name)
@@ -234,12 +242,210 @@ def _post_game(session: PlaySession, io: IO) -> Action:
                 return Action("quit")
             continue
         if isinstance(cmd, parser.Help):
-            io.output("post-game: u/undo [N], h/history, save <name>, q/quit")
+            io.output("post-game: u/undo [N], h/history, review [N], drill [N], save <name>, q/quit")
             continue
-        io.output("post-game accepts: u/undo, h/history, save <n>, q/quit")
+        io.output("post-game accepts: u/undo, h/history, review [N], drill [N], save <n>, q/quit")
 
 
 # ---- command helpers ------------------------------------------------------
+
+
+def _reconstruct_move(move: Move, board) -> Move:
+    """Re-build a Move so its HalfMoves reference the given board's own Point objects."""
+    return Move([
+        HalfMove(
+            board.points[hm.from_point.position],
+            board.points[hm.to_point.position],
+            hm.color,
+        )
+        for hm in move.half_moves
+    ])
+
+
+def _make_replay_session(session: PlaySession) -> PlaySession:
+    return PlaySession(
+        config=session.config,
+        agent=session.agent,
+        ai_checkpoint_path=session.ai_checkpoint_path,
+        dice_mode=session.dice_mode,
+        human_color=session.human_color,
+        eval_depth=session.eval_depth,
+        starting_player=session.starting_player,
+    )
+
+
+def _collect_blunders(session: PlaySession, threshold: float) -> list:
+    """Replay the game and return a list of blunder dicts for human plies.
+
+    A ply is flagged when (best_score - played_score) / best_score >= threshold
+    (relative gap), guarding against best_score == 0.  Returns dicts with keys:
+    ply_num, snap, board_str, ranked, played_move, played_score, best_move,
+    best_score, gap.
+    """
+    if len(session.history) <= 1:
+        return []
+
+    replay = _make_replay_session(session)
+    blunders = []
+
+    for snap in session.history[1:]:
+        is_human = replay.current_player() == session.human_color
+        replay.set_dice(*snap.dice_for_this_ply)
+
+        if snap.was_pass or not is_human or snap.move_played is None:
+            if snap.was_pass:
+                replay.commit_pass()
+            else:
+                replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+            continue
+
+        moves = replay.possible_moves()
+        if len(moves) <= 1:
+            replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+            continue
+
+        ranked = replay.ranked_moves()
+        best_move, best_score = ranked[0]
+
+        played_key = str(snap.move_played)
+        played_score = next(
+            (score for move, score in ranked if str(move) == played_key),
+            None,
+        )
+
+        if played_score is not None and best_score > 0:
+            relative_gap = (best_score - played_score) / best_score
+            if relative_gap >= threshold:
+                blunders.append({
+                    "ply_num": replay.ply_count() + 1,
+                    "snap": snap,
+                    "board_str": str(replay.game.board),
+                    "ranked": ranked,
+                    "played_move": snap.move_played,
+                    "played_score": played_score,
+                    "best_move": best_move,
+                    "best_score": best_score,
+                    "gap": best_score - played_score,
+                })
+
+        replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+
+    return blunders
+
+
+def _match_move(user_froms: list, ranked: list) -> list:
+    """Return all legal moves whose sorted source positions match sorted user_froms."""
+    target = sorted(user_froms)
+    return [
+        (move, score) for move, score in ranked
+        if sorted(hm.from_point.position for hm in move.half_moves) == target
+    ]
+
+
+def _handle_review(session: PlaySession, io: IO, threshold: float) -> None:
+    if len(session.history) <= 1:
+        io.output("no plies to review")
+        return
+
+    io.output(f"Post-game review — flagging moves >{threshold*100:.0f}% relative gap\n")
+    blunders = _collect_blunders(session, threshold)
+
+    for b in blunders:
+        io.output(renderer.format_blunder_block(
+            b["ply_num"], b["snap"].dice_for_this_ply, b["board_str"],
+            b["played_move"], b["played_score"],
+            b["best_move"], b["best_score"],
+        ))
+
+    if not blunders:
+        io.output(f"No blunders found above {threshold*100:.0f}% threshold — well played!")
+    else:
+        io.output(f"\n{len(blunders)} blunder(s) found.")
+
+
+def _handle_drill(session: PlaySession, io: IO, threshold: float) -> None:
+    blunders = _collect_blunders(session, threshold)
+    if not blunders:
+        io.output("No blunders to drill — well played!")
+        return
+
+    correct_floor = session.config.get_play_drill_correct_floor()
+    correct_relative = session.config.get_play_drill_correct_relative()
+    io.output(
+        f"Drill: {len(blunders)} blunder(s) found.  "
+        "Enter source point(s) space-separated (e.g. '15 16'), or: solution, skip, back"
+    )
+
+    i = 0
+    while 0 <= i < len(blunders):
+        b = blunders[i]
+        io.output(renderer.format_drill_position(i + 1, len(blunders), b))
+        advance = _drill_inner(b, io, correct_floor, correct_relative)
+        if advance == "back":
+            if i == 0:
+                io.output("Already at the first blunder.")
+            else:
+                i -= 1
+        else:
+            i += 1
+
+    io.output("Drill complete.")
+
+
+def _drill_inner(b: dict, io: IO, correct_floor: float, correct_relative: float) -> str:
+    """Drive interactive Q&A for one blunder. Returns 'next' or 'back'."""
+    correct_threshold = max(correct_floor, b["best_score"] * correct_relative)
+    while True:
+        line = io.input("Your move (solution / skip / back) > ").strip().lower()
+
+        if line in ("solution", "sol"):
+            io.output(
+                f"Best:      {b['best_move']}  ({b['best_score']*100:.1f}%)\n"
+                f"You played: {b['played_move']}  ({b['played_score']*100:.1f}%)"
+            )
+            return "next"
+
+        if line in ("skip", "s"):
+            return "next"
+
+        if line in ("back", "b"):
+            return "back"
+
+        user_froms = parser.parse_move_input(line)
+        if user_froms is None:
+            io.output("Enter source point(s) as numbers (e.g. '15 16'), or: solution, skip, back")
+            continue
+
+        matches = _match_move(user_froms, b["ranked"])
+        if not matches:
+            io.output("No legal move from those positions. Try again.")
+            continue
+
+        if len(matches) > 1:
+            # Multiple legal moves with the same source positions (different die assignments)
+            for idx, (mv, sc) in enumerate(matches, 1):
+                io.output(f"  {idx}: {mv}  ({sc*100:.1f}%)")
+            raw = io.input("Multiple options — pick [1/2/…] > ").strip()
+            try:
+                choice = int(raw) - 1
+                if not (0 <= choice < len(matches)):
+                    raise ValueError
+            except ValueError:
+                io.output("Invalid choice; try again.")
+                continue
+            move, score = matches[choice]
+        else:
+            move, score = matches[0]
+
+        gap = b["best_score"] - score
+        if gap <= correct_threshold:
+            if gap < 0.001:
+                io.output(f"Excellent! {move}  ({score*100:.1f}%) — that's the best move.")
+            else:
+                io.output(f"Great choice! {move}  ({score*100:.1f}%) — very close to optimal.")
+            return "next"
+        else:
+            io.output(f"Not quite ({score*100:.1f}%) — think a little harder!")
 
 
 def _handle_save(session: PlaySession, io: IO, name: str) -> None:
