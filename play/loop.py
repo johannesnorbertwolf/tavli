@@ -326,6 +326,7 @@ def _collect_blunders(session: PlaySession, threshold: float) -> list:
                     "best_move": best_move,
                     "best_score": best_score,
                     "gap": best_score - played_score,
+                    "player_is_white": replay.current_player().is_white(),
                 })
 
         replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
@@ -333,8 +334,29 @@ def _collect_blunders(session: PlaySession, threshold: float) -> list:
     return blunders
 
 
-def _match_move(user_froms: list, ranked: list) -> list:
-    """Return all legal moves whose sorted source positions match sorted user_froms."""
+def _match_move(user_froms: list, ranked: list, dice: tuple, is_white: bool) -> list:
+    """Match user-entered source positions to legal moves.
+
+    For exactly 2 positions with 2 dice, uses ordered die-assignment:
+    user_froms[0] uses dice[0], user_froms[1] uses dice[1].  This eliminates
+    the disambiguation dialog in the common case.  Falls back to sorted-source
+    matching for single-position inputs (merged / single-die) and doubles.
+    """
+    if not user_froms:
+        return []
+
+    sign = 1 if is_white else -1
+
+    if len(user_froms) == 2 and len(dice) == 2:
+        d1, d2 = dice
+        to0 = user_froms[0] + sign * d1
+        to1 = user_froms[1] + sign * d2
+        key = f"({user_froms[0]}->{to0},{user_froms[1]}->{to1})"
+        ordered = [(m, s) for m, s in ranked if str(m) == key]
+        if ordered:
+            return ordered
+        # Ordered assignment not legal: fall through to source-matching
+
     target = sorted(user_froms)
     return [
         (move, score) for move, score in ranked
@@ -416,7 +438,10 @@ def _drill_inner(b: dict, io: IO, correct_floor: float, correct_relative: float)
             io.output("Enter source point(s) as numbers (e.g. '15 16'), or: solution, skip, back")
             continue
 
-        matches = _match_move(user_froms, b["ranked"])
+        matches = _match_move(
+            user_froms, b["ranked"],
+            b["snap"].dice_for_this_ply, b["player_is_white"],
+        )
         if not matches:
             io.output("No legal move from those positions. Try again.")
             continue
