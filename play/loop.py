@@ -335,33 +335,72 @@ def _collect_blunders(session: PlaySession, threshold: float) -> list:
 
 
 def _match_move(user_froms: list, ranked: list, dice: tuple, is_white: bool) -> list:
-    """Match user-entered source positions to legal moves.
+    """Deterministically match user-entered source point(s) to a legal move.
 
-    For exactly 2 positions with 2 dice, uses ordered die-assignment:
-    user_froms[0] uses dice[0], user_froms[1] uses dice[1].  This eliminates
-    the disambiguation dialog in the common case.  Falls back to sorted-source
-    matching for single-position inputs (merged / single-die) and doubles.
+    Always returns 0 or 1 results — never a menu.  Source positions are matched
+    against the half-moves of each legal move; ``str(move)`` is the canonical
+    "(from->to,...)" form whose order follows the move generator (ascending
+    start points for White, descending for Black).
+
+    Non-doubles (d1 ≠ d2):
+      n=1 : try merged (d1+d2 on one checker), then die1, then die2 — first wins.
+      n=2 : ordered assignment — user_froms[0] uses d1, user_froms[1] uses d2.
+    Doubles (d1 == d2): each entry is the start of one die-step.  Repeat a point
+      to walk the same checker multiple steps (e.g. "3 3 3 8" walks the checker
+      at 3 forward three steps and moves one at 8 once).  Listing the explicit
+      hop-start points (e.g. "3 5 7 8") is equivalent.
     """
     if not user_froms:
         return []
 
     sign = 1 if is_white else -1
+    d1, d2 = dice
 
-    if len(user_froms) == 2 and len(dice) == 2:
-        d1, d2 = dice
+    if d1 == d2:
+        return _match_doubles_move(user_froms, ranked, d1, sign)
+
+    n = len(user_froms)
+    if n == 1:
+        # Try merged (one checker spanning both dice), then each die in order.
+        for delta in (d1 + d2, d1, d2):
+            to = user_froms[0] + sign * delta
+            key = f"({user_froms[0]}->{to})"
+            result = [(m, s) for m, s in ranked if str(m) == key]
+            if result:
+                return result[:1]
+        return []
+
+    if n == 2:
+        # Ordered: input[0] → d1, input[1] → d2.
         to0 = user_froms[0] + sign * d1
         to1 = user_froms[1] + sign * d2
         key = f"({user_froms[0]}->{to0},{user_froms[1]}->{to1})"
-        ordered = [(m, s) for m, s in ranked if str(m) == key]
-        if ordered:
-            return ordered
-        # Ordered assignment not legal: fall through to source-matching
+        return [(m, s) for m, s in ranked if str(m) == key]
 
-    target = sorted(user_froms)
-    return [
-        (move, score) for move, score in ranked
-        if sorted(hm.from_point.position for hm in move.half_moves) == target
-    ]
+    return []
+
+
+def _match_doubles_move(user_froms: list, ranked: list, die: int, sign: int) -> list:
+    """Match a doubles (pasch) move from per-die-step source points.
+
+    Each listed point starts one die-step; a point repeated k times walks a
+    checker k steps (the j-th step starts at origin + j·die).  The resulting
+    hop-start multiset is sorted into the generator's canonical order and
+    compared against each legal move's ``str``.
+    """
+    counts: dict = {}
+    for origin in user_froms:
+        counts[origin] = counts.get(origin, 0) + 1
+
+    hop_starts = []
+    for origin, k in counts.items():
+        for j in range(k):
+            hop_starts.append(origin + sign * die * j)
+
+    hop_starts.sort(reverse=(sign < 0))
+    dests = [h + sign * die for h in hop_starts]
+    key = "(" + ",".join(f"{h}->{t}" for h, t in zip(hop_starts, dests)) + ")"
+    return [(m, s) for m, s in ranked if str(m) == key]
 
 
 def _handle_review(session: PlaySession, io: IO, threshold: float) -> None:
@@ -446,22 +485,7 @@ def _drill_inner(b: dict, io: IO, correct_floor: float, correct_relative: float)
             io.output("No legal move from those positions. Try again.")
             continue
 
-        if len(matches) > 1:
-            # Multiple legal moves with the same source positions (different die assignments)
-            for idx, (mv, sc) in enumerate(matches, 1):
-                io.output(f"  {idx}: {mv}  ({sc*100:.1f}%)")
-            raw = io.input("Multiple options — pick [1/2/…] > ").strip()
-            try:
-                choice = int(raw) - 1
-                if not (0 <= choice < len(matches)):
-                    raise ValueError
-            except ValueError:
-                io.output("Invalid choice; try again.")
-                continue
-            move, score = matches[choice]
-        else:
-            move, score = matches[0]
-
+        move, score = matches[0]
         gap = b["best_score"] - score
         if gap <= correct_threshold:
             if gap < 0.001:
