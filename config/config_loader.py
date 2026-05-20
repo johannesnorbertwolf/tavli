@@ -128,3 +128,6 @@ class ConfigLoader:
 
     def get_min_buffer_to_train(self):
         return int(self.config.get("min_buffer_to_train", 2000))
+
+    def get_mc_rollouts_per_race_state(self):
+        return int(self.config.get("mc_rollouts_per_race_state", 0))

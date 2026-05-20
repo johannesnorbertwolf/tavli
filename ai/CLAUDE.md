@@ -104,6 +104,16 @@ Handles saving and loading model checkpoints. The canonical entry point for load
 
 ---
 
+## mc_rollouts.py
+
+Monte-Carlo value estimation for **race endgames** (improvement idea I2). In a race (`Board.is_race()`) no contact is possible, so the position's value is a near-deterministic function of the checker distribution that the sigmoid-MLP estimates poorly. Instead of the TD bootstrap target, the self-play paths substitute an empirical win probability from random rollouts.
+
+**`mc_value_estimate(board, mover_color, num_rollouts, dice_sides=6, rng=None)`** → float in [0,1]. Runs `num_rollouts` independent rollouts: clone the board, then alternate colors (starting with `mover_color`) playing **uniformly random** legal moves until someone wins, and return the fraction won by `mover_color`. The result is a win probability from `mover_color`'s perspective — exactly the target convention `compute_lambda_returns` uses, so it can be dropped into `targets` directly. Each rollout is capped at `_MAX_PLIES_PER_ROLLOUT = 500` plies as a safety net (race rollouts terminate far sooner). `rng` (a `random.Random`) drives both dice and move choice; pass a seeded instance for determinism, or `None` to use the global `random` module (caller seeds it). Returns 0.5 if `num_rollouts <= 0`.
+
+**`maybe_mc_target(board, mover_color, num_rollouts, dice_sides=6, rng=None)`** → `Optional[float]`. Wrapper used by the self-play loops: returns `None` (no override) if rollouts are disabled (`num_rollouts <= 0`), the position is already terminal (so the existing post-terminal target=0 convention stands), or the position is not a race; otherwise returns `mc_value_estimate(...)`. This keeps the race/rollout cost out of the contact phase entirely.
+
+---
+
 ## td_lambda_training.py
 
 Contains the training loop (`TdLambdaTraining`), the replay buffer (`ReplayBuffer`), and the λ-return computation (`compute_lambda_returns`).
@@ -135,9 +145,11 @@ The main orchestrator. Constructed with `(board_evaluator, board_encoder, config
 **Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `trained_model.pth`), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
-1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game.
-2. `_ingest_trajectory`: forward-pass all `T+1` states once (eval mode, no_grad) to get bootstrap values, compute λ-returns via `compute_lambda_returns`, push all `(state, target)` pairs into the replay buffer.
+1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], mc_targets[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `mc_targets` is computed during play (where the live `Board` exists) via `maybe_mc_target`: a float per race state, `None` otherwise.
+2. `_ingest_trajectory`: forward-pass all `T+1` states once (eval mode, no_grad) to get bootstrap values, compute λ-returns via `compute_lambda_returns`, **then override each race state's target with its precomputed MC estimate** (`mc_targets[i]` when non-None), and push all `(state, target)` pairs into the replay buffer. Returns a per-game `mc_overrides` count (number of targets replaced), aggregated into the per-epoch log line.
 3. `_train_minibatches`: run `updates_per_game` Adam steps on randomly sampled minibatches from the replay buffer using `binary_cross_entropy_with_logits`.
+
+**MC race grounding (I2)**: `mc_rollouts_per_race_state` (config; 0 disables) controls the rollout budget. The encoded states in a trajectory can't be turned back into boards, so the MC targets are computed inline in the playing loops (`_play_one_game_local` and `self_play_worker.play_one_game_record`) and shipped in the trajectory. `compute_lambda_returns` is left untouched — the override happens only in `_ingest_trajectory`, so disabling rollouts reproduces the pre-I2 code path exactly.
 
 **Exploration**: `_select_move_self_play` applies ε-softmax: with probability `1 - ε` pick the greedy best move; with probability `ε` sample from a softmax over scores divided by `exploration_temperature`.
 
@@ -161,7 +173,7 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
 
-`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)`. Returns trajectory dict.
+`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)`. Also records `mc_targets` (one entry per state) via `maybe_mc_target` using `config.get_mc_rollouts_per_race_state()` and `config.get_die_sides()`, so race-state MC targets are computed inside the worker. Returns trajectory dict including `mc_targets`.
 
 `_select_self_play_move`: ε-softmax over `agent.evaluate_moves` scores. With probability `1 - ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature`.
 

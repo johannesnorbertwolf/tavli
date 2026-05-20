@@ -30,7 +30,7 @@ Test config is at `config-test.yml` (minimal: 1 epoch, 1 game, no gold eval).
 
 Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
 1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], terminal_winner_white}`. Weights do not change mid-game.
-2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`). The post-terminal state's target is 0 (mover_T is the loser).
+2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`). The post-terminal state's target is 0 (mover_T is the loser). **MC race grounding (I2)**: for states the playing loop flagged as a race (no contact possible), the λ-return target is replaced by a Monte-Carlo win-probability from `mc_rollouts_per_race_state` random rollouts to terminal (computed inline during play in `ai/mc_rollouts.py`, since encoded states can't be rebuilt into boards). Set the config knob to 0 to reproduce the pre-I2 path exactly.
 3. All `T+1` `(encoded_state, target)` pairs are pushed into a `ReplayBuffer` (capacity ~50k, ring buffer, uniform sampling).
 4. `_train_minibatches` runs `updates_per_game` Adam steps of `binary_cross_entropy_with_logits(forward_logits, target)`. Optional linear LR warmup `0.1·lr → lr` over `lr_warmup_steps` optimizer steps. `max_grad_norm` clips the gradient L2 norm pre-Adam (not the eligibility trace as the old code did).
 
@@ -94,6 +94,7 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `min_buffer_to_train` | Don't start training until buffer holds this many samples |
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
 | `gold_model_path` | Reference model for eval |
+| `mc_rollouts_per_race_state` | I2 — for each race state (no contact possible), replace the λ-return target with the mean of this many random rollouts to terminal (0 = off) |
 
 The `alpha`, `alpha_decay`, `alpha_decay_every`, `alpha_min` keys are deprecated (left readable for old `training_state.json` resumes) and ignored by the Adam path.
 

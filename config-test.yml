@@ -30,3 +30,6 @@ minibatch_size: 8
 updates_per_game: 1
 min_buffer_to_train: 0
 
+# Monte-Carlo grounding for race endgames (I2)
+mc_rollouts_per_race_state: 5  # Tiny for fast tests; production uses 200
+

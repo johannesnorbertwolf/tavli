@@ -17,6 +17,7 @@ from ai.agent import Agent
 from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from ai.checkpoint_io import ENCODER_VERSION_CURRENT
+from ai.mc_rollouts import maybe_mc_target
 from config.config_loader import ConfigLoader
 from domain.constants import WHITE
 from domain.move_generation import legal_moves
@@ -41,11 +42,16 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
     - `terminal_winner_white`: True if White won.
+    - `mc_targets`: optional MC win-prob target per state (length T+1, entries
+      are None for non-race states); see `ai/mc_rollouts.py`.
     """
     t0 = time.perf_counter()
     game = Game(config)
+    mc_rollouts = config.get_mc_rollouts_per_race_state()
+    dice_sides = config.get_die_sides()
 
     states = [encoder.encode_board(game.board, game.current_player == WHITE)]
+    mc_targets = [maybe_mc_target(game.board, game.current_player, mc_rollouts, dice_sides)]
     movers = []
 
     while True:
@@ -63,11 +69,13 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
             game.switch_turn()
         movers.append(is_white_to_move)
         states.append(encoder.encode_board(game.board, game.current_player == WHITE))
+        mc_targets.append(maybe_mc_target(game.board, game.current_player, mc_rollouts, dice_sides))
 
         if game.is_over():
             return {
                 "states": states,
                 "movers": movers,
+                "mc_targets": mc_targets,
                 "terminal_winner_white": (game.get_winner() == WHITE),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,

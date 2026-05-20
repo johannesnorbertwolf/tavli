@@ -70,6 +70,10 @@ The "pinned" mechanic is central to Plakoto: landing on a single opponent piece 
 1. `all_borne_off(c)`: `borne_off[c] >= pieces_per_player` — all pieces borne off.
 2. `captured_starting(c)`: the opponent's starting point is pinned by `c` — White wins by pinning slot 24, Black wins by pinning slot 1.
 
+### Race detection
+
+`is_race()` returns True when no future contact between the two players is possible — i.e. they have already passed each other. Since White travels 1→`board_size+1` and Black travels `board_size`→0 (opposite directions), this holds iff every White checker sits at a strictly higher point than every Black checker: `min(white_points) > max(black_points)`. Empty boards and fully-borne-off positions are races (the absent side uses an out-of-range sentinel). A pinned blot is counted toward **its own** color (the blot under slot `i` has color `-color[i]`), because the pinning stack can move off and re-expose the blot to contact — so a lagging pinned blot correctly prevents a race. Used by the MC-grounding training feature (`ai/mc_rollouts.py`) to decide when to replace the TD bootstrap target with a rollout estimate.
+
 ---
 
 ## move_generation.py

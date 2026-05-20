@@ -45,3 +45,8 @@ replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
 updates_per_game: 5            # Adam SGD steps run per ingested trajectory
 min_buffer_to_train: 2000      # Don't start training until buffer holds at least this many samples
+
+# Monte-Carlo grounding for race endgames (I2)
+mc_rollouts_per_race_state: 200  # For each "race" position (no contact possible), replace
+                                 # the λ-return target with the average of this many random
+                                 # rollouts to terminal. 0 disables.

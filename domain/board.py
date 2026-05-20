@@ -212,6 +212,30 @@ class Board:
         start = self.board_size if c == WHITE else 1
         return self.pinned[start] and self.color[start] == c
 
+    def is_race(self) -> bool:
+        # White travels 1→board_size+1, Black travels board_size→0. No further
+        # contact is possible iff every White checker sits at a higher point than
+        # every Black checker — i.e. they have already crossed.
+        # Pinned blots are counted toward their own color (the pin's owner moves
+        # off normally, and the revealed blot is then a real piece on the board).
+        white_min = self.board_size + 2
+        black_max = -1
+        for i in range(1, self.board_size + 1):
+            n_i = self.n[i]
+            c_i = self.color[i]
+            if n_i > 0:
+                if c_i == WHITE:
+                    if i < white_min: white_min = i
+                else:
+                    if i > black_max: black_max = i
+            if self.pinned[i]:
+                # The blot underneath has color -c_i.
+                if c_i == WHITE:  # pinned blot is BLACK
+                    if i > black_max: black_max = i
+                else:             # pinned blot is WHITE
+                    if i < white_min: white_min = i
+        return white_min > black_max
+
     # --- rendering for debug / error reports ---
 
     def __repr__(self) -> str:

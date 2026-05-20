@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from ai.agent import Agent, RandomAgent
 from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
+from ai.mc_rollouts import maybe_mc_target
 from ai.checkpoint_io import (
     save_checkpoint,
     ENCODER_VERSION_LEGACY,
@@ -147,6 +148,8 @@ class TdLambdaTraining:
         self.minibatch_size = max(1, int(self.config.get_minibatch_size()))
         self.updates_per_game = max(0, int(self.config.get_updates_per_game()))
         self.min_buffer_to_train = max(0, int(self.config.get_min_buffer_to_train()))
+        self.mc_rollouts_per_race_state = max(0, int(self.config.get_mc_rollouts_per_race_state()))
+        self.dice_sides = int(self.config.get_die_sides())
 
         self.eval_every_epochs = max(1, int(self.config.get_eval_every_epochs()))
         self.eval_games_per_color = max(1, int(self.config.get_eval_games_per_color()))
@@ -426,9 +429,10 @@ class TdLambdaTraining:
     def _ingest_trajectory(self, traj):
         """Compute λ-returns from a worker (or local) trajectory and push to replay buffer.
 
-        Returns stats dict: plies, td_abs_sum, td_count, game_seconds.
+        Returns stats dict: plies, td_abs_sum, td_count, game_seconds, mc_overrides.
         td_abs_sum/td_count measure |target - V(s)| on the freshly-computed targets
         (analogous to mean |TD error| in the old code), useful for tracking learning progress.
+        mc_overrides counts how many λ-return targets were replaced with MC race targets.
         """
         states = traj["states"]
         movers = traj["movers"]
@@ -437,7 +441,8 @@ class TdLambdaTraining:
         T = len(movers)
 
         if T == 0:
-            return {"plies": 0, "td_abs_sum": 0.0, "td_count": 0, "game_seconds": traj.get("game_seconds", 0.0)}
+            return {"plies": 0, "td_abs_sum": 0.0, "td_count": 0,
+                    "game_seconds": traj.get("game_seconds", 0.0), "mc_overrides": 0}
 
         # Forward-pass all states once to get bootstrap V values.
         states_np = np.stack(states)  # shape (T+1, state_dim)
@@ -448,6 +453,19 @@ class TdLambdaTraining:
 
         movers_arr = np.array(movers, dtype=bool)
         targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_)
+
+        # I2 — replace λ-return targets with MC win-prob estimates for race
+        # states (precomputed in the worker / local play loop). Each mc_target
+        # entry is None for non-race states or a float in [0,1] interpreted as
+        # the mover's win probability at that state — exactly the perspective
+        # compute_lambda_returns uses, so we can drop it in directly.
+        mc_overrides = 0
+        mc_targets = traj.get("mc_targets")
+        if mc_targets is not None:
+            for i, mc in enumerate(mc_targets):
+                if mc is not None:
+                    targets[i] = float(mc)
+                    mc_overrides += 1
 
         # Push all T+1 (state, target) pairs into replay buffer.
         self.replay.push_many(states_np, targets)
@@ -460,6 +478,7 @@ class TdLambdaTraining:
             "td_abs_sum": td_abs_sum,
             "td_count": td_count,
             "game_seconds": traj.get("game_seconds", 0.0),
+            "mc_overrides": mc_overrides,
         }
 
     def _train_minibatches(self):
@@ -509,6 +528,8 @@ class TdLambdaTraining:
         game_start_time = time.perf_counter()
 
         states = [self.board_encoder.encode_board(game.board, game.current_player == WHITE)]
+        mc_targets = [maybe_mc_target(game.board, game.current_player,
+                                      self.mc_rollouts_per_race_state, self.dice_sides)]
         movers = []
 
         self.board_evaluator.eval()
@@ -531,6 +552,8 @@ class TdLambdaTraining:
 
                 movers.append(is_white_to_move)
                 states.append(self.board_encoder.encode_board(game.board, game.current_player == WHITE))
+                mc_targets.append(maybe_mc_target(game.board, game.current_player,
+                                                  self.mc_rollouts_per_race_state, self.dice_sides))
 
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
@@ -549,6 +572,7 @@ class TdLambdaTraining:
                     return {
                         "states": states,
                         "movers": movers,
+                        "mc_targets": mc_targets,
                         "terminal_winner_white": (game.get_winner() == WHITE),
                         "plies": len(movers),
                         "game_seconds": time.perf_counter() - game_start_time,
@@ -583,6 +607,7 @@ class TdLambdaTraining:
             epoch_plies = 0
             epoch_td_abs_sum = 0.0
             epoch_td_count = 0
+            epoch_mc_overrides = 0
             for i in tqdm(range(games_per_epoch), desc=f"Training epoch {epoch+1}"):
                 is_last_game = (epoch == num_epochs - 1) and (i == games_per_epoch - 1)
                 log_file = "last_game_log.txt" if is_last_game else None
@@ -595,6 +620,7 @@ class TdLambdaTraining:
                 total_td_count += stats["td_count"]
                 epoch_td_abs_sum += stats["td_abs_sum"]
                 epoch_td_count += stats["td_count"]
+                epoch_mc_overrides += stats.get("mc_overrides", 0)
                 self.global_game_num += 1
                 self._update_lambda()
                 self._update_schedules(self.global_game_num - 1)
@@ -609,7 +635,7 @@ class TdLambdaTraining:
                 f"Epoch {epoch + 1} timing: {epoch_seconds:.2f}s total, "
                 f"{epoch_games_per_second:.2f} games/s, {epoch_plies_per_second:.2f} plies/s"
             )
-            print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps})")
+            print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps}, mc_overrides={epoch_mc_overrides})")
             self._save_training_state()
 
             if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
@@ -717,6 +743,7 @@ class TdLambdaTraining:
                 epoch_plies = 0
                 epoch_td_abs_sum = 0.0
                 epoch_td_count = 0
+                epoch_mc_overrides = 0
 
                 for _ in tqdm(range(games_per_epoch), desc=f"Training epoch {epoch+1}"):
                     wid, traj = traj_q.get()
@@ -728,6 +755,7 @@ class TdLambdaTraining:
                     total_td_count += stats["td_count"]
                     epoch_td_abs_sum += stats["td_abs_sum"]
                     epoch_td_count += stats["td_count"]
+                    epoch_mc_overrides += stats.get("mc_overrides", 0)
                     self.global_game_num += 1
                     self._update_lambda()
                     self._update_schedules(self.global_game_num - 1)
@@ -743,7 +771,7 @@ class TdLambdaTraining:
                     f"Epoch {epoch + 1} timing: {epoch_seconds:.2f}s total, "
                     f"{epoch_games_per_second:.2f} games/s, {epoch_plies_per_second:.2f} plies/s"
                 )
-                print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps})")
+                print(f"Epoch {epoch + 1} mean |TD error|: {epoch_td_mae:.6f}  (buffer={len(self.replay)}, opt_steps={self.optimizer_steps}, mc_overrides={epoch_mc_overrides})")
                 self._save_training_state()
 
                 if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
