@@ -108,6 +108,21 @@ class ConfigLoader:
     def get_gold_model_path(self):
         return self.config.get("gold_model_path", "models/gold_v1.pth")
 
+    def get_play_time_budget_s(self) -> float:
+        return float(self.config.get("play_time_budget_s", 13.0))
+
+    def get_beam_threshold(self) -> float:
+        return float(self.config.get("beam_threshold", 0.08))
+
+    def get_search_relative_cutoff(self) -> float:
+        return float(self.config.get("search_relative_cutoff", 0.08))
+
+    def get_search_max_branch(self) -> int:
+        return int(self.config.get("search_max_branch", 5))
+
+    def get_search_max_depth(self) -> int:
+        return int(self.config.get("search_max_depth", 3))
+
     def get_eval_seed(self):
         return self.config.get("eval_seed")
 

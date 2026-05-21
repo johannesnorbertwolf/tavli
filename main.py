@@ -807,6 +807,40 @@ def main():
                 print("Invalid x. Please provide a positive integer.")
                 return
         generate_gold_progress_graph(last_x=last_x)
+    elif mode in ('eval-lookahead',):
+        games_per_color = 100
+        num_workers = None
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--workers" and i + 1 < len(args):
+                try:
+                    num_workers = int(args[i + 1])
+                    if num_workers <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid --workers. Please provide a positive integer.")
+                    return
+                i += 2
+                continue
+            if not arg.startswith("--"):
+                try:
+                    games_per_color = int(arg)
+                    if games_per_color <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid games_per_color. Please provide a positive integer.")
+                    return
+                i += 1
+                continue
+            print(f"Unknown eval-lookahead argument: {arg}")
+            return
+        from ai.lookahead_eval import evaluate_lookahead_selfplay
+        evaluate_lookahead_selfplay(
+            config, config.get_gold_model_path(),
+            games_per_color=games_per_color, num_workers=num_workers,
+        )
     elif mode in ('human-stats',):
         analyze_human_games()
     elif mode in ('human-graph',):
@@ -824,7 +858,7 @@ def main():
         print(
             f"Unknown mode: {mode}. Use 'train', 'play', "
             "'eval-random', 'eval-gold', 'eval-gold-stats', 'eval-gold-graph', "
-            "'human-stats', or 'human-graph'."
+            "'eval-lookahead', 'human-stats', or 'human-graph'."
         )
 
 

@@ -26,6 +26,11 @@ eval_against_random: false # Keep optional random baseline eval
 eval_against_gold: true    # Main progress metric: current model vs fixed gold model
 eval_candidate_lookahead_plies: 1 # Expectimax lookahead for candidate at eval
 eval_gold_lookahead_plies: 1      # Expectimax lookahead for gold opponent at eval
+play_time_budget_s: 20.0          # Max time budget per AI move (iterative-deepening search)
+beam_threshold: 0.08              # Absolute beam fallback (used only when search_relative_cutoff unset)
+search_relative_cutoff: 0.08      # Keep moves within this relative fraction of the best
+search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
+search_max_depth: 3               # Stop iterative deepening here (depth 4+ is never reachable in budget)
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
 gold_model_path: models/gold_v9.pth # Frozen reference model checkpoint
 training_state_path: training_state.json # Persisted scheduler state for resumed training

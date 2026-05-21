@@ -17,10 +17,10 @@ class StubAgent:
     def __init__(self, score=0.5):
         self.score = score
 
-    def evaluate_moves(self, board, moves, color, lookahead_plies=1):
+    def evaluate_moves(self, board, moves, color, lookahead_plies=1, **kwargs):
         return [self.score] * len(moves)
 
-    def get_best_move(self, board, moves, color, lookahead_plies=1):
+    def get_best_move(self, board, moves, color, lookahead_plies=1, **kwargs):
         return moves[0], self.score
 
 
@@ -107,6 +107,49 @@ class TestEvalSticky(unittest.TestCase):
         final = loop.run(s, io)
         self.assertEqual(final.eval_depth, 5)
         self.assertEqual(final.ply_count(), 1)
+
+
+# --- AI move selection -------------------------------------------------
+
+
+class RecordingAgent(StubAgent):
+    """Captures the kwargs passed to get_best_move so we can assert the
+    play loop wires the time-budget lookahead through to the agent."""
+
+    def __init__(self, score=0.5):
+        super().__init__(score)
+        self.last_kwargs = None
+
+    def get_best_move(self, board, moves, color, lookahead_plies=1, **kwargs):
+        self.last_kwargs = kwargs
+        return moves[0], self.score
+
+
+class TestAiTurnUsesTimeBudget(unittest.TestCase):
+    def test_ai_turn_forwards_search_knobs(self):
+        agent = RecordingAgent()
+        # Human is Black, White starts -> the first turn is the AI's (White).
+        s = _new_session(human_color=BLACK, starting_player=WHITE, agent=agent)
+        s.set_dice(3, 5)
+        io = FakeIO([])
+
+        loop._ai_turn(s, io)
+
+        self.assertIsNotNone(agent.last_kwargs)
+        self.assertEqual(
+            agent.last_kwargs.get("time_budget_s"),
+            s.config.get_play_time_budget_s(),
+        )
+        self.assertEqual(
+            agent.last_kwargs.get("relative_cutoff"),
+            s.config.get_search_relative_cutoff(),
+        )
+        self.assertEqual(
+            agent.last_kwargs.get("max_branch"),
+            s.config.get_search_max_branch(),
+        )
+        # The AI move was committed.
+        self.assertEqual(s.ply_count(), 1)
 
 
 # --- save / load -------------------------------------------------------

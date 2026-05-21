@@ -206,7 +206,10 @@ def _ai_turn(session: PlaySession, io: IO) -> None:
         session.game.board,
         session.possible_moves(),
         session.current_player(),
-        lookahead_plies=2,
+        time_budget_s=session.config.get_play_time_budget_s(),
+        relative_cutoff=session.config.get_search_relative_cutoff(),
+        max_branch=session.config.get_search_max_branch(),
+        max_depth=session.config.get_search_max_depth(),
     )
     io.output(renderer.format_ai_played(session, move, score))
     session.commit_move(move)

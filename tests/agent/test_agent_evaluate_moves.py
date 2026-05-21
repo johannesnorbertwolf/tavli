@@ -114,5 +114,184 @@ class TestAgentEvaluateMoves(unittest.TestCase):
         self.assertAlmostEqual(scores[winning_index], 1.0, places=6)
 
 
+class TestAgentNPly(unittest.TestCase):
+    def setUp(self):
+        config_path = Path(__file__).resolve().parents[2] / "config-test.yml"
+        self.config = ConfigLoader(str(config_path))
+        self.board = Board.from_config(self.config)
+        self.encoder = BoardEncoder(self.config)
+
+    def _setup_bear_off(self):
+        """14 white pieces borne off, 1 white at slot 23. White rolls (2, 5)."""
+        board_size = self.config.get_board_size()
+        self.board.set_point(board_size + 1, WHITE, 14)
+        self.board.borne_off[WHITE] = 14
+        self.board.set_point(23, WHITE, 1)
+        self.board.set_point(1, BLACK, 5)
+        dice = Dice(self.config.get_die_sides())
+        dice.set(2, 5)
+        possible_moves = legal_moves(self.board, WHITE, dice)
+        winning_index = None
+        for idx, move in enumerate(possible_moves):
+            token = self.board.apply(move, WHITE)
+            if self.board.has_won(WHITE):
+                winning_index = idx
+                self.board.undo(token)
+                break
+            self.board.undo(token)
+        self.assertIsNotNone(winning_index)
+        return possible_moves, winning_index
+
+    def _make_agent(self, value=0.3):
+        return Agent(ConstantEvaluator(value=value), self.encoder)
+
+    def test_nply_depth1_matches_batch(self):
+        possible_moves, _ = self._setup_bear_off()
+        agent = self._make_agent()
+        batch_scores = agent._evaluate_moves_batch(self.board, possible_moves, WHITE)
+        nply_scores = agent._evaluate_moves_nply(self.board, possible_moves, WHITE, depth=1, beam_threshold=0.08)
+        self.assertEqual(len(batch_scores), len(nply_scores))
+        for a, b in zip(batch_scores, nply_scores):
+            self.assertAlmostEqual(a, b, places=6)
+
+    def test_nply_win_scores_1_at_depth2(self):
+        possible_moves, winning_index = self._setup_bear_off()
+        agent = self._make_agent()
+        scores = agent._evaluate_moves_nply(self.board, possible_moves, WHITE, depth=2, beam_threshold=0.08)
+        self.assertAlmostEqual(scores[winning_index], 1.0, places=6)
+
+    def test_single_move_fast_path(self):
+        possible_moves, _ = self._setup_bear_off()
+        single_move = [possible_moves[0]]
+        agent = self._make_agent()
+        move, score = agent.get_best_move(self.board, single_move, WHITE, time_budget_s=5.0)
+        self.assertEqual(move, single_move[0])
+
+    def test_iterative_deepening_expired_deadline_returns_depth1(self):
+        possible_moves, _ = self._setup_bear_off()
+        agent = self._make_agent()
+        # Negative budget expires immediately; must equal depth-1 result
+        move_timed, _ = agent.get_best_move(self.board, possible_moves, WHITE, time_budget_s=-1.0)
+        move_fixed, _ = agent.get_best_move(self.board, possible_moves, WHITE, lookahead_plies=1)
+        self.assertEqual(move_timed, move_fixed)
+
+    def test_board_not_corrupted_after_timeout(self):
+        possible_moves, _ = self._setup_bear_off()
+        agent = self._make_agent()
+        board_repr_before = repr(self.board)
+        # Very short budget to trigger timeout inside recursion
+        agent.get_best_move(self.board, possible_moves, WHITE, time_budget_s=0.00001, beam_threshold=0.08)
+        self.assertEqual(repr(self.board), board_repr_before)
+
+
+class TestPruneBranches(unittest.TestCase):
+    def test_relative_cutoff_keeps_moves_within_fraction(self):
+        moves = ["a", "b", "c", "d"]
+        scores = [1.0, 0.95, 0.9, 0.5]
+        # rel 0.10 -> keep >= 0.90 -> a,b,c (best-first), no cap
+        idx = Agent._prune_branches(moves, scores, beam_threshold=0.08, relative_cutoff=0.10, max_branch=None)
+        self.assertEqual(idx, [0, 1, 2])
+
+    def test_max_branch_caps_after_cutoff(self):
+        moves = ["a", "b", "c", "d"]
+        scores = [1.0, 0.95, 0.9, 0.89]
+        # rel 0.20 -> keep >= 0.80 -> all four, but cap to top 2 by score
+        idx = Agent._prune_branches(moves, scores, beam_threshold=0.08, relative_cutoff=0.20, max_branch=2)
+        self.assertEqual(idx, [0, 1])
+
+    def test_always_keeps_at_least_one(self):
+        idx = Agent._prune_branches(["a", "b"], [0.4, 0.1], beam_threshold=0.0, relative_cutoff=0.0, max_branch=6)
+        self.assertEqual(idx, [0])
+
+    def test_falls_back_to_beam_when_relative_cutoff_none(self):
+        moves = ["a", "b", "c"]
+        scores = [1.0, 0.95, 0.5]
+        # absolute beam 0.08 -> keep >= 0.92 -> a,b
+        idx = Agent._prune_branches(moves, scores, beam_threshold=0.08, relative_cutoff=None, max_branch=None)
+        self.assertEqual(idx, [0, 1])
+
+
+class TestLastSearchDepth(unittest.TestCase):
+    def setUp(self):
+        config_path = Path(__file__).resolve().parents[2] / "config-test.yml"
+        self.config = ConfigLoader(str(config_path))
+        self.board = Board.from_config(self.config)
+        self.encoder = BoardEncoder(self.config)
+
+    def _setup_multi_move(self):
+        """A position with several legal white moves (so the single-move fast path is avoided)."""
+        for p in range(0, self.config.get_board_size() + 2):
+            self.board.set_point(p, WHITE, 0)
+            self.board.set_point(p, BLACK, 0)
+        self.board.set_point(5, WHITE, 1)
+        self.board.set_point(10, WHITE, 1)
+        self.board.set_point(20, BLACK, 2)
+        dice = Dice(self.config.get_die_sides())
+        dice.set(2, 4)
+        moves = legal_moves(self.board, WHITE, dice)
+        self.assertGreater(len(moves), 1)
+        return moves
+
+    def test_fixed_path_records_depth(self):
+        moves = self._setup_multi_move()
+        agent = Agent(ConstantEvaluator(value=0.3), self.encoder)
+        agent.get_best_move(self.board, moves, WHITE, lookahead_plies=1)
+        self.assertEqual(agent.last_search_depth, 1)
+        agent.get_best_move(self.board, moves, WHITE, lookahead_plies=2)
+        self.assertEqual(agent.last_search_depth, 2)
+
+    def test_time_budget_path_records_depth_at_least_2(self):
+        moves = self._setup_multi_move()
+        agent = Agent(ConstantEvaluator(value=0.3), self.encoder)
+        agent.get_best_move(self.board, moves, WHITE, time_budget_s=5.0, relative_cutoff=0.10, max_branch=6)
+        self.assertGreaterEqual(agent.last_search_depth, 2)
+
+    def test_max_depth_caps_deepening(self):
+        moves = self._setup_multi_move()
+        agent = Agent(ConstantEvaluator(value=0.3), self.encoder)
+        # Generous budget but max_depth=3 must stop the search at depth 3.
+        agent.get_best_move(
+            self.board, moves, WHITE, time_budget_s=10.0,
+            relative_cutoff=0.08, max_branch=5, max_depth=3,
+        )
+        self.assertEqual(agent.last_search_depth, 3)
+
+    def test_expired_budget_records_depth_1(self):
+        moves = self._setup_multi_move()
+        agent = Agent(ConstantEvaluator(value=0.3), self.encoder)
+        agent.get_best_move(self.board, moves, WHITE, time_budget_s=-1.0)
+        self.assertEqual(agent.last_search_depth, 1)
+
+    def test_board_restored_when_timeout_fires_deep_in_recursion(self):
+        """Regression: a _TimeoutError raised inside a nested depth-2 frame must still
+        undo every applied move as it unwinds (try/finally), leaving the board pristine."""
+        import ai.agent as agent_module
+        moves = self._setup_multi_move()
+        agent = Agent(ConstantEvaluator(value=0.3), self.encoder)
+        board_repr_before = repr(self.board)
+
+        # Fake clock: first deadline check passes (in the outer depth-3 frame, after it
+        # has applied a move and recursed), the second check (in the depth-2 frame, after
+        # it too has applied a move) trips the deadline.
+        calls = {"n": 0}
+        real_monotonic = agent_module.time.monotonic
+
+        def fake_monotonic():
+            calls["n"] += 1
+            return 0.0 if calls["n"] <= 1 else 100.0
+
+        agent_module.time.monotonic = fake_monotonic
+        try:
+            with self.assertRaises(agent_module._TimeoutError):
+                agent._evaluate_moves_nply(
+                    self.board, moves, WHITE, depth=3, beam_threshold=0.08,
+                    deadline=1.0, relative_cutoff=0.08, max_branch=5,
+                )
+        finally:
+            agent_module.time.monotonic = real_monotonic
+
+        self.assertEqual(repr(self.board), board_repr_before)
+
+
 if __name__ == "__main__":
     unittest.main()

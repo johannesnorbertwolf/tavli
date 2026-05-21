@@ -13,6 +13,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 ./run.sh eval-gold [games] [v1-v4]     # Benchmark trained model vs a gold checkpoint
 ./run.sh eval-gold-stats [x]           # Stats + significance test on last x eval log entries
 ./run.sh eval-gold-graph [x]           # Generate SVG progress chart
+./run.sh eval-lookahead [games] [--workers N]  # Validate flexible search vs fixed 2-ply (gold self-play, parallel)
 ./run.sh play                          # Human vs AI interactive game
 ```
 
@@ -94,6 +95,10 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `min_buffer_to_train` | Don't start training until buffer holds this many samples |
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
 | `gold_model_path` | Reference model for eval |
+| `play_time_budget_s` | Max wall-clock budget per AI move during play / `eval-lookahead` (safety ceiling; usually finishes earlier via `search_max_depth`) |
+| `search_relative_cutoff` | Move-pruning width: keep moves with `score >= best*(1-cutoff)` at each search node |
+| `search_max_branch` | Hard cap on moves expanded per search node, applied on top of `search_relative_cutoff` |
+| `search_max_depth` | Stop iterative deepening at this depth (depth 4+ is unreachable in budget) |
 
 The `alpha`, `alpha_decay`, `alpha_decay_every`, `alpha_min` keys are deprecated (left readable for old `training_state.json` resumes) and ignored by the Adam path.
 

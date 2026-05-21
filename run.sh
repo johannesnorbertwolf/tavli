@@ -167,6 +167,18 @@ elif [ "$1" == "eval-gold-graph" ]; then
             nix-shell --run "python3 main.py eval-gold-graph"
         fi
     fi
+elif [ "$1" == "eval-lookahead" ]; then
+    GAMES_PER_COLOR="${2:-100}"
+    WORKERS_ARG=""
+    if [ "$3" == "--workers" ] && [ -n "$4" ]; then
+        WORKERS_ARG="--workers $4"
+    fi
+    echo "Validating flexible lookahead vs fixed 2-ply ($GAMES_PER_COLOR games per color)..."
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $PY_RUNNER main.py eval-lookahead "$GAMES_PER_COLOR" $WORKERS_ARG
+    else
+        nix-shell --run "python3 main.py eval-lookahead $GAMES_PER_COLOR $WORKERS_ARG"
+    fi
 elif [ "$1" == "human-stats" ]; then
     if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
         $PY_RUNNER main.py human-stats
