@@ -14,6 +14,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 ./run.sh eval-gold-stats [x]           # Stats + significance test on last x eval log entries
 ./run.sh eval-gold-graph [x]           # Generate SVG progress chart
 ./run.sh play                          # Human vs AI interactive game
+./run.sh tournament [num_runs] [seed]  # Run round-robin tournaments (see tournaments/)
 ```
 
 Tests use `unittest` — run from repo root:
@@ -119,6 +120,36 @@ Each eval run appends one line to `training_runs/eval_gold_history.log`:
 ```
 
 `local_tools/` contains SVG graph generators and a file-watch daemon for live dashboards during training.
+
+### Tournament system (`tournaments/`)
+
+Round-robin tournament framework for evaluating all gold models against each other. Runs N independent tournaments, each with 9 models playing every other model in 2 games (once as WHITE, once as BLACK). Parallelized across workers.
+
+**Key modules**:
+- `tournament_engine.py`: Plays one round-robin tournament; reuses existing `Game`, `Agent.get_best_move()`, `legal_moves()`
+- `tournament_runner.py`: Orchestrates N parallel tournaments; auto-discovers gold models from `models/gold_v*.pth`; handles seeding for reproducibility
+- `tournament_aggregator.py`: Computes statistics (win rates, ELO, confidence intervals, head-to-head records, placement frequency)
+- `tournament_reporter.py`: Generates HTML visualizations (summary table, ELO evolution chart, placement frequency heatmap, head-to-head matrix)
+- `tournament_cli.py`: CLI entry point; argument parsing and report generation
+- `monitor.py`: Live progress monitor showing tournament winners and running statistics
+
+**Usage**:
+```bash
+./run.sh tournament [num_runs] [seed]        # Default: 100 runs, 6 workers
+python main.py tournament --num-runs 1000    # Full 1000-tournament run
+python3 tournaments/monitor.py [interval]    # Live dashboard in another terminal
+```
+
+**Output** (in `tournament_results/`):
+- `aggregated_results.csv`: Per-model statistics (wins, losses, win rate, ELO, CI)
+- `match_matrix.csv`: Head-to-head records
+- `placement_frequency.json`: How often each model finishes in each placement
+- `html/summary.html`: Ranking table with ELO and color breakdowns
+- `html/elo_evolution.html`: Interactive line chart showing ELO convergence across runs
+- `html/placement_frequency.html`: Heatmap and table of placement frequencies
+- `html/head_to_head_matrix.html`: 2D grid showing WHITE/BLACK win rates per matchup
+
+**Runtime**: ~2.5 min per 100 tournaments (7,200 games) on 6 workers with 1-ply lookahead. Scales linearly with number of tournaments.
 
 ## Documentation Policy
 
