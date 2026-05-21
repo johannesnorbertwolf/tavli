@@ -590,6 +590,7 @@ def play_against_ai(config, model_load_path="trained_model.pth", load_name=None)
             eval_depth=eval_depth,
         )
 
+    _print_human_record()
     final_session = loop.run(session, loop.StdIO(), agent_loader=agent_loader)
 
     if final_session.is_terminal():
