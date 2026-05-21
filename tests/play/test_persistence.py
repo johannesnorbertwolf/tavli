@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config.config_loader import ConfigLoader
-from domain.color import Color
+from domain.constants import WHITE
 from play.persistence import (
     SaveFile,
     SCHEMA_VERSION,
@@ -23,7 +23,7 @@ def _config():
     return ConfigLoader(str(Path(__file__).resolve().parents[2] / "config-test.yml"))
 
 
-def _seed_session(dice_mode=DiceMode.MANUAL, human_color=Color.WHITE):
+def _seed_session(dice_mode=DiceMode.MANUAL, human_color=WHITE):
     s = PlaySession(
         config=_config(),
         agent=None,
@@ -31,7 +31,7 @@ def _seed_session(dice_mode=DiceMode.MANUAL, human_color=Color.WHITE):
         dice_mode=dice_mode,
         human_color=human_color,
         eval_depth=4,
-        starting_player=Color.WHITE,
+        starting_player=WHITE,
     )
     # Play 3 plies including a pass.
     s.set_dice(3, 5)

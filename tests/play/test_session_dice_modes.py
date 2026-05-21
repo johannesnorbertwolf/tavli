@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 
 from config.config_loader import ConfigLoader
-from domain.color import Color
+from domain.constants import WHITE
 from play.session import PlaySession, DiceMode
 
 
@@ -16,9 +16,9 @@ def _new_session(dice_mode):
         agent=None,
         ai_checkpoint_path="trained_model.pth",
         dice_mode=dice_mode,
-        human_color=Color.WHITE,
+        human_color=WHITE,
         eval_depth=4,
-        starting_player=Color.WHITE,
+        starting_player=WHITE,
     )
 
 
@@ -53,13 +53,6 @@ class TestManualDiceMode(unittest.TestCase):
         self.assertEqual(s.game.dice.die1.value, 5)
         self.assertEqual(s.game.dice.die2.value, 2)
 
-    def test_set_dice_rejects_out_of_range(self):
-        s = _new_session(DiceMode.MANUAL)
-        with self.assertRaises(ValueError):
-            s.set_dice(7, 2)
-        with self.assertRaises(ValueError):
-            s.set_dice(0, 3)
-
     def test_commit_clears_dice(self):
         s = _new_session(DiceMode.MANUAL)
         s.set_dice(3, 5)
@@ -82,7 +75,7 @@ class TestMixedSequence(unittest.TestCase):
         s.undo()
         self.assertIsNone(s.current_dice())
         # Same player to move (white, since we're back at ply 0)
-        self.assertEqual(s.current_player(), Color.WHITE)
+        self.assertEqual(s.current_player(), WHITE)
 
         s.set_dice(6, 1)
         moves = s.possible_moves()

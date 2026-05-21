@@ -443,9 +443,9 @@ Fields:
 | `agent` | object | Anything with `evaluate_moves` and `get_best_move`. May be `None` for headless tests that only exercise the mechanical layer. |
 | `ai_checkpoint_path` | `str` | Persisted to saves; surfaced to the user on load. |
 | `dice_mode` | `DiceMode` enum | `AUTO` or `MANUAL`. |
-| `human_color` | `Color` | `WHITE` or `BLACK`. |
+| `human_color` | `int` | `WHITE` (+1) or `BLACK` (−1) from `domain.constants`. |
 | `eval_depth` | `int` | Sticky session-wide default for `ranked_moves`. |
-| `starting_player` | `Color` | Always `WHITE` in standard play; settable for tests. |
+| `starting_player` | `int` | Always `WHITE` in standard play; settable for tests. |
 | `game` | `Game` | Owns the board, dice, and turn pointer. |
 | `history` | `list[Snapshot]` | Index 0 is the initial state; each subsequent entry is the state *after* one ply. |
 | `_pending_dice` | `tuple[int, int] \| None` | Dice set for the current (not yet committed) ply. Cleared on commit. |
@@ -457,12 +457,17 @@ Fields:
 ```python
 @dataclass(frozen=True)
 class Snapshot:
-    next_player: Color           # who plays AFTER this snapshot
+    next_player: int             # WHITE/BLACK; who plays AFTER this snapshot
     move_played: Move | None     # the move that produced this snapshot (None for index 0)
     dice_for_this_ply: tuple[int, int] | None
     was_pass: bool
     last_move_summary: str       # pre-formatted for history display
+    undo_token: list | None      # board.apply() token for undo; runtime-only, not serialized
 ```
+
+Domain types are from `domain` v2 (array-based): colors are the ints `WHITE`/`BLACK`
+(`domain.constants`); `Move`/`HalfMove` are immutable `NamedTuple`s (`Move.halves`,
+`HalfMove.src`/`HalfMove.dst`); the board is `domain.board.Board`.
 
 Two constructors:
 
@@ -473,7 +478,7 @@ Two constructors:
 
 Two layers, both live on `PlaySession`:
 
-**`undo(n=1)`** — the mechanical primitive. Pops `n` plies. For each popped snapshot, calls `board.undo(move_played)` (skipped for passes). Then restores dice: in AUTO mode, the *last popped* snapshot's `dice_for_this_ply` is reinstated; in MANUAL mode, `_pending_dice` is cleared. Used internally by `from_save`, by the post-game un-end-game flow, and by tests.
+**`undo(n=1)`** — the mechanical primitive. Pops `n` plies. For each popped snapshot, calls `board.undo(snap.undo_token)` (the token captured at `commit_move` time; `None` for passes). Then restores dice: in AUTO mode, the *last popped* snapshot's `dice_for_this_ply` is reinstated; in MANUAL mode, `_pending_dice` is cleared. Used internally by `from_save`, by the post-game un-end-game flow, and by tests.
 
 **`undo_to_my_decision(n=1)`** — the user-facing semantic. Each step walks history backwards to find the most recent snapshot where `next_player == human_color` (excluding the current top), then pops down to it. If no such snapshot exists (e.g. human is Black and AI just opened), returns 0 plies popped. This is what every user-typed `u` in the loop calls.
 
@@ -501,7 +506,7 @@ class SaveFile:
     history: list[dict]
 ```
 
-Each `history` entry: `{"dice": [d1, d2], "move": [[from_pos, to_pos], ...] | None, "was_pass": bool}`. Positions are integer indices into `board.points` (0 = white bear-off, 25 = black bear-off in standard board geometry).
+Each `history` entry: `{"dice": [d1, d2], "move": [[src, dst], ...] | None, "was_pass": bool}`. Positions are board indices: `1..board_size` are playable points, `0` is Black's bear-off slot and `board_size+1` (25) is White's bear-off slot.
 
 **Bumping the schema** is intentionally breaking: there's no migration code. If you change the shape, increment `SCHEMA_VERSION` and document the new fields here. Old saves raise `IncompatibleSave` on load.
 
@@ -585,4 +590,4 @@ Run all play tests with `.venv/bin/python -m unittest discover -s tests/ -t .`.
 
 **Change the AI's playing lookahead.** Currently hardcoded at `lookahead_plies=2` in [loop.py::_ai_turn](loop.py). This is intentionally separate from `session.eval_depth` (which is the human-facing rank depth). If you want it user-configurable, add a config key and read it via `session.config.get_…()`.
 
-**Render the board differently.** Everything visible flows through [renderer.py](renderer.py). It depends on `str(board)` for the board grid — to change that, edit `domain/board.py::__str__` (the `GameBoard` class).
+**Render the board differently.** Everything visible flows through [renderer.py](renderer.py). The board grid is produced by `renderer.format_board(board)` — a play-UI-local renderer that reads the v2 `Board`'s `n[]`/`color[]`/`pinned[]` arrays and reproduces the classic glyph layout (`O`/`X`, separators). This is deliberately independent of `domain.board.Board.__repr__` (the array-style debug dump), so changing the play display means editing `format_board`, not the domain.

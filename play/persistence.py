@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from domain.color import Color
+from domain.constants import WHITE
 from play.session import DiceMode, PlaySession
 
 
@@ -60,10 +60,7 @@ def _serialize_session(session: PlaySession, encoder_version: str) -> dict:
                 "was_pass": True,
             }
         else:
-            half_moves = [
-                [hm.from_point.position, hm.to_point.position]
-                for hm in snap.move_played.half_moves
-            ]
+            half_moves = [[h.src, h.dst] for h in snap.move_played.halves]
             entry = {
                 "dice": list(snap.dice_for_this_ply),
                 "move": half_moves,
@@ -75,9 +72,9 @@ def _serialize_session(session: PlaySession, encoder_version: str) -> dict:
         "encoder_version": encoder_version,
         "ai_checkpoint_path": session.ai_checkpoint_path,
         "dice_mode": session.dice_mode.value,
-        "human_color": "w" if session.human_color == Color.WHITE else "b",
+        "human_color": "w" if session.human_color == WHITE else "b",
         "eval_depth": session.eval_depth,
-        "starting_player": "white" if session.starting_player == Color.WHITE else "black",
+        "starting_player": "white" if session.starting_player == WHITE else "black",
         "history": history,
     }
 

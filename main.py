@@ -13,10 +13,10 @@ from ai.board_encoder import BoardEncoder
 from ai.checkpoint_io import load_agent_from_checkpoint, load_state_dict, ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
 from ai.td_lambda_training import TdLambdaTraining
-from domain.possible_moves import PossibleMoves
+from domain.move_generation import legal_moves
 from game.game import Game
 from ai.agent import RandomAgent
-from domain.color import Color
+from domain.constants import WHITE, BLACK
 
 
 def _percentile(sorted_values, p):
@@ -512,15 +512,15 @@ def generate_human_progress_graph(log_path=HUMAN_GAME_LOG, out_path="training_ru
     print(f"Wrote graph to {out_path}")
 
 
-def _prompt_human_color() -> Color:
+def _prompt_human_color() -> int:
     while True:
         line = input("Pick your color [w/b/r] (default w): ").strip().lower()
         if line == "" or line == "w":
-            return Color.WHITE
+            return WHITE
         if line == "b":
-            return Color.BLACK
+            return BLACK
         if line == "r":
-            return Color.WHITE if random.random() < 0.5 else Color.BLACK
+            return WHITE if random.random() < 0.5 else BLACK
         print("Please enter w, b, or r.")
 
 
@@ -615,12 +615,12 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
     py_state = random.getstate()
     np_state = np.random.get_state()
 
-    def play_game(ai_color: Color):
-        game = Game(config, starting_player=Color.WHITE)
+    def play_game(ai_color: int):
+        game = Game(config, starting_player=WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+            possible_moves = legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -628,12 +628,12 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
                 move, _ = ai_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=candidate_lookahead)
             else:
                 move = random_agent.get_move(possible_moves)
-            game.board.apply(move)
+            game.board.apply(move, current_player)
             game.switch_turn()
         return game.get_winner()
 
     try:
-        for ai_color in (Color.WHITE, Color.BLACK):
+        for ai_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             wins = 0
@@ -677,12 +677,12 @@ def evaluate_against_gold(
     py_state = random.getstate()
     np_state = np.random.get_state()
 
-    def play_game(candidate_color: Color):
-        game = Game(config, starting_player=Color.WHITE)
+    def play_game(candidate_color: int):
+        game = Game(config, starting_player=WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = PossibleMoves(game.board, current_player, game.dice).find_moves()
+            possible_moves = legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -690,12 +690,12 @@ def evaluate_against_gold(
                 move, _ = candidate_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=candidate_lookahead)
             else:
                 move, _ = gold_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=gold_lookahead)
-            game.board.apply(move)
+            game.board.apply(move, current_player)
             game.switch_turn()
         return game.get_winner()
 
     try:
-        for candidate_color in (Color.WHITE, Color.BLACK):
+        for candidate_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
             wins = 0

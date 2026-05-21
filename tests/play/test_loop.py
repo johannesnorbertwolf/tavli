@@ -4,8 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from config.config_loader import ConfigLoader
-from domain.color import Color
-from domain.point import Point
+from domain.constants import WHITE, BLACK
 from play import loop, persistence
 from play.session import DiceMode, PlaySession
 
@@ -46,8 +45,8 @@ class FakeIO(loop.IO):
 
 def _new_session(
     dice_mode=DiceMode.MANUAL,
-    human_color=Color.WHITE,
-    starting_player=Color.WHITE,
+    human_color=WHITE,
+    starting_player=WHITE,
     agent=None,
 ):
     return PlaySession(
@@ -164,12 +163,13 @@ class TestAutoSaveOnLoadWhileDirty(unittest.TestCase):
 
 class TestPostTerminalRejectsPlay(unittest.TestCase):
     def _setup_one_move_from_win(self, s):
-        bs = s.game.board.board_size
-        for i in range(0, bs + 2):
-            s.game.board.points[i] = Point(i)
-        s.game.board.points[bs + 1] = Point(bs + 1, Color.WHITE, 14)
-        s.game.board.points[23] = Point(23, Color.WHITE, 1)
-        s.game.board.points[1] = Point(1, Color.BLACK, 5)
+        b = s.game.board
+        for i in range(0, b.board_size + 2):
+            b.set_point(i, 0, 0)
+        b.borne_off[WHITE] = 14
+        b.borne_off[BLACK] = 0
+        b.set_point(23, WHITE, 1)
+        b.set_point(1, BLACK, 5)
 
     def test_play_then_post_game_rejects_rank(self):
         s = _new_session()
@@ -179,9 +179,9 @@ class TestPostTerminalRejectsPlay(unittest.TestCase):
         ranked = s.ranked_moves()
         winning_rank = None
         for idx, (move, _) in enumerate(ranked, start=1):
-            s.game.board.apply(move)
-            won = s.game.board.has_won(Color.WHITE)
-            s.game.board.undo(move)
+            token = s.game.board.apply(move, WHITE)
+            won = s.game.board.has_won(WHITE)
+            s.game.board.undo(token)
             if won:
                 winning_rank = idx
                 break
@@ -207,12 +207,13 @@ class TestPostTerminalRejectsPlay(unittest.TestCase):
 
 class TestPostGameReview(unittest.TestCase):
     def _setup_one_move_from_win(self, s):
-        bs = s.game.board.board_size
-        for i in range(0, bs + 2):
-            s.game.board.points[i] = Point(i)
-        s.game.board.points[bs + 1] = Point(bs + 1, Color.WHITE, 14)
-        s.game.board.points[23] = Point(23, Color.WHITE, 1)
-        s.game.board.points[1] = Point(1, Color.BLACK, 5)
+        b = s.game.board
+        for i in range(0, b.board_size + 2):
+            b.set_point(i, 0, 0)
+        b.borne_off[WHITE] = 14
+        b.borne_off[BLACK] = 0
+        b.set_point(23, WHITE, 1)
+        b.set_point(1, BLACK, 5)
 
     def test_review_runs_and_produces_output(self):
         s = _new_session()
@@ -221,9 +222,9 @@ class TestPostGameReview(unittest.TestCase):
         ranked = s.ranked_moves()
         winning_rank = None
         for idx, (move, _) in enumerate(ranked, start=1):
-            s.game.board.apply(move)
-            won = s.game.board.has_won(Color.WHITE)
-            s.game.board.undo(move)
+            token = s.game.board.apply(move, WHITE)
+            won = s.game.board.has_won(WHITE)
+            s.game.board.undo(token)
             if won:
                 winning_rank = idx
                 break
@@ -246,9 +247,9 @@ class TestPostGameReview(unittest.TestCase):
         ranked = s.ranked_moves()
         winning_rank = None
         for idx, (move, _) in enumerate(ranked, start=1):
-            s.game.board.apply(move)
-            won = s.game.board.has_won(Color.WHITE)
-            s.game.board.undo(move)
+            token = s.game.board.apply(move, WHITE)
+            won = s.game.board.has_won(WHITE)
+            s.game.board.undo(token)
             if won:
                 winning_rank = idx
                 break
@@ -263,19 +264,20 @@ class TestPostGameReview(unittest.TestCase):
 
 class TestPostGameDrill(unittest.TestCase):
     def _setup_one_move_from_win(self, s):
-        bs = s.game.board.board_size
-        for i in range(0, bs + 2):
-            s.game.board.points[i] = Point(i)
-        s.game.board.points[bs + 1] = Point(bs + 1, Color.WHITE, 14)
-        s.game.board.points[23] = Point(23, Color.WHITE, 1)
-        s.game.board.points[1] = Point(1, Color.BLACK, 5)
+        b = s.game.board
+        for i in range(0, b.board_size + 2):
+            b.set_point(i, 0, 0)
+        b.borne_off[WHITE] = 14
+        b.borne_off[BLACK] = 0
+        b.set_point(23, WHITE, 1)
+        b.set_point(1, BLACK, 5)
 
     def _winning_rank(self, s):
         ranked = s.ranked_moves()
         for idx, (move, _) in enumerate(ranked, start=1):
-            s.game.board.apply(move)
-            won = s.game.board.has_won(Color.WHITE)
-            s.game.board.undo(move)
+            token = s.game.board.apply(move, WHITE)
+            won = s.game.board.has_won(WHITE)
+            s.game.board.undo(token)
             if won:
                 return idx
         return None
@@ -313,7 +315,7 @@ class TestPostGameDrill(unittest.TestCase):
 
 class TestNoMovesPrompt(unittest.TestCase):
     def test_enter_records_pass(self):
-        s = _new_session(dice_mode=DiceMode.MANUAL, human_color=Color.WHITE)
+        s = _new_session(dice_mode=DiceMode.MANUAL, human_color=WHITE)
         s.set_dice(3, 5)
         io = FakeIO([""])
         act = loop._no_moves(s, io)
@@ -324,7 +326,7 @@ class TestNoMovesPrompt(unittest.TestCase):
     def test_u_when_no_prior_human_decision_is_noop(self):
         # human=BLACK so that after white's opening ply, it's the human's turn.
         # The human hasn't made any decision yet, so 'u' from no-moves is a no-op.
-        s = _new_session(dice_mode=DiceMode.MANUAL, human_color=Color.BLACK)
+        s = _new_session(dice_mode=DiceMode.MANUAL, human_color=BLACK)
         s.set_dice(3, 5)
         s.commit_move(s.possible_moves()[0])  # white plays ply 1
         s.set_dice(3, 5)                       # now BLACK (human) to move

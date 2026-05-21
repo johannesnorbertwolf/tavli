@@ -3,10 +3,9 @@ from enum import Enum
 from typing import List, Optional, Tuple
 
 from config.config_loader import ConfigLoader
-from domain.color import Color
-from domain.half_move import HalfMove
-from domain.move import Move
-from domain.possible_moves import PossibleMoves
+from domain.constants import WHITE, BLACK
+from domain.move import HalfMove, Move
+from domain.move_generation import legal_moves
 from game.game import Game
 
 
@@ -17,11 +16,12 @@ class DiceMode(Enum):
 
 @dataclass(frozen=True)
 class Snapshot:
-    next_player: Color
+    next_player: int          # WHITE / BLACK (domain.constants); who plays AFTER this snapshot
     move_played: Optional[Move]
     dice_for_this_ply: Optional[Tuple[int, int]]
     was_pass: bool
     last_move_summary: str
+    undo_token: Optional[list] = None  # board.apply() token; runtime-only, not serialized
 
 
 class PlaySession:
@@ -31,9 +31,9 @@ class PlaySession:
         agent,
         ai_checkpoint_path: str,
         dice_mode: DiceMode,
-        human_color: Color,
+        human_color: int,
         eval_depth: int,
-        starting_player: Color = Color.WHITE,
+        starting_player: int = WHITE,
     ):
         self.config = config
         self.agent = agent
@@ -63,8 +63,8 @@ class PlaySession:
     @classmethod
     def from_save(cls, config, save_file, agent) -> "PlaySession":
         """Reconstruct a session by replaying the saved history from the initial position."""
-        starting_player = Color.WHITE if save_file.starting_player == "white" else Color.BLACK
-        human_color = Color.WHITE if save_file.human_color == "w" else Color.BLACK
+        starting_player = WHITE if save_file.starting_player == "white" else BLACK
+        human_color = WHITE if save_file.human_color == "w" else BLACK
         dice_mode = DiceMode(save_file.dice_mode)
         session = cls(
             config=config,
@@ -81,22 +81,14 @@ class PlaySession:
             if entry.get("was_pass"):
                 session.commit_pass()
             else:
-                color = session.current_player()
-                half_moves = [
-                    HalfMove(
-                        session.game.board.points[int(fp)],
-                        session.game.board.points[int(tp)],
-                        color,
-                    )
-                    for fp, tp in entry["move"]
-                ]
-                session.commit_move(Move(half_moves))
+                move = Move(tuple(HalfMove(int(fp), int(tp)) for fp, tp in entry["move"]))
+                session.commit_move(move)
         session.dirty_since_save = False
         return session
 
     # ---- queries -----------------------------------------------------
 
-    def current_player(self) -> Color:
+    def current_player(self) -> int:
         return self.history[-1].next_player
 
     def current_dice(self) -> Optional[Tuple[int, int]]:
@@ -108,7 +100,7 @@ class PlaySession:
     def is_terminal(self) -> bool:
         return self.game.is_over()
 
-    def winner(self) -> Optional[Color]:
+    def winner(self) -> Optional[int]:
         return self.game.get_winner()
 
     def ply_count(self) -> int:
@@ -132,7 +124,7 @@ class PlaySession:
     def possible_moves(self) -> List[Move]:
         if self._pending_dice is None:
             raise RuntimeError("dice not set for current ply")
-        return PossibleMoves(self.game.board, self.current_player(), self.game.dice).find_moves()
+        return legal_moves(self.game.board, self.current_player(), self.game.dice)
 
     def ranked_moves(self, depth: Optional[int] = None) -> List[Tuple[Move, float]]:
         moves = self.possible_moves()
@@ -147,20 +139,20 @@ class PlaySession:
     # ---- commit / pass -----------------------------------------------
 
     def _format_summary(
-        self, color: Color, dice: Tuple[int, int], move: Optional[Move], was_pass: bool
+        self, color: int, dice: Tuple[int, int], move: Optional[Move], was_pass: bool
     ) -> str:
         idx = self.ply_count() + 1
-        letter = "W" if color.is_white() else "B"
+        letter = "W" if color == WHITE else "B"
         if was_pass:
             return f"{idx}.  {letter}  d={dice[0]} {dice[1]}  (pass)"
-        move_str = ", ".join(str(hm) for hm in move.half_moves)
+        move_str = ", ".join(str(hm) for hm in move.halves)
         return f"{idx}.  {letter}  d={dice[0]} {dice[1]}  {move_str}"
 
     def commit_move(self, move: Move) -> None:
         if self._pending_dice is None:
             raise RuntimeError("dice not set for current ply")
         mover = self.current_player()
-        self.game.board.apply(move)
+        token = self.game.board.apply(move, mover)
         summary = self._format_summary(mover, self._pending_dice, move, False)
         self.game.switch_turn()
         self.history.append(Snapshot(
@@ -169,6 +161,7 @@ class PlaySession:
             dice_for_this_ply=self._pending_dice,
             was_pass=False,
             last_move_summary=summary,
+            undo_token=token,
         ))
         self._pending_dice = None
         self.dirty_since_save = True
@@ -198,8 +191,8 @@ class PlaySession:
         snap: Optional[Snapshot] = None
         while popped < n and len(self.history) > 1:
             snap = self.history.pop()
-            if not snap.was_pass and snap.move_played is not None:
-                self.game.board.undo(snap.move_played)
+            if snap.undo_token is not None:
+                self.game.board.undo(snap.undo_token)
             self.game.player = self.history[-1].next_player
             popped += 1
         if popped == 0:

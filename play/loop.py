@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
-from domain.half_move import HalfMove
-from domain.move import Move
+from domain.constants import WHITE, BLACK
 from play import parser, persistence, renderer
 from play.session import DiceMode, PlaySession
 
@@ -143,7 +142,7 @@ def _human_turn(session: PlaySession, io: IO, agent_loader: Optional[AgentLoader
 
 def _dice_prompt(session: PlaySession, io: IO, agent_loader: Optional[AgentLoader]) -> Action:
     while True:
-        player = "White" if session.current_player().is_white() else "Black"
+        player = renderer._player_label(session.current_player())
         line = io.input(f"{player} to move. Enter dice (e.g. '5 2' or '53'): ")
         try:
             d1, d2 = parser.parse_dice(line, die_sides=session.config.get_die_sides())
@@ -180,8 +179,8 @@ def _dice_prompt(session: PlaySession, io: IO, agent_loader: Optional[AgentLoade
 
 def _no_moves(session: PlaySession, io: IO) -> Action:
     io.output(renderer.format_header(session))
-    io.output(str(session.game.board))
-    player = "White" if session.current_player().is_white() else "Black"
+    io.output(renderer.format_board(session.game.board))
+    player = renderer._player_label(session.current_player())
     if session.current_player() != session.human_color:
         io.output(f"{player} (AI) has no valid moves; passing.")
         session.commit_pass()
@@ -215,8 +214,8 @@ def _ai_turn(session: PlaySession, io: IO) -> None:
 
 def _post_game(session: PlaySession, io: IO) -> Action:
     winner = session.winner()
-    label = "White" if winner is not None and winner.is_white() else "Black"
-    io.output(str(session.game.board))
+    label = "White" if winner == WHITE else "Black"
+    io.output(renderer.format_board(session.game.board))
     io.output(f"Game over. {label} wins.")
     while True:
         line = io.input("[u/undo, h/history, review [N], drill [N], save <n>, q] > ")
@@ -248,18 +247,6 @@ def _post_game(session: PlaySession, io: IO) -> Action:
 
 
 # ---- command helpers ------------------------------------------------------
-
-
-def _reconstruct_move(move: Move, board) -> Move:
-    """Re-build a Move so its HalfMoves reference the given board's own Point objects."""
-    return Move([
-        HalfMove(
-            board.points[hm.from_point.position],
-            board.points[hm.to_point.position],
-            hm.color,
-        )
-        for hm in move.half_moves
-    ])
 
 
 def _make_replay_session(session: PlaySession) -> PlaySession:
@@ -296,20 +283,20 @@ def _collect_blunders(session: PlaySession, threshold: float) -> list:
             if snap.was_pass:
                 replay.commit_pass()
             else:
-                replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+                replay.commit_move(snap.move_played)
             continue
 
         moves = replay.possible_moves()
         if len(moves) <= 1:
-            replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+            replay.commit_move(snap.move_played)
             continue
 
         ranked = replay.ranked_moves()
         best_move, best_score = ranked[0]
 
-        played_key = str(snap.move_played)
+        # Move/HalfMove are immutable NamedTuples on v2, so equality is exact.
         played_score = next(
-            (score for move, score in ranked if str(move) == played_key),
+            (score for move, score in ranked if move == snap.move_played),
             None,
         )
 
@@ -319,28 +306,37 @@ def _collect_blunders(session: PlaySession, threshold: float) -> list:
                 blunders.append({
                     "ply_num": replay.ply_count() + 1,
                     "snap": snap,
-                    "board_str": str(replay.game.board),
+                    "board_str": renderer.format_board(replay.game.board),
                     "ranked": ranked,
                     "played_move": snap.move_played,
                     "played_score": played_score,
                     "best_move": best_move,
                     "best_score": best_score,
                     "gap": best_score - played_score,
-                    "player_is_white": replay.current_player().is_white(),
+                    "player_is_white": replay.current_player() == WHITE,
                 })
 
-        replay.commit_move(_reconstruct_move(snap.move_played, replay.game.board))
+        replay.commit_move(snap.move_played)
 
     return blunders
+
+
+def _pairs(move) -> list:
+    """The (src, dst) half-move pairs of a v2 Move, in stored order."""
+    return [(h.src, h.dst) for h in move.halves]
+
+
+def _find(expected_pairs: list, ranked: list) -> list:
+    """Return the ranked entries whose move half-moves equal expected_pairs."""
+    return [(m, s) for m, s in ranked if _pairs(m) == expected_pairs]
 
 
 def _match_move(user_froms: list, ranked: list, dice: tuple, is_white: bool) -> list:
     """Deterministically match user-entered source point(s) to a legal move.
 
-    Always returns 0 or 1 results — never a menu.  Source positions are matched
-    against the half-moves of each legal move; ``str(move)`` is the canonical
-    "(from->to,...)" form whose order follows the move generator (ascending
-    start points for White, descending for Black).
+    Always returns 0 or 1 results — never a menu.  Matching is structural:
+    expected (src, dst) pairs are compared against each legal move's half-moves,
+    so it is independent of the move's text representation.
 
     Non-doubles (d1 ≠ d2):
       n=1 : try merged (d1+d2 on one checker), then die1, then die2 — first wins.
@@ -363,19 +359,18 @@ def _match_move(user_froms: list, ranked: list, dice: tuple, is_white: bool) -> 
     if n == 1:
         # Try merged (one checker spanning both dice), then each die in order.
         for delta in (d1 + d2, d1, d2):
-            to = user_froms[0] + sign * delta
-            key = f"({user_froms[0]}->{to})"
-            result = [(m, s) for m, s in ranked if str(m) == key]
+            result = _find([(user_froms[0], user_froms[0] + sign * delta)], ranked)
             if result:
                 return result[:1]
         return []
 
     if n == 2:
         # Ordered: input[0] → d1, input[1] → d2.
-        to0 = user_froms[0] + sign * d1
-        to1 = user_froms[1] + sign * d2
-        key = f"({user_froms[0]}->{to0},{user_froms[1]}->{to1})"
-        return [(m, s) for m, s in ranked if str(m) == key]
+        expected = [
+            (user_froms[0], user_froms[0] + sign * d1),
+            (user_froms[1], user_froms[1] + sign * d2),
+        ]
+        return _find(expected, ranked)
 
     return []
 
@@ -386,7 +381,7 @@ def _match_doubles_move(user_froms: list, ranked: list, die: int, sign: int) -> 
     Each listed point starts one die-step; a point repeated k times walks a
     checker k steps (the j-th step starts at origin + j·die).  The resulting
     hop-start multiset is sorted into the generator's canonical order and
-    compared against each legal move's ``str``.
+    compared structurally against each legal move's half-moves.
     """
     counts: dict = {}
     for origin in user_froms:
@@ -398,9 +393,8 @@ def _match_doubles_move(user_froms: list, ranked: list, die: int, sign: int) -> 
             hop_starts.append(origin + sign * die * j)
 
     hop_starts.sort(reverse=(sign < 0))
-    dests = [h + sign * die for h in hop_starts]
-    key = "(" + ",".join(f"{h}->{t}" for h, t in zip(hop_starts, dests)) + ")"
-    return [(m, s) for m, s in ranked if str(m) == key]
+    expected = [(h, h + sign * die) for h in hop_starts]
+    return _find(expected, ranked)
 
 
 def _handle_review(session: PlaySession, io: IO, threshold: float) -> None:

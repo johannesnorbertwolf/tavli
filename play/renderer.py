@@ -1,15 +1,54 @@
 from typing import List, Optional, Tuple
 
+from domain.constants import WHITE, BLACK
 from domain.move import Move
 
 
 FOOTER_LINE = "[1-N] play   u undo   h history   e eval   save <n>   q quit"
 
 
+def _glyph(c: int) -> str:
+    return "O" if c == WHITE else "X"
+
+
+def _player_label(c: int) -> str:
+    return "White" if c == WHITE else "Black"
+
+
+def format_board(board) -> str:
+    """Render the array-based v2 Board in the classic play-UI style:
+
+        25:
+        --------------------
+        24: XX
+        ...
+         1: OOO
+        --------------------
+         0:
+
+    A separator precedes each boundary point {board_size, board_size-home_size,
+    home_size, 0}. Each line is right-justified index + glyphs: a pinned
+    (trapped) checker is shown first, then the owner stack. O = White, X = Black.
+    """
+    bs, hs = board.board_size, board.home_size
+    boundaries = {bs, bs - hs, hs, 0}
+    lines = []
+    for i in range(bs + 1, -1, -1):
+        if i in boundaries:
+            lines.append("--------------------")
+        s = f"{i:>2}: "
+        if board.pinned[i]:
+            s += _glyph(-board.color[i])
+        if board.n[i] > 0:
+            s += _glyph(board.color[i]) * board.n[i]
+        lines.append(s)
+    return "\n".join(lines)
+
+
 def format_board_with_moves(board, current_player, dice_values, moves_with_scores) -> str:
     """Two-column board + ranked-move list. Returns a string (one line per row)."""
-    board_lines = str(board).splitlines()
-    info_lines = ["", f"{current_player}'s turn", f"Rolled: {dice_values}", "Possible moves:"]
+    board_lines = format_board(board).splitlines()
+    info_lines = ["", f"{_player_label(current_player)}'s turn", f"Rolled: {dice_values}", "Possible moves:"]
     left_lines = board_lines + info_lines
     column_height = len(left_lines)
 
@@ -47,7 +86,7 @@ def print_board_with_moves(board, current_player, dice_values, moves_with_scores
 
 def format_header(session) -> str:
     ply = session.ply_count() + 1
-    player = "White" if session.current_player().is_white() else "Black"
+    player = _player_label(session.current_player())
     dice = session.current_dice()
     depth_suffix = f" — eval depth {session.eval_depth}"
     if dice is None:
@@ -71,12 +110,12 @@ def format_ply_block(session, ranked_moves: List[Tuple[Move, float]]) -> str:
 
 
 def format_ai_played(session, move: Move, score: Optional[float]) -> str:
-    player = "White" if session.current_player().is_white() else "Black"
+    player = _player_label(session.current_player())
     dice = session.current_dice()
     score_str = f" ({score*100:.2f}%)" if score is not None else ""
     return (
         f"Ply {session.ply_count() + 1} — {player} (AI) — dice {dice[0]} {dice[1]}\n"
-        f"{session.game.board}\n"
+        f"{format_board(session.game.board)}\n"
         f"AI played: {move}{score_str}"
     )
 
