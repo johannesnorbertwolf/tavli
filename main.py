@@ -808,7 +808,7 @@ def main():
                 return
         generate_gold_progress_graph(last_x=last_x)
     elif mode in ('eval-lookahead',):
-        games_per_color = 100
+        total_games = 1000
         num_workers = None
         args = sys.argv[2:]
         i = 0
@@ -826,16 +826,18 @@ def main():
                 continue
             if not arg.startswith("--"):
                 try:
-                    games_per_color = int(arg)
-                    if games_per_color <= 0:
+                    total_games = int(arg)
+                    if total_games <= 0:
                         raise ValueError
                 except ValueError:
-                    print("Invalid games_per_color. Please provide a positive integer.")
+                    print("Invalid games count. Please provide a positive integer.")
                     return
                 i += 1
                 continue
             print(f"Unknown eval-lookahead argument: {arg}")
             return
+        # Split the total evenly between the two color assignments (fairness).
+        games_per_color = max(1, total_games // 2)
         from ai.lookahead_eval import evaluate_lookahead_selfplay
         evaluate_lookahead_selfplay(
             config, config.get_gold_model_path(),

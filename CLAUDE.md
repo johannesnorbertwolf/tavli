@@ -13,7 +13,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 ./run.sh eval-gold [games] [v1-v4]     # Benchmark trained model vs a gold checkpoint
 ./run.sh eval-gold-stats [x]           # Stats + significance test on last x eval log entries
 ./run.sh eval-gold-graph [x]           # Generate SVG progress chart
-./run.sh eval-lookahead [games] [--workers N]  # Validate flexible search vs fixed 2-ply (gold self-play, parallel)
+./run.sh eval-lookahead [total_games] [--workers N]  # Validate flexible search vs fixed 2-ply (gold self-play, parallel; default 1000)
 ./run.sh play                          # Human vs AI interactive game
 ```
 
