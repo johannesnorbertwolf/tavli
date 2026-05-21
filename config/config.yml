@@ -45,3 +45,9 @@ replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
 updates_per_game: 5            # Adam SGD steps run per ingested trajectory
 min_buffer_to_train: 2000      # Don't start training until buffer holds at least this many samples
+
+# Interactive play settings
+play:
+  eval_lookahead_plies: 4       # Default lookahead depth for ranked moves
+  drill_correct_floor: 0.01     # Absolute floor for drill "correct" threshold (1 pp)
+  drill_correct_relative: 0.03  # Fraction of best_score for drill "correct" threshold (3%)

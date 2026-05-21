@@ -267,37 +267,6 @@ def _load_agent_with_network(config, model_path, device, network_override=None, 
         return None, None
 
 
-def print_board_with_moves(board, current_player, dice_values, moves_with_scores):
-    board_lines = str(board).splitlines()
-    info_lines = ["", f"{current_player}'s turn", f"Rolled: {dice_values}", "Possible moves:"]
-    left_lines = board_lines + info_lines
-    column_height = len(left_lines)
-
-    moves_lines = []
-    for i, (move, score) in enumerate(moves_with_scores, start=1):
-        if score is None:
-            moves_lines.append(f"{i}: {move}")
-        else:
-            moves_lines.append(f"{i}: {move} ({score*100:.2f}%)")
-
-    move_columns = []
-    for start in range(0, len(moves_lines), column_height):
-        chunk = moves_lines[start:start + column_height]
-        if len(chunk) < column_height:
-            chunk = chunk + [""] * (column_height - len(chunk))
-        move_columns.append(chunk)
-
-    left_width = max((len(line) for line in left_lines), default=0) + 4
-    move_col_content_width = max([len(line) for line in moves_lines], default=0)
-    move_col_width = max(move_col_content_width, 24) + 4
-
-    for row in range(column_height):
-        line = f"{left_lines[row]:<{left_width}}"
-        for col in move_columns:
-            line += f"{col[row]:<{move_col_width}}"
-        print(line.rstrip())
-
-
 def _try_load_candidate_agent(config, model_load_path, device):
     agent, _ = _load_agent_with_network(config, model_load_path, device, role_name="candidate")
     return agent
@@ -543,66 +512,93 @@ def generate_human_progress_graph(log_path=HUMAN_GAME_LOG, out_path="training_ru
     print(f"Wrote graph to {out_path}")
 
 
-def play_against_ai(config, model_load_path="trained_model.pth"):
-    print("Loading trained model and starting game...")
-    game = Game(config)
+def _prompt_human_color() -> int:
+    while True:
+        line = input("Pick your color [w/b/r] (default w): ").strip().lower()
+        if line == "" or line == "w":
+            return WHITE
+        if line == "b":
+            return BLACK
+        if line == "r":
+            return WHITE if random.random() < 0.5 else BLACK
+        print("Please enter w, b, or r.")
+
+
+def _prompt_dice_mode():
+    from play.session import DiceMode
+    while True:
+        line = input("Dice mode [auto/manual] (default auto): ").strip().lower()
+        if line == "" or line in ("a", "auto"):
+            return DiceMode.AUTO
+        if line in ("m", "manual"):
+            return DiceMode.MANUAL
+        print("Please enter auto or manual.")
+
+
+def play_against_ai(config, model_load_path="trained_model.pth", load_name=None):
+    from play import loop, persistence
+    from play.session import PlaySession
+
     device = torch.device("cpu")
 
-    ai_agent = _try_load_candidate_agent(config, model_load_path, device)
-    if ai_agent is None:
-        print("Please train the AI first.")
-        return
+    def agent_loader(path: str):
+        if not os.path.exists(path):
+            raise FileNotFoundError(path)
+        agent, _ = load_agent_from_checkpoint(path, config, device=device)
+        return agent
 
-    while True:
-        game.dice.roll()
-        dice_values = (game.dice.die1.value, game.dice.die2.value)
+    if load_name is not None:
+        save_path = persistence.resolve_path(load_name)
+        if not save_path.exists():
+            print(f"No such save: {save_path}")
+            return
+        save_file = persistence.load(save_path)
+        try:
+            agent = agent_loader(save_file.ai_checkpoint_path)
+        except FileNotFoundError:
+            repl = input(
+                f"AI checkpoint '{save_file.ai_checkpoint_path}' not found. "
+                "Enter replacement path (or blank to cancel): "
+            ).strip()
+            if not repl:
+                return
+            try:
+                agent = agent_loader(repl)
+            except FileNotFoundError:
+                print(f"Replacement checkpoint '{repl}' also not found.")
+                return
+            save_file.ai_checkpoint_path = repl
+        session = PlaySession.from_save(config, save_file, agent)
+        session.last_save_name = load_name
+        print(f"Loaded session from {save_path}")
+    else:
+        print("Loading trained model and starting game...")
+        try:
+            agent = agent_loader(model_load_path)
+        except FileNotFoundError:
+            print(f"Model file not found at {model_load_path}. Please train the AI first.")
+            return
+        human_color = _prompt_human_color()
+        dice_mode = _prompt_dice_mode()
+        eval_depth = config.get_play_eval_lookahead_plies()
+        session = PlaySession.new_game(
+            config=config,
+            agent=agent,
+            ai_checkpoint_path=model_load_path,
+            dice_mode=dice_mode,
+            human_color=human_color,
+            eval_depth=eval_depth,
+        )
 
-        possible_moves = legal_moves(game.board, game.current_player, game.dice)
+    _print_human_record()
+    final_session = loop.run(session, loop.StdIO(), agent_loader=agent_loader)
 
-        if not possible_moves:
-            print(game.board)
-            print(f"\n{game.current_player}'s turn")
-            print(f"Rolled: {dice_values}")
-            print("No valid moves available. Switching turn.")
-            game.switch_turn()
-            continue
-
-        if game.current_player == WHITE:
-            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, WHITE, lookahead_plies=2)
-            sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
-            print_board_with_moves(game.board, game.current_player, dice_values, sorted_moves)
-            while True:
-                try:
-                    move_choice = int(input(f"Choose a move (1-{len(sorted_moves)}): "))
-                    if 1 <= move_choice <= len(sorted_moves):
-                        chosen_move = sorted_moves[move_choice - 1][0]
-                        break
-                    print(f"Invalid choice. Please enter a number between 1 and {len(sorted_moves)}.")
-                except ValueError:
-                    print("Invalid input. Please enter a valid number.")
-        else:
-            move_scores = ai_agent.evaluate_moves(game.board, possible_moves, BLACK, lookahead_plies=2)
-            sorted_moves = sorted(zip(possible_moves, move_scores), key=lambda x: x[1], reverse=True)
-            print_board_with_moves(game.board, game.current_player, dice_values, sorted_moves)
-            chosen_move = sorted_moves[0][0]
-            print(f"AI chose move: {chosen_move}")
-
-        game.board.apply(chosen_move, game.current_player)
-
-        if game.is_over():
-            print(game.board)
-            winner = game.get_winner()
-            print(f"\n{'White' if winner == WHITE else 'Black'} has won the game!")
-            human_won = (winner == WHITE)
-            result = "win" if human_won else "loss"
-            _log_human_game(model_load_path, result)
+    if final_session.is_terminal():
+        winner = final_session.winner()
+        if winner is not None:
+            human_won = winner == final_session.human_color
+            _log_human_game(final_session.ai_checkpoint_path, "win" if human_won else "loss")
             _print_human_record()
-            play_again = input("Do you want to play again? (y/n): ").lower()
-            if play_again != 'y':
-                break
-            game = Game(config)
-        else:
-            game.switch_turn()
 
 
 def evaluate_against_random(config, model_load_path="trained_model.pth", games_per_color=100):
@@ -746,12 +742,26 @@ def main():
         train_ai(config, num_epochs_override=num_epochs)
     elif mode == 'play':
         network_path = "trained_model.pth"
+        load_name = None
         args = sys.argv[2:]
-        if args and args[0] == "--network" and len(args) >= 2:
-            network_path = args[1]
-        elif args and not args[0].startswith("--"):
-            network_path = args[0]
-        play_against_ai(config, model_load_path=network_path)
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--network" and i + 1 < len(args):
+                network_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--load" and i + 1 < len(args):
+                load_name = args[i + 1]
+                i += 2
+                continue
+            if not arg.startswith("--") and i == 0:
+                network_path = arg
+                i += 1
+                continue
+            print(f"Unknown play argument: {arg}")
+            return
+        play_against_ai(config, model_load_path=network_path, load_name=load_name)
     elif mode in ('eval-random', 'evaluate-random'):
         games_per_color = 100
         if len(sys.argv) >= 3:
