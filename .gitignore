@@ -15,3 +15,6 @@ training_state.json
 .stop_training
 local_tools/
 .claude/
+tournament_results/
+tournament_log.txt
+tournament_full.log
