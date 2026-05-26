@@ -16,14 +16,43 @@ re-validated against the current **array-based domain v2** (`domain/board.py` `B
 `Move`/`HalfMove` `NamedTuple`s). The Swift keeps its OO / reference-type structure on purpose
 (see gotchas below); only its *behavior* is pinned to v2, and the parity gate is green.
 
+## Turn controller (headless, UI-agnostic)
+
+`GameSession` + `MoveBuilder` are the contract the SwiftUI views build against. Both are
+**SwiftUI-free** (only `Combine` for `ObservableObject`) and fully exercised by `swift test`,
+so the game flow is validated without a simulator.
+
+- **`MoveBuilder`** incrementally composes a full `Move` from half-moves. It holds
+  `activeMoves` (legal `Move`s still consistent with what's been picked) + `built: [HalfMove]`.
+  `selectableSourcePoints` / `validDestinations(for:)` drive highlighting at index `built.count`;
+  `commit(halfMove:)` filters `activeMoves` and returns whether the move is complete;
+  `canFinishNow` is true when some surviving move has exactly `built.count` halves (a shorter
+  move that is a prefix of a longer one is *finishable*, not *forced*); `undo(allLegal:)` rebuilds
+  `activeMoves` from scratch; `completedMove` is the first surviving move of length `built.count`.
+  It does **not** touch the board — the session applies/undoes half-moves in step.
+
+- **`GameSession`** (`@MainActor`, `ObservableObject`) owns the `Game` and drives the turn state
+  machine. Phases: `awaitingRoll / picking / moving / aiThinking / animating / gameOver(winner:)`
+  — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
+  of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
+  (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
+  `undo` / `confirm` / `newGame`. On roll it computes `legalMoves` via `PossibleMoves`; an empty
+  set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
+  board and auto-finishes when the move is complete or the only continuation is itself legal.
+  Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
+  Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`)
+  is the view contract. No AI, animation, or rendering live here (later tickets).
+
 ## Layout
 
 ```
 ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
 │   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
-│   │                            GameBoard, PossibleMoves, BoardEncoder, Agent
-│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport
+│   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
+│   │                            MoveBuilder, GameSession
+│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
+│                                MoveBuilderTests, GameSessionTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,

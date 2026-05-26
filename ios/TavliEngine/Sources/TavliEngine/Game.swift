@@ -19,6 +19,10 @@ public final class Game {
         player = (player == .white) ? .black : .white
     }
 
+    public func setPlayer(_ color: Color) {
+        player = color
+    }
+
     public func isOver() -> Bool {
         board.hasWon(.white) || board.hasWon(.black)
     }
