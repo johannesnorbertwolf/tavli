@@ -807,6 +807,42 @@ def main():
                 print("Invalid x. Please provide a positive integer.")
                 return
         generate_gold_progress_graph(last_x=last_x)
+    elif mode in ('eval-lookahead',):
+        total_games = 1000
+        num_workers = None
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--workers" and i + 1 < len(args):
+                try:
+                    num_workers = int(args[i + 1])
+                    if num_workers <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid --workers. Please provide a positive integer.")
+                    return
+                i += 2
+                continue
+            if not arg.startswith("--"):
+                try:
+                    total_games = int(arg)
+                    if total_games <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid games count. Please provide a positive integer.")
+                    return
+                i += 1
+                continue
+            print(f"Unknown eval-lookahead argument: {arg}")
+            return
+        # Split the total evenly between the two color assignments (fairness).
+        games_per_color = max(1, total_games // 2)
+        from ai.lookahead_eval import evaluate_lookahead_selfplay
+        evaluate_lookahead_selfplay(
+            config, config.get_gold_model_path(),
+            games_per_color=games_per_color, num_workers=num_workers,
+        )
     elif mode in ('human-stats',):
         analyze_human_games()
     elif mode in ('human-graph',):
@@ -827,7 +863,7 @@ def main():
         print(
             f"Unknown mode: {mode}. Use 'train', 'play', "
             "'eval-random', 'eval-gold', 'eval-gold-stats', 'eval-gold-graph', "
-            "'human-stats', 'human-graph', or 'tournament'."
+            "'eval-lookahead', 'human-stats', 'human-graph', or 'tournament'."
         )
 
 

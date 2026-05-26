@@ -8,13 +8,23 @@
 
 **2-ply evaluation** (`_evaluate_moves_2ply_batch`): Expectimax. For each candidate move, iterate over all 21 distinct dice outcomes (doubles count once with weight 1/36; others weight 2/36). For each outcome, enumerate the opponent's legal responses, encode all resulting positions in one big batch, and compute the opponent's best response value. Our expected score for a candidate move is the weighted average of `1 - opponent_best_value` across all dice outcomes.
 
+**N-ply evaluation with branch pruning** (`_evaluate_moves_nply`): Recursive expectimax generalising to arbitrary depth. At depth=1 it delegates to `_evaluate_moves_batch`. At depth>1, for each candidate move it iterates all 21 dice outcomes; for each outcome it calls `_evaluate_moves_batch` on all opponent replies as a quick 1-ply pre-screen, then prunes the replies via `_prune_branches` (see below) and recurses at depth-1 on the survivors. Pass-positions (no opponent moves) are collected and resolved in a single deferred batch. The per-candidate body is wrapped in `try/finally` so the applied move is always undone — even when `_TimeoutError` unwinds the recursion from a deeper frame mid-iteration (without this, enclosing frames would leak their applied moves and corrupt the board). Raises the module-private `_TimeoutError` if a `deadline` (monotonic timestamp) is exceeded — callers catch this to discard partial results.
+
+**Branch pruning** (`_prune_branches`, static helper): given `(moves, scores)`, keeps the strongest moves and returns their indices best-first. When `relative_cutoff` is set, keeps moves with `score >= best * (1 - relative_cutoff)` (a *relative*, scale-aware cut — tight when the best move is near-certain, looser in balanced positions); otherwise falls back to the absolute `beam_threshold` (`score >= best - beam_threshold`). Survivors are then capped to `max_branch`, always keeping at least one. This is what bounds the otherwise-explosive search width — the 21×21 dice chance-nodes are *not* pruned (the dice distribution stays exact), so the move cap is the only width limiter. Defaults (`search_relative_cutoff=0.08`, `search_max_branch=5`) keep ~3.5 moves per node on average.
+
+**Iterative deepening** (`get_best_move` with `time_budget_s`): When `time_budget_s` is provided, performs iterative deepening: depth-1 scores are computed for all root moves unconditionally, then the loop deepens while the deadline has not expired *and* `depth <= max_depth`. At each iteration the root moves are pruned via `_prune_branches` and only those are re-scored; the rest retain their previous-depth score. If `_TimeoutError` is raised mid-depth, partial results are discarded and the result from the last fully completed depth is returned. When `time_budget_s` is `None` (default), the fixed-depth path (`lookahead_plies`: 1 or 2) is used unchanged.
+
+`max_depth` (default config `search_max_depth=3`) caps the deepening: depth 4+ is never *completed* within a sane budget (full depth-3 expectimax already costs several seconds per move and grows in the mid/endgame, since many near-equal moves defeat the relative cutoff), so attempting it would just burn the whole budget and time out. Capping at depth 3 means each move costs the depth-3 *completion* time rather than the full `time_budget_s`. The budget then acts as a safety ceiling for the rare expensive position.
+
+**Search instrumentation**: `self.last_search_depth` records the depth actually reached by the most recent `get_best_move` call (the last *fully completed* depth in the time-budget path; the effective `lookahead_plies` in the fixed path; 0 for an empty move list, 1 for the single-move fast path). The validation harness reads this to report how deep the search got.
+
 **Public API**:
-- `get_best_move(board, possible_moves, color, lookahead_plies=1)` → `(best_move, best_score)`
+- `get_best_move(board, possible_moves, color, lookahead_plies=1, time_budget_s=None, beam_threshold=0.08, relative_cutoff=None, max_branch=None, max_depth=None)` → `(best_move, best_score)`
 - `evaluate_moves(board, possible_moves, color, lookahead_plies=1)` → `List[float]`
 
 `RandomAgent` is a minimal class with a single `get_move(possible_moves)` method that returns a random choice. Used as the opponent in random-agent evaluations.
 
-The 21 distinct `(d1, d2, weight)` dice outcomes are precomputed once at module load in `_DICE_OUTCOMES`.
+The 21 distinct `(d1, d2, weight)` dice outcomes are precomputed once at module load in `_DICE_OUTCOMES`. The module-private `_TimeoutError` exception is used internally to unwind the recursion stack when a deadline expires.
 
 ---
 
@@ -172,3 +182,15 @@ Workers always run in `eval()` mode (no gradient tracking). `torch.set_num_threa
 ## evaluator.py
 
 `AIEvaluator` is an older evaluation helper that runs the trained agent (as White) against a `RandomAgent` (as Black) for a fixed number of games and reports win percentage. It is not used by the main training loop; the main loop calls `TdLambdaTraining._evaluate_against_random` directly. This file may be vestigial.
+
+---
+
+## lookahead_eval.py
+
+Parallel validation harness that pits one checkpoint (the gold model) against *itself*, with one side using the time-budget iterative-deepening search and the other fixed 2-ply, to measure whether the deeper search actually wins. Invoked via `python main.py eval-lookahead [total_games] [--workers N]` (or `./run.sh eval-lookahead [total_games]`). The CLI `total_games` argument (default 1000) is split evenly between the two color assignments — i.e. `games_per_color = total_games // 2`.
+
+Both arms share the *same* weights, so each worker loads the checkpoint once and simply calls `get_best_move` two different ways: the **flexible arm** with `time_budget_s` / `relative_cutoff` / `max_branch` (knobs from config), the **2-ply arm** with `lookahead_plies=2`. Which color is the flexible arm alternates between the two halves of the run (`games_per_color` games each) to remove first-move bias.
+
+`evaluate_lookahead_selfplay(config, model_path, games_per_color, num_workers)` builds the full task list of `(flex_color, seed)` games, round-robins them into per-worker chunks, and runs each chunk in a `multiprocessing` *spawn* `Process`. Unlike training there is no weight queue (the model is static). Each worker sets `torch.set_num_threads(1)`, plays its games via `_play_one_game`, and **streams one result per game** (`{win, depth_hist, move_times}`) back through a shared `result_q`. The parent consumes results as they arrive and, every ~1% of the run, prints a live ASCII progress block (`_render_progress`): running win rate with a bar (`_bar`), the depth histogram so far, and an ETA (`_fmt_dur`) derived from wall-elapsed/games-done. This matters because a full run takes hours — the streaming output lets you watch it converge. The final summary adds the Wilson 95% CI, a two-sided binomial p-value vs 0.5 (`_wilson_interval`, `_two_sided_binomial_p`), the full depth histogram (the "how far did it actually look" answer), and avg/median/min/max flexible move time.
+
+Because each flexible move runs the depth-capped search (~5–6s at the default knobs) and a game has ~46 flexible moves, a game takes ~4 min; a full `total_games=1000` run is ~12 hours even on 6 workers — start it yourself rather than expecting it to finish inline.

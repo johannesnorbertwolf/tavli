@@ -1,3 +1,4 @@
+import time
 import torch
 import random
 import numpy as np
@@ -27,13 +28,50 @@ def _build_dice_outcomes() -> List[Tuple[int, int, float]]:
 _DICE_OUTCOMES = _build_dice_outcomes()
 
 
+class _TimeoutError(Exception):
+    pass
+
+
 class Agent:
     def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder):
         self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
+        # Depth actually reached by the most recent get_best_move call (search instrumentation).
+        self.last_search_depth = 1
 
     def _model_device(self):
         return next(self.board_evaluator.parameters()).device
+
+    @staticmethod
+    def _prune_branches(
+        moves: List[Move],
+        scores: List[float],
+        beam_threshold: float,
+        relative_cutoff: Optional[float],
+        max_branch: Optional[int],
+    ) -> List[int]:
+        """Return the indices of moves to expand, best-first.
+
+        When ``relative_cutoff`` is set, keep moves whose score is within a *relative*
+        fraction of the best (``score >= best * (1 - relative_cutoff)``); otherwise fall
+        back to the absolute ``beam_threshold`` (``score >= best - beam_threshold``).
+        The survivors are then sorted by score (desc) and capped to ``max_branch``.
+        Always keeps at least one move.
+        """
+        if not scores:
+            return []
+        best = max(scores)
+        if relative_cutoff is not None:
+            keep = best * (1.0 - relative_cutoff)
+        else:
+            keep = best - beam_threshold
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        survivors = [i for i in order if scores[i] >= keep]
+        if not survivors:
+            survivors = [order[0]]
+        if max_branch is not None and len(survivors) > max_branch:
+            survivors = survivors[:max_branch]
+        return survivors
 
     def _evaluate_moves_batch(self, board: Board, possible_moves: List[Move], color: int) -> List[float]:
         device = self._model_device()
@@ -119,16 +157,152 @@ class Agent:
             scores.append(expected)
         return scores
 
-    def get_best_move(self, board: Board, possible_moves: List[Move], color: int, lookahead_plies: int = 1) -> Tuple[Move, float]:
+    def _evaluate_moves_nply(
+        self,
+        board: Board,
+        possible_moves: List[Move],
+        color: int,
+        depth: int,
+        beam_threshold: float,
+        deadline: Optional[float] = None,
+        relative_cutoff: Optional[float] = None,
+        max_branch: Optional[int] = None,
+    ) -> List[float]:
+        """Recursive expectimax with beam pruning at opponent branches.
+
+        depth=1 delegates to _evaluate_moves_batch.
+        depth>1: for each candidate, iterates all 21 dice outcomes; pre-screens opponent
+        moves with 1-ply and prunes them via _prune_branches (relative_cutoff + max_branch,
+        falling back to beam_threshold); recurses on survivors. Raises _TimeoutError if
+        deadline is exceeded mid-computation.
+        """
+        if depth <= 1:
+            return self._evaluate_moves_batch(board, possible_moves, color)
+
+        device = self._model_device()
+        opponent_color = -color
+        is_our_turn = color == WHITE
+        dice = Dice(_DIE_SIDES)
+        scores: List[float] = []
+
+        for m_c in possible_moves:
+            token_c = board.apply(m_c, color)
+            # try/finally guarantees token_c is undone even if a deadline (_TimeoutError)
+            # unwinds the recursion from a deeper frame mid-iteration.
+            try:
+                if board.has_won(color):
+                    scores.append(1.0)
+                    continue
+
+                expected = 0.0
+                # Collect pass-positions (no opp moves) for a single deferred batch resolve
+                pass_encoded: List[np.ndarray] = []
+                pass_weights: List[float] = []
+
+                for (d1, d2, weight) in _DICE_OUTCOMES:
+                    if deadline is not None and time.monotonic() > deadline:
+                        raise _TimeoutError()
+
+                    dice.set(d1, d2)
+                    opp_moves = legal_moves(board, opponent_color, dice)
+
+                    if not opp_moves:
+                        pass_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
+                        pass_weights.append(weight)
+                        continue
+
+                    # 1-ply pre-screen to prune unpromising opponent replies
+                    opp_1ply = self._evaluate_moves_batch(board, opp_moves, opponent_color)
+                    surviving_idx = self._prune_branches(
+                        opp_moves, opp_1ply, beam_threshold, relative_cutoff, max_branch
+                    )
+                    surviving = [opp_moves[i] for i in surviving_idx]
+
+                    opp_deep = self._evaluate_moves_nply(
+                        board, surviving, opponent_color, depth - 1, beam_threshold, deadline,
+                        relative_cutoff, max_branch,
+                    )
+                    expected += weight * (1.0 - max(opp_deep))
+
+                # Resolve all pass-positions in one batch
+                if pass_encoded:
+                    batch = torch.from_numpy(np.stack(pass_encoded)).float().to(device)
+                    with torch.no_grad():
+                        vals = self.board_evaluator(batch).squeeze(1).detach().cpu().numpy()
+                    for val, w in zip(vals, pass_weights):
+                        expected += w * float(val)
+
+                scores.append(expected)
+            finally:
+                board.undo(token_c)
+
+        return scores
+
+    def get_best_move(
+        self,
+        board: Board,
+        possible_moves: List[Move],
+        color: int,
+        lookahead_plies: int = 1,
+        time_budget_s: Optional[float] = None,
+        beam_threshold: float = 0.08,
+        relative_cutoff: Optional[float] = None,
+        max_branch: Optional[int] = None,
+        max_depth: Optional[int] = None,
+    ) -> Tuple[Optional[Move], float]:
         if not possible_moves:
+            self.last_search_depth = 0
             return None, 0.0
 
-        if lookahead_plies >= 2:
-            move_scores = self._evaluate_moves_2ply_batch(board, possible_moves, color)
-        else:
-            move_scores = self._evaluate_moves_batch(board, possible_moves, color)
-        best_idx = int(max(range(len(move_scores)), key=lambda i: move_scores[i]))
-        return possible_moves[best_idx], move_scores[best_idx]
+        if len(possible_moves) == 1:
+            self.last_search_depth = 1
+            return possible_moves[0], 0.0
+
+        # Non-time-budget path: existing fixed-depth behavior
+        if time_budget_s is None:
+            if lookahead_plies >= 2:
+                move_scores = self._evaluate_moves_2ply_batch(board, possible_moves, color)
+                self.last_search_depth = 2
+            else:
+                move_scores = self._evaluate_moves_batch(board, possible_moves, color)
+                self.last_search_depth = 1
+            best_idx = int(max(range(len(move_scores)), key=lambda i: move_scores[i]))
+            return possible_moves[best_idx], move_scores[best_idx]
+
+        # Iterative deepening with beam pruning
+        deadline = time.monotonic() + time_budget_s
+
+        # Depth 1: score all root moves unconditionally
+        best_scores = self._evaluate_moves_batch(board, possible_moves, color)
+        best_idx = int(max(range(len(best_scores)), key=lambda i: best_scores[i]))
+        self.last_search_depth = 1
+
+        depth = 2
+        while time.monotonic() < deadline:
+            if max_depth is not None and depth > max_depth:
+                break  # don't attempt depths we won't realistically complete
+            candidate_indices = self._prune_branches(
+                possible_moves, best_scores, beam_threshold, relative_cutoff, max_branch
+            )
+            candidate_moves = [possible_moves[i] for i in candidate_indices]
+
+            try:
+                partial = self._evaluate_moves_nply(
+                    board, candidate_moves, color, depth, beam_threshold, deadline,
+                    relative_cutoff, max_branch,
+                )
+            except _TimeoutError:
+                break  # discard partial results, keep previous depth's best
+
+            new_scores = list(best_scores)
+            for j, i in enumerate(candidate_indices):
+                new_scores[i] = partial[j]
+            best_scores = new_scores
+            best_idx = int(max(range(len(best_scores)), key=lambda i: best_scores[i]))
+            self.last_search_depth = depth
+            depth += 1
+
+        return possible_moves[best_idx], best_scores[best_idx]
 
     def evaluate_moves(self, board: Board, possible_moves: List[Move], color: int, lookahead_plies: int = 1) -> List[float]:
         if not possible_moves:

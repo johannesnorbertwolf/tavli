@@ -167,6 +167,23 @@ elif [ "$1" == "eval-gold-graph" ]; then
             nix-shell --run "python3 main.py eval-gold-graph"
         fi
     fi
+elif [ "$1" == "eval-lookahead" ]; then
+    TOTAL_GAMES="${2:-1000}"
+    WORKERS_ARG=""
+    if [ "$3" == "--workers" ] && [ -n "$4" ]; then
+        WORKERS_ARG="--workers $4"
+    fi
+    echo "Validating flexible lookahead vs fixed 2-ply ($TOTAL_GAMES games total)..."
+    if command -v caffeinate >/dev/null 2>&1; then
+        RUNNER="caffeinate -dimsu"
+    else
+        RUNNER=""
+    fi
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $RUNNER $PY_RUNNER main.py eval-lookahead "$TOTAL_GAMES" $WORKERS_ARG
+    else
+        $RUNNER nix-shell --run "python3 main.py eval-lookahead $TOTAL_GAMES $WORKERS_ARG"
+    fi
 elif [ "$1" == "human-stats" ]; then
     if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
         $PY_RUNNER main.py human-stats

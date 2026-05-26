@@ -330,6 +330,11 @@ Relevant entries in `config/config.yml`:
 | Key | Default | Effect |
 |---|---|---|
 | `play.eval_lookahead_plies` | `4` | Default lookahead depth for ranked moves and what `e` reverts to with no argument. |
+| `play_time_budget_s` | `20.0` | Max wall-clock budget per AI move (safety ceiling). The AI uses iterative-deepening expectimax and deepens until this elapses *or* `search_max_depth` is reached — usually the latter, so most moves finish well under the budget. |
+| `search_relative_cutoff` | `0.08` | Relative move-pruning width: at each search node, keep moves with `score >= best * (1 - cutoff)`. With `search_max_branch` this keeps ~3.5 moves/node on average. |
+| `search_max_branch` | `5` | Hard cap on moves expanded per search node, applied on top of `search_relative_cutoff`. |
+| `search_max_depth` | `2` | Stop iterative deepening at this depth. **Currently `2`, which disables 3-ply during play** (3-ply works and wins ~57% vs 2-ply in validation, but is slow — set back to `3` to re-enable). Depth 4+ is unreachable within budget regardless. |
+| `beam_threshold` | `0.08` | Absolute beam fallback, used only when `search_relative_cutoff` is unset. Not used by the play loop. |
 | `play.drill_correct_floor` | `0.01` | Absolute floor for the drill "correct" tolerance (1 pp). Prevents impossible standards in nearly-lost positions. |
 | `play.drill_correct_relative` | `0.03` | Fraction of `best_score` for "correct" tolerance. At best=0.70, correct means within 0.021 (2.1 pp). |
 | `die_sides` | `6` | Range cap for dice input validation. |
@@ -534,7 +539,7 @@ Per-state handlers (all module-private, all return `Action`):
 | `_human_turn` | Human's turn, dice set, legal moves available | Reads commands at the `> ` prompt. |
 | `_dice_prompt` | Dice not set yet (MANUAL mode, or AUTO between turns) | Accepts dice input or a subset of commands. |
 | `_no_moves` | Current player has no legal moves | Auto-passes for AI; prompts human with `[enter] pass   u undo`. |
-| `_ai_turn` | AI's turn, dice set | Calls `agent.get_best_move(lookahead_plies=2)` and commits. The AI lookahead is hardcoded; this is separate from `session.eval_depth`. |
+| `_ai_turn` | AI's turn, dice set | Calls `agent.get_best_move(time_budget_s=…, relative_cutoff=…, max_branch=…, max_depth=…)` (iterative-deepening search, knobs from `session.config`) and commits. This is separate from `session.eval_depth` (the human-facing rank depth). |
 | `_post_game` | `session.is_terminal()` | Restricted command set: `u`, `h`, `review`, `drill`, `save`, `q`, `?`. |
 
 `Action(kind, session=None)` carries the dispatch result back to `run`:
@@ -588,6 +593,6 @@ Run all play tests with `.venv/bin/python -m unittest discover -s tests/ -t .`.
 
 **Add a new persisted field.** Bump `SCHEMA_VERSION`, add the field to `SaveFile`, `_serialize_session`, and `PlaySession.from_save`. Update the example in §8 of this doc.
 
-**Change the AI's playing lookahead.** Currently hardcoded at `lookahead_plies=2` in [loop.py::_ai_turn](loop.py). This is intentionally separate from `session.eval_depth` (which is the human-facing rank depth). If you want it user-configurable, add a config key and read it via `session.config.get_…()`.
+**Change the AI's playing lookahead.** The AI uses time-budget iterative-deepening expectimax: [loop.py::_ai_turn](loop.py) calls `get_best_move(time_budget_s=…, relative_cutoff=…, max_branch=…, max_depth=…)` with the knobs from `session.config` (`play_time_budget_s`, `search_relative_cutoff`, `search_max_branch`, `search_max_depth`). Tune those keys in `config/config.yml`. This is intentionally separate from `session.eval_depth` (the human-facing rank depth, still 2-ply under the hood — see `Agent.evaluate_moves`).
 
 **Render the board differently.** Everything visible flows through [renderer.py](renderer.py). The board grid is produced by `renderer.format_board(board)` — a play-UI-local renderer that reads the v2 `Board`'s `n[]`/`color[]`/`pinned[]` arrays and reproduces the classic glyph layout (`O`/`X`, separators). This is deliberately independent of `domain.board.Board.__repr__` (the array-style debug dump), so changing the play display means editing `format_board`, not the domain.
