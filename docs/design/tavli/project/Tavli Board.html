@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tavli — Move Highlight Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #ece6dc; font-family: 'Inter', -apple-system, sans-serif; color: #222; min-height: 100vh; }
+  .page {
+    min-height: 100vh;
+    padding: 40px;
+    box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 28px;
+  }
+  .header {
+    text-align: center; max-width: 880px;
+  }
+  .header h1 {
+    margin: 0 0 8px; font-family: 'Cormorant Garamond', serif; font-weight: 500;
+    font-size: 38px; letter-spacing: 0.5px;
+  }
+  .header p {
+    margin: 0; font-size: 14px; color: #6a5a48; max-width: 60ch; margin-inline: auto;
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 36px;
+    width: 100%;
+    justify-items: center;
+  }
+  @media (min-width: 1100px) {
+    .pair { grid-template-columns: 1fr 1fr; max-width: 1900px; }
+  }
+  .card { width: 100%; max-width: 900px; }
+  .card-meta {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 0 2px 14px;
+    border-bottom: 1px solid rgba(0,0,0,0.10);
+    margin-bottom: 14px;
+  }
+  .card-meta h3 {
+    margin: 0; font-family: 'Cormorant Garamond', serif; font-weight: 500;
+    font-size: 26px; letter-spacing: 0.5px;
+  }
+  .card-meta p { margin: 4px 0 0; font-size: 13px; color: #6a5a48; }
+  .card-meta .num {
+    font-family: 'Cormorant Garamond', serif; font-style: italic;
+    font-size: 16px; color: #8a7a5c;
+  }
+  .stage { width: 100%; aspect-ratio: 1 / 1; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="header">
+    <h1>Move highlight — two readings</h1>
+    <p>White on point 1, dice <strong>3 · 5</strong>. Three reachable targets (4, 6, 9) using either die or both. The selected stack is ringed in yellow; targets are marked two different ways.</p>
+  </header>
+  <section class="pair">
+    <div class="card">
+      <div class="card-meta">
+        <div>
+          <h3>A · Yellow frame on targets</h3>
+          <p>Triangle outlined in gold. Most conservative — preserves the wood/ivory aesthetic.</p>
+        </div>
+        <span class="num">No. I</span>
+      </div>
+      <div id="boardA" class="stage"></div>
+    </div>
+    <div class="card">
+      <div class="card-meta">
+        <div>
+          <h3>B · Yellow fill on targets</h3>
+          <p>Triangle filled solid gold. Higher visibility — easier to scan during play.</p>
+        </div>
+        <span class="num">No. II</span>
+      </div>
+      <div id="boardB" class="stage"></div>
+    </div>
+  </section>
+</div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel">
+// ── Tavli — Caramel board with move highlighting ──────────────────────────
+const W = 900, H = 900;
+const FRAME = 40;
+const BAR = 90;
+const INNER_W = W - FRAME * 2;
+const INNER_H = H - FRAME * 2;
+const HALF_W = (INNER_W - BAR) / 2;
+const POINT_W = HALF_W / 6;
+const POINT_H = INNER_H * 0.40;
+
+function pointGeom(n) {
+  if (n >= 1 && n <= 6)   { const i = n - 1;  return { cx: FRAME + INNER_W - POINT_W * (i + 0.5), baseY: H - FRAME, top: false }; }
+  if (n >= 7 && n <= 12)  { const i = n - 7;  return { cx: FRAME + HALF_W - POINT_W * (i + 0.5), baseY: H - FRAME, top: false }; }
+  if (n >= 13 && n <= 18) { const i = n - 13; return { cx: FRAME + POINT_W * (i + 0.5), baseY: FRAME, top: true }; }
+  const i = n - 19;       return { cx: FRAME + HALF_W + BAR + POINT_W * (i + 0.5), baseY: FRAME, top: true };
+}
+
+const CARAMEL = {
+  id: 'caramel',
+  frameTop: '#e8c089', frameMid: '#d4a466', frameBot: '#a87a3e', frameHi: '#f4d6a3',
+  frameText: '#3a2510',
+  playTop: '#8a4a22', playBot: '#6a361a',
+  triangleFill: '#fbeed1', triangleStroke: '#2a1408',
+  tipPip: '#fff5d8',
+  barLine: '#2a1408',
+  diamondBorder: '#2a1408',
+  diamondFill: '#fbeed1',
+  diamondTileDark: '#8a4a22',
+  diamondTileLight: '#f0dab0',
+  diamondTileEdge: '#2a1408',
+  diamondDot: '#1a0a04',
+  whiteFill: '#f1e6c8', whiteHi: '#fbf3d8', whiteRing: '#a8915f', whiteEdge: '#5a4828', whiteText: '#2a1408',
+  redFill: '#c0392b',  redHi: '#dc5040',   redRing: '#5e160b',  redEdge: '#2a0a04',  redText: '#fff3d6',
+  // highlight
+  hl: '#f4b400',         // saturated amber for highlight
+  hlEdge: '#7a5400',
+  hlFill: '#f6c623',     // slightly lighter for fill mode
+};
+
+// ── Building blocks ───────────────────────────────────────────────────────
+function Triangle({ n, p, mode }) {
+  // mode: 'none' | 'frame' | 'fill'
+  const { cx, baseY, top } = pointGeom(n);
+  const tipY = top ? baseY + POINT_H : baseY - POINT_H;
+  const half = POINT_W / 2 - 1.5;
+  const d = `M ${cx - half} ${baseY} L ${cx + half} ${baseY} L ${cx} ${tipY} Z`;
+  if (mode === 'fill') {
+    return <path d={d} fill={p.hlFill} stroke={p.triangleStroke} strokeWidth="2.6" strokeLinejoin="round" />;
+  }
+  return (
+    <g>
+      <path d={d} fill={p.triangleFill} stroke={p.triangleStroke} strokeWidth="2.6" strokeLinejoin="round" />
+      {mode === 'frame' && (
+        <path d={d} fill="none" stroke={p.hl} strokeWidth="5" strokeLinejoin="round" />
+      )}
+    </g>
+  );
+}
+
+function Diamond({ cx, cy, p }) {
+  const w = 78, h = 138;
+  const path = `M ${cx} ${cy - h/2} L ${cx + w/2} ${cy} L ${cx} ${cy + h/2} L ${cx - w/2} ${cy} Z`;
+  const inset = 9;
+  const iw = w - inset * 2, ih = h - inset * 1.6;
+  const innerPath = `M ${cx} ${cy - ih/2} L ${cx + iw/2} ${cy} L ${cx} ${cy + ih/2} L ${cx - iw/2} ${cy} Z`;
+  const tilesPerSide = 8;
+  const tiles = [];
+  const corners = [[cx, cy - h/2],[cx + w/2, cy],[cx, cy + h/2],[cx - w/2, cy]];
+  for (let s = 0; s < 4; s++) {
+    const [x0,y0] = corners[s];
+    const [x1,y1] = corners[(s+1)%4];
+    for (let i = 0; i < tilesPerSide; i++) {
+      const t = (i+0.5)/tilesPerSide;
+      const x = x0 + (x1-x0)*t;
+      const y = y0 + (y1-y0)*t;
+      const ang = Math.atan2(y1-y0, x1-x0) * 180/Math.PI;
+      tiles.push(
+        <rect key={`${s}-${i}`} x={-3.4} y={-3.4} width={6.8} height={6.8}
+          fill={(s+i)%2===0 ? p.diamondTileDark : p.diamondTileLight}
+          stroke={p.diamondTileEdge} strokeWidth="0.35"
+          transform={`translate(${x} ${y}) rotate(${ang + 45})`} />
+      );
+    }
+  }
+  return (
+    <g>
+      <path d={path} fill={p.diamondBorder} />
+      <g>{tiles}</g>
+      <path d={innerPath} fill={p.diamondFill} stroke={p.diamondTileEdge} strokeWidth="0.6" />
+      <circle cx={cx} cy={cy} r="5.5" fill={p.diamondDot} />
+    </g>
+  );
+}
+
+function Checker({ cx, cy, r, color, label, selected, p }) {
+  const isWhite = color === 'white';
+  const edge = isWhite ? p.whiteEdge : p.redEdge;
+  const ring = isWhite ? p.whiteRing : p.redRing;
+  const text = isWhite ? p.whiteText : p.redText;
+  const gradId = `chk-${color}`;
+  return (
+    <g>
+      {selected && (
+        <circle cx={cx} cy={cy} r={r + 3.2} fill="none" stroke={p.hl} strokeWidth="3.4" />
+      )}
+      <circle cx={cx} cy={cy} r={r} fill={`url(#${gradId})`} stroke={edge} strokeWidth="0.7" />
+      <circle cx={cx} cy={cy} r={r * 0.66} fill="none" stroke={ring} strokeWidth="1.1" opacity="0.85" />
+      <circle cx={cx} cy={cy} r={r * 0.52} fill="none" stroke={ring} strokeWidth="0.5" opacity="0.55" />
+      <path
+        d={`M ${cx - r * 0.55} ${cy - r * 0.35} A ${r * 0.7} ${r * 0.7} 0 0 1 ${cx + r * 0.55} ${cy - r * 0.35}`}
+        fill="none" stroke="#ffffff" strokeWidth="0.7" opacity={isWhite ? 0.55 : 0.28}
+      />
+      {label && (
+        <text
+          x={cx} y={cy + r * 0.30}
+          fontFamily="Cormorant Garamond, serif" fontWeight="600"
+          fontSize={r * 0.95} fill={text} textAnchor="middle"
+        >{label}</text>
+      )}
+    </g>
+  );
+}
+
+function Stack({ point, color, count, selected, p }) {
+  const { cx, baseY, top } = pointGeom(point);
+  const r = POINT_W * 0.42;
+  const visible = Math.min(count, 5);
+  const items = [];
+  for (let i = 0; i < visible; i++) {
+    const cy = top
+      ? baseY + r + 1 + i * (2 * r + 0.5)
+      : baseY - r - 1 - i * (2 * r + 0.5);
+    const isBase = i === 0;
+    items.push(
+      <Checker key={i} cx={cx} cy={cy} r={r} color={color} selected={selected} p={p}
+        label={isBase && count > 5 ? String(count) : null} />
+    );
+  }
+  return <g>{items}</g>;
+}
+
+// ── Die ──────────────────────────────────────────────────────────────────
+const PIP_LAYOUTS = {
+  1: [[0.5, 0.5]],
+  2: [[0.28, 0.28], [0.72, 0.72]],
+  3: [[0.28, 0.28], [0.5, 0.5], [0.72, 0.72]],
+  4: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72]],
+  5: [[0.28, 0.28], [0.72, 0.28], [0.5, 0.5], [0.28, 0.72], [0.72, 0.72]],
+  6: [[0.28, 0.28], [0.72, 0.28], [0.28, 0.5], [0.72, 0.5], [0.28, 0.72], [0.72, 0.72]],
+};
+function Die({ cx, cy, size, value, p }) {
+  const x = cx - size / 2, y = cy - size / 2;
+  return (
+    <g>
+      <rect x={x} y={y} width={size} height={size} rx="6" ry="6"
+        fill="#f5ead0" stroke="#2a1408" strokeWidth="1.2" />
+      <rect x={x+1} y={y+1} width={size-2} height={size-2} rx="5" ry="5"
+        fill="none" stroke="#fff" strokeWidth="0.5" opacity="0.7" />
+      {PIP_LAYOUTS[value].map(([px, py], i) => (
+        <circle key={i}
+          cx={x + px * size} cy={y + py * size}
+          r={size * 0.07}
+          fill="#2a1408" />
+      ))}
+    </g>
+  );
+}
+
+// ── Composition ───────────────────────────────────────────────────────────
+const STARTING = [
+  { point: 1,  color: 'white', count: 15 },
+  { point: 24, color: 'red',   count: 15 },
+];
+
+function Board({ mode }) {
+  // mode: 'frame' | 'fill'
+  const p = CARAMEL;
+  const selectedPoint = 1;
+  const dice = [3, 5];
+  const targets = [
+    selectedPoint + dice[0],
+    selectedPoint + dice[1],
+    selectedPoint + dice[0] + dice[1],
+  ];
+  const isTarget = (n) => targets.includes(n);
+
+  const barCenterX = FRAME + HALF_W + BAR / 2;
+  const leftDX  = FRAME + HALF_W / 2;
+  const rightDX = FRAME + HALF_W + BAR + HALF_W / 2;
+  const dY = H / 2;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={p.frameTop} />
+          <stop offset="0.55" stopColor={p.frameMid} />
+          <stop offset="1" stopColor={p.frameBot} />
+        </linearGradient>
+        <linearGradient id="play" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={p.playTop} />
+          <stop offset="1" stopColor={p.playBot} />
+        </linearGradient>
+        <filter id="woodF" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.025 1.9" numOctaves="2" seed="9" />
+          <feColorMatrix values="0 0 0 0 0.16  0 0 0 0 0.08  0 0 0 0 0.03  0 0 0 0.55 0" />
+        </filter>
+        <pattern id="woodGrain" x="0" y="0" width="240" height="240" patternUnits="userSpaceOnUse">
+          <rect width="240" height="240" filter="url(#woodF)" />
+        </pattern>
+        <filter id="beechF" x="0" y="0" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018 1.5" numOctaves="2" seed="13" />
+          <feColorMatrix values="0 0 0 0 0.32  0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0.30 0" />
+        </filter>
+        <pattern id="beechGrain" x="0" y="0" width="240" height="240" patternUnits="userSpaceOnUse">
+          <rect width="240" height="240" filter="url(#beechF)" />
+        </pattern>
+        <filter id="inset" x="-5%" y="-5%" width="110%" height="110%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="3.2" />
+          <feOffset dx="0" dy="2" />
+          <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="shadowDiff" />
+          <feFlood floodColor="#000" floodOpacity="0.40" />
+          <feComposite in2="shadowDiff" operator="in" />
+          <feComposite in="SourceGraphic" operator="over" />
+        </filter>
+        <filter id="drop" x="-5%" y="-5%" width="110%" height="115%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="7" />
+          <feOffset dx="0" dy="10" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.28" /></feComponentTransfer>
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <radialGradient id="chk-white" cx="0.38" cy="0.32" r="0.78">
+          <stop offset="0" stopColor={p.whiteHi} />
+          <stop offset="1" stopColor={p.whiteFill} />
+        </radialGradient>
+        <radialGradient id="chk-red" cx="0.38" cy="0.32" r="0.78">
+          <stop offset="0" stopColor={p.redHi} />
+          <stop offset="1" stopColor={p.redFill} />
+        </radialGradient>
+        <filter id="chkShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" />
+          <feOffset dx="0" dy="1.2" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.35" /></feComponentTransfer>
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+        <filter id="diceShadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" />
+          <feOffset dx="0" dy="2.5" />
+          <feComponentTransfer><feFuncA type="linear" slope="0.45" /></feComponentTransfer>
+          <feMerge><feMergeNode /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+
+      <g filter="url(#drop)">
+        <rect x="0" y="0" width={W} height={H} rx="10" fill="url(#frame)" />
+        <rect x="0" y="0" width={W} height={H} rx="10" fill="url(#beechGrain)" opacity="0.4" />
+        <rect x="0.5" y="0.5" width={W - 1} height={H - 1} rx="9.5" fill="none" stroke={p.frameHi} strokeWidth="1" opacity="0.5" />
+        <rect x={FRAME} y={FRAME} width={INNER_W} height={INNER_H} fill="url(#play)" filter="url(#inset)" />
+      </g>
+      <rect x={FRAME} y={FRAME} width={INNER_W} height={INNER_H} fill="url(#woodGrain)" opacity="0.55" />
+
+      {Array.from({length:24},(_,i)=>i+1).map(n => (
+        <Triangle key={n} n={n} p={p} mode={isTarget(n) ? mode : 'none'} />
+      ))}
+
+      {Array.from({length:24},(_,i)=>i+1).map(n => {
+        const { cx, baseY, top } = pointGeom(n);
+        const tipY = top ? baseY + POINT_H : baseY - POINT_H;
+        return <circle key={`pip-${n}`} cx={cx} cy={tipY} r="4.5" fill={p.tipPip} stroke={p.triangleStroke} strokeWidth="0.8" />;
+      })}
+
+      <line x1={barCenterX} y1={FRAME} x2={barCenterX} y2={H - FRAME} stroke={p.barLine} strokeWidth="1.2" opacity="0.55" />
+
+      <Diamond cx={leftDX}  cy={dY} p={p} />
+      <Diamond cx={rightDX} cy={dY} p={p} />
+
+      {/* Dice — centered on the bar line, mid-board */}
+      <g filter="url(#diceShadow)">
+        <Die cx={W/2 - 30} cy={H/2 - 30} size={56} value={dice[0]} p={p} />
+        <Die cx={W/2 + 30} cy={H/2 + 30} size={56} value={dice[1]} p={p} />
+      </g>
+
+      <g filter="url(#chkShadow)">
+        {STARTING.map((s, i) => (
+          <Stack key={i} point={s.point} color={s.color} count={s.count}
+            selected={s.point === selectedPoint} p={p} />
+        ))}
+      </g>
+
+      <text x={W/2} y={H - 12} fontFamily="Cormorant Garamond, serif" fontStyle="italic"
+        fontSize="13" letterSpacing="7" fill={p.frameText} textAnchor="middle" opacity="0.55">TAVLI</text>
+    </svg>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('boardA')).render(<Board mode="frame" />);
+ReactDOM.createRoot(document.getElementById('boardB')).render(<Board mode="fill" />);
+</script>
+</body>
+</html>

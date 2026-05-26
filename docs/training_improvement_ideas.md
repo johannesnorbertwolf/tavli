@@ -42,7 +42,7 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 
 **Outcome**: Tested with great success. Significantly improved training stability and convergence.
 
-### I2. Monte-Carlo grounding for race endgames
+### I2. Monte-Carlo grounding for race endgames — RULED OUT
 **Why**: Bear-off positions are near-deterministic functions of pip-count distributions. MLPs are bad at exact arithmetic. TD never gives a clean MC signal here because λ-traces always blend bootstrap. Different mechanism from TD-leaf (#I1 ruled out): uses actual rollouts to terminal, not network re-evaluation.
 
 **Approach**:
@@ -51,6 +51,8 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 - Cheap because race rollouts need no decisions worth thinking about.
 
 **Cheaper variant**: pre-compute a pip-count → win-prob lookup table from many simulated races; use it as the target for race states. **NOT suitable for Plakoto** — exact-roll bearing-off means the checker distribution matters enormously, not just total pip count (e.g. all checkers on point 1 = terrible despite low pip count). Stick with actual rollouts. Note: pip count as a race proxy does not generalise across all Tavli variants — bearing-off rules differ per variant, so any pip-count heuristic must be validated against the specific variant's rules before use.
+
+**Ruling**: Fully implemented and trained extensively. Added `Board.is_race()` (no-contact detection), `ai/mc_rollouts.py` (200 random rollouts per race state), and wired the MC win-probability in as the training target for race states (replacing the λ-return). After a long training run there was **no improvement in win rate against gold**. Grounding the endgame targets in true rollout outcomes did not translate into stronger play. Abandoned. (Implementation lives on branch `claude/quizzical-cannon-93f65d`, not merged to main.)
 
 ### I3. Opponent pool / fictitious self-play — RULED OUT
 **Why**: Greedy-on-self collapses the position distribution. The net never sees positions that arise against a *different* style of play, so calibration drifts there.
@@ -81,8 +83,10 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 ### I7. Categorical value head
 **Why**: Output {loss, normal win, pin-trap win} as 3 logits, cross-entropy loss. Forces representation to separate win modes that have different positional signatures. Light architectural change.
 
-### I8. Prioritized replay from #D2
+### I8. Prioritized replay from #D2 — RULED OUT
 **Why**: Once #D2 is logging hard positions, up-weight those samples in the replay buffer (needs #I1 first). Effectively a hard-example mining loop.
+
+**Ruling**: Tried. No improvement in win rate against gold. Up-weighting high-TD-error positions did not translate into stronger play.
 
 ---
 
@@ -92,8 +96,9 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 2. ✓ **I1** (replay buffer + Adam) — DONE. Great success.
 3. ~~**I3** (opponent pool) — RULED OUT (gut: won't move needle).~~
 4. ~~**I4** (pin-trap aux head) — RULED OUT (model doesn't struggle here).~~
-5. Next: **I8** (prioritized replay) — up-weight high-TD-error positions in the replay buffer.
-6. Then: **I2** (MC grounding for race endgames) — use actual rollouts; pip-count lookup table is NOT suitable for Plakoto because exact-roll bearing-off means distribution matters, not just pip count.
+5. ~~**I8** (prioritized replay) — RULED OUT. Tried; no improvement in win rate.~~
+6. ~~**I2** (MC grounding for race endgames) — RULED OUT. Implemented + trained extensively; no improvement in win rate.~~
+7. Next: open — remaining untried ideas are **I5** (always-softmax exploration), **I6** (target network), **I7** (categorical value head).
 
 ## Ruled out
 
@@ -101,3 +106,5 @@ Read `training_runs/eval_gold_history.log`. Plateau-clean vs oscillating tells u
 - Larger network — tried, no improvement (capacity is not the bottleneck).
 - λ / ε sweeps — tried, no improvement.
 - 2-ply lookahead for move selection during training — tried, no improvement (and slow).
+- Prioritized replay (I8) — tried, no improvement in win rate. Up-weighting high-TD-error positions did not translate into stronger play.
+- MC grounding for race endgames (I2) — fully implemented (race detection + 200-rollout MC targets replacing the λ-return for race states) and trained extensively; no improvement in win rate against gold. Abandoned.

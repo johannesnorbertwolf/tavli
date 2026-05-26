@@ -205,8 +205,21 @@ elif [ "$1" == "human-graph" ]; then
             nix-shell --run "python3 main.py human-graph"
         fi
     fi
+elif [ "$1" == "tournament" ]; then
+    NUM_RUNS="${2:-100}"
+    SEED="${3:-}"
+    echo "Running round-robin tournament ($NUM_RUNS runs)..."
+    ARGS="--num-runs $NUM_RUNS"
+    if [ -n "$SEED" ]; then
+        ARGS="$ARGS --seed $SEED"
+    fi
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $PY_RUNNER main.py tournament $ARGS | tee tournament_log.txt
+    else
+        nix-shell --run "python3 main.py tournament $ARGS" | tee tournament_log.txt
+    fi
 else
     echo "Invalid argument: $1"
-    echo "Usage: ./run.sh [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]]"
+    echo "Usage: ./run.sh [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]|tournament [num_runs] [seed]]"
     exit 1
 fi

@@ -856,11 +856,14 @@ def main():
                 print("Invalid x. Please provide a positive integer.")
                 return
         generate_human_progress_graph(last_x=last_x)
+    elif mode == 'tournament':
+        from tournaments.tournament_cli import run_tournament_cli
+        run_tournament_cli(config, sys.argv[2:])
     else:
         print(
             f"Unknown mode: {mode}. Use 'train', 'play', "
             "'eval-random', 'eval-gold', 'eval-gold-stats', 'eval-gold-graph', "
-            "'eval-lookahead', 'human-stats', or 'human-graph'."
+            "'eval-lookahead', 'human-stats', 'human-graph', or 'tournament'."
         )
 
 
