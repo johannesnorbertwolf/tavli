@@ -67,12 +67,12 @@ ios/
 │                                MoveBuilderTests, GameSessionTests, GameSessionAITests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
-│   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,
+│   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
 │       ├── App.swift            @main + placeholder screen (Phase 2 T1)
-│       ├── Info.plist           landscape-only iPad; UIAppFonts registration
+│       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
 │           ├── CormorantGaramond.ttf    (variable font, committed)
