@@ -55,6 +55,28 @@ so the game flow is validated without a simulator.
   updates only from a real model score and stays at its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
 
+## SwiftUI views
+
+`TavliApp/TavliApp/Views/` holds the rendering layer. Views are thin and bind to `GameSession`
+through its published read-state + intents — no game logic lives in views.
+
+- **`DiceView.swift`** (T8) — the dice. Layered as three views:
+  - `DieFace` — one ivory die (`#f5ead0` fill, `#2a1408` edge + pips, faint white inner
+    highlight, soft drop shadow); pip positions are the design's normalized `PIP_LAYOUTS`.
+    All metrics scale off `size` (default 56). `isUsed` greys it (opacity + desaturation).
+  - `DiceRow` — pure row of `DieFace`s, driven by explicit `values` + `usedCount`; renders any
+    state for previews (normal, pasch=4, partially/fully consumed).
+  - `DiceView` — binds `DiceRow` to a `GameSession`: a pasch shows four dice; `usedCount` =
+    `moveBuilder.built.count` (one die greyed per committed half-move, left→right); tap runs a
+    brief tumble animation then `session.roll()`, gated on `phase == .awaitingRoll`.
+  - `ManualDiceControl` — two 1…6 steppers + "Set dice" → `session.setManualDice(d1,d2)`; only
+    active while awaiting a roll. Same legal-move computation as a roll.
+
+`App.swift` currently hosts `DiceDemoScreen`, a **temporary T8 harness** (felt background, tappable
+dice, manual-mode toggle, "New turn" → `newGame()`, "Play a half-move" → commits the first legal
+half-move to demonstrate greying). It exercises the real session and will be replaced by the screen
+assembly in T10.
+
 ## Layout
 
 ```
@@ -71,7 +93,8 @@ ios/
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main + placeholder screen (Phase 2 T1)
+│       ├── App.swift            @main + DiceDemoScreen (temporary T8 harness; T10 replaces it)
+│       ├── Views/               SwiftUI views — DiceView (T8)
 │       ├── Info.plist           landscape-only iPad; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
