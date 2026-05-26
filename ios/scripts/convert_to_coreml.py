@@ -9,11 +9,15 @@ Run from the worktree root with the project venv:
 
     PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/convert_to_coreml.py
 
-Output: ios/TavliEngine/Tests/TavliEngineTests/Fixtures/PlakotoValue.mlpackage
-        (also where the Swift Agent parity test loads it from).
+Outputs (same model written to both):
+  - ios/TavliEngine/Tests/TavliEngineTests/Fixtures/PlakotoValue.mlpackage
+        (where the Swift Agent parity test loads it from)
+  - ios/TavliApp/TavliApp/Resources/PlakotoValue.mlpackage
+        (bundled into the app; Xcode compiles it to PlakotoValue.mlmodelc)
 """
 import json
 import os
+import shutil
 import sys
 
 import numpy as np
@@ -27,6 +31,7 @@ from ai.checkpoint_io import load_agent_from_checkpoint
 
 GOLD_PATH = "models/gold_v9.pth"
 OUT_PATH = "ios/TavliEngine/Tests/TavliEngineTests/Fixtures/PlakotoValue.mlpackage"
+APP_OUT_PATH = "ios/TavliApp/TavliApp/Resources/PlakotoValue.mlpackage"
 FIXTURES = "ios/TavliEngine/Tests/TavliEngineTests/Fixtures/fixtures.json"
 INPUT_NAME = "board"
 OUTPUT_NAME = "win_prob"
@@ -59,6 +64,13 @@ def main():
     os.makedirs(os.path.dirname(out_abs), exist_ok=True)
     mlmodel.save(out_abs)
     print(f"saved {OUT_PATH}")
+
+    app_abs = os.path.join(ROOT, APP_OUT_PATH)
+    os.makedirs(os.path.dirname(app_abs), exist_ok=True)
+    if os.path.exists(app_abs):
+        shutil.rmtree(app_abs)
+    shutil.copytree(out_abs, app_abs)
+    print(f"saved {APP_OUT_PATH}")
 
     # Parity check: PyTorch sigmoid output vs Core ML over real fixture encodings.
     fx_path = os.path.join(ROOT, FIXTURES)

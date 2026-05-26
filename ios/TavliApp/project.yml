@@ -1,0 +1,28 @@
+name: TavliApp
+options:
+  bundleIdPrefix: com.plakoto
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "26.3"
+packages:
+  TavliEngine:
+    path: ../TavliEngine
+targets:
+  TavliApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: TavliApp
+    resources:
+      - path: TavliApp/Resources
+    dependencies:
+      - package: TavliEngine
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "2"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliApp
+        INFOPLIST_FILE: TavliApp/Info.plist
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_TEAM: ""
