@@ -40,8 +40,20 @@ so the game flow is validated without a simulator.
   set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
   board and auto-finishes when the move is complete or the only continuation is itself legal.
   Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
-  Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`)
-  is the view contract. No AI, animation, or rendering live here (later tickets).
+  Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
+  `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+
+- **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
+  Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled
+  `PlakotoValue.mlmodelc` (returns `nil` if absent → random fallback). Call `start()` once after
+  construction so the AI moves first if it owns the starting player. When `finishTurn` (or `start`/
+  `newGame`) lands on the AI's turn, `takeAITurn` rolls, computes legal moves (empty = forced pass),
+  then: with no model it applies a random legal move synchronously; with a model it enters
+  `aiThinking` and runs `agent.getBestMove` on a detached task **off the main actor**, hopping back
+  via `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure
+  falls back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
+  updates only from a real model score and stays at its `0.5` default under the random fallback.
+  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
 
 ## Layout
 
@@ -52,7 +64,7 @@ ios/
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
 │   │                            MoveBuilder, GameSession
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
-│                                MoveBuilderTests, GameSessionTests
+│                                MoveBuilderTests, GameSessionTests, GameSessionAITests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreML
 
 /// The phase of the current turn. The contract all views build against.
 ///
@@ -26,8 +27,17 @@ public enum TurnPhase: Equatable {
 public final class GameSession: ObservableObject {
     public let game: Game
 
+    /// The Core ML move selector. `nil` means no model is available — AI turns
+    /// then fall back to a random legal move.
+    public let agent: Agent?
+    /// Which side the AI plays, if any. `nil` means a human-vs-human session.
+    public let aiColor: Color?
+
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
+
+    /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
+    @Published public private(set) var winProbability: Double = 0.5
 
     /// Source point currently selected (a checker the player is about to move).
     @Published public private(set) var selectedPoint: Int? = nil
@@ -39,11 +49,36 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder = MoveBuilder(legalMoves: [])
 
-    public init(startingPlayer: Color = .black, config: GameConfig = .standard) {
+    public init(startingPlayer: Color = .black,
+                config: GameConfig = .standard,
+                agent: Agent? = nil,
+                aiColor: Color? = nil) {
         self.game = Game(config: config, startingPlayer: startingPlayer)
+        self.agent = agent
+        self.aiColor = aiColor
     }
 
     public var currentPlayer: Color { game.currentPlayer }
+
+    /// Load the bundled Core ML value model and wrap it in an `Agent`.
+    /// Returns `nil` when the model is absent so callers can fall back to random play.
+    public static func makeAgent() -> Agent? {
+        guard let url = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc"),
+              let model = try? MLModel(contentsOf: url) else {
+            return nil
+        }
+        return Agent(model: model, encoder: BoardEncoder(config: .standard))
+    }
+
+    /// Kick off the first move if the starting player is the AI. Views call this
+    /// once after constructing the session.
+    public func start() {
+        maybeStartAITurn()
+    }
+
+    private var isAITurn: Bool {
+        aiColor != nil && currentPlayer == aiColor
+    }
 
     // ── Intents ─────────────────────────────────────────────────────────────
 
@@ -122,7 +157,9 @@ public final class GameSession: ObservableObject {
         moveBuilder = MoveBuilder(legalMoves: [])
         clearSelection()
         selectableSources = []
+        winProbability = 0.5
         phase = .awaitingRoll
+        maybeStartAITurn()
     }
 
     // ── Internal transitions ──────────────────────────────────────────────────
@@ -167,5 +204,61 @@ public final class GameSession: ObservableObject {
 
         game.switchTurn()
         phase = .awaitingRoll
+        maybeStartAITurn()
+    }
+
+    // ── AI turn ────────────────────────────────────────────────────────────────
+
+    private func maybeStartAITurn() {
+        guard isAITurn, phase == .awaitingRoll else { return }
+        takeAITurn()
+    }
+
+    /// Roll for the AI, then either play a random move (no model) or compute the
+    /// best move off the main actor and apply it back on the main actor.
+    private func takeAITurn() {
+        game.dice.roll()
+        legalMoves = PossibleMoves(
+            board: game.board,
+            color: game.currentPlayer,
+            dice: game.dice
+        ).findMoves()
+
+        guard !legalMoves.isEmpty else {
+            moveBuilder = MoveBuilder(legalMoves: [])
+            finishTurn()
+            return
+        }
+        moveBuilder = MoveBuilder(legalMoves: legalMoves)
+
+        guard let agent else {
+            // No model available — fall back to a random legal move.
+            applyAIMove(legalMoves.randomElement()!, score: nil)
+            return
+        }
+
+        phase = .aiThinking
+        let board = game.board
+        let color = game.currentPlayer
+        let moves = legalMoves
+        Task.detached(priority: .userInitiated) {
+            // do/catch via try? — a Core ML failure yields nil and a random fallback.
+            let result = try? agent.getBestMove(board, moves, color: color)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let chosen = result?.move ?? moves.randomElement()!
+                self.applyAIMove(chosen, score: result?.score)
+            }
+        }
+    }
+
+    private func applyAIMove(_ move: Move, score: Float?) {
+        let mover = game.currentPlayer
+        game.board.apply(move)
+        if let score {
+            // `score` is the win probability for the side that just moved.
+            winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
+        }
+        finishTurn()
     }
 }
