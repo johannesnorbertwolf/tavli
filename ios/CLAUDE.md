@@ -60,6 +60,9 @@ so the game flow is validated without a simulator.
 `TavliApp/TavliApp/Views/` holds the rendering layer. Views are thin and bind to `GameSession`
 through its published read-state + intents — no game logic lives in views.
 
+- **`BoardView.swift`** (T3) — static empty Caramel board drawn with a single `Canvas` on top
+  of `BoardGeometry` (frame, surface, triangles + tip pips, bar line, diamonds, wordmark). No
+  game state yet. See `Views/CLAUDE.md` for the full breakdown.
 - **`DiceView.swift`** (T8) — the dice. Layered as three views:
   - `DieFace` — one ivory die (`#f5ead0` fill, `#2a1408` edge + pips, faint white inner
     highlight, soft drop shadow); pip positions are the design's normalized `PIP_LAYOUTS`.
@@ -72,10 +75,9 @@ through its published read-state + intents — no game logic lives in views.
   - `ManualDiceControl` — two 1…6 steppers + "Set dice" → `session.setManualDice(d1,d2)`; only
     active while awaiting a roll. Same legal-move computation as a roll.
 
-`App.swift` currently hosts `DiceDemoScreen`, a **temporary T8 harness** (felt background, tappable
-dice, manual-mode toggle, "New turn" → `newGame()`, "Play a half-move" → commits the first legal
-half-move to demonstrate greying). It exercises the real session and will be replaced by the screen
-assembly in T10.
+`App.swift` currently hosts `BoardView` (the static board) on the reference page background. The
+earlier T8 `DiceDemoScreen` harness has been retired now that a real surface exists; `DiceView`
+remains exercisable via its `#Preview`. Both are placeholders until the screen assembly in T10.
 
 ## Layout
 
@@ -89,13 +91,13 @@ ios/
 │                                MoveBuilderTests, GameSessionTests, GameSessionAITests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
-│   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,
+│   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main + DiceDemoScreen (temporary T8 harness; T10 replaces it)
-│       ├── Views/               SwiftUI views — DiceView (T8)
-│       ├── Info.plist           landscape-only iPad; UIAppFonts registration
+│       ├── App.swift            @main — hosts BoardView (T3); T10 replaces with full screen
+│       ├── Views/               SwiftUI views — BoardView (T3), DiceView (T8)
+│       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
 │           ├── CormorantGaramond.ttf    (variable font, committed)
