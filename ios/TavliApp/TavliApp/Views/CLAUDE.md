@@ -38,11 +38,46 @@ interactivity — those land in later tickets.
 ### CaramelPalette + `Color(hex:)`
 
 `CaramelPalette` is an `enum` of `static let Color`s ported verbatim from the
-`CARAMEL` table in the reference (only the colors the empty board uses).
-`Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors (checker fills,
-highlight gold, dice) here as those views land.
+`CARAMEL` table in the reference. It carries the empty-board colors plus the T4
+checker colors (`whiteFill/Hi/Ring/Edge/Text`, `redFill/Hi/Ring/Edge/Text`).
+`Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors (highlight gold,
+dice) here as those views land.
+
+## CheckersView.swift (T4 — checker stacks)
+
+Renders the checker stacks on top of `BoardView` — a **pure function of board
+state** (`[TavliEngine.Point]`, indexed 0…25). No highlights, interaction, or
+animation (later tickets). Like `BoardView` it's a single `Canvas` +
+`.aspectRatio(1, .fit)` building `BoardGeometry(rect:)`, so an overlaid
+`ZStack { BoardView(); CheckersView(points:) }` shares the same centered-square
+fit and the checkers register with the triangles.
+
+- **Stacks** (`drawStack`, porting the reference `Stack`): for each playable
+  point 1…24 with a non-empty stack, draw `min(count, 5)` checkers at
+  `geo.checkerCenter(point:slot:)` (slot 0 = base, growing away from the
+  baseline). Each checker uses its **actual per-slot color** (`pieces[slot]`), so
+  a pinned point shows the trapped opponent checker in its own color at the base
+  — the color *is* the distinct rendering (no extra marker). When `count > 5`, a
+  Cormorant Garamond count label is drawn on the base checker (slot 0), in
+  `pieces[0]`'s text color. Bear-off slots (0/25) are **not** drawn (the Caramel
+  design never renders bear-off; out of scope for T4).
+- **Checkers** (`drawChecker`, porting the reference `Checker`): wrapped in a
+  `context.drawLayer` with a `.shadow` filter (the spec's drop shadow). Inside:
+  the disc filled with a radial gradient (`hi → fill`, center `(cx−0.24r,
+  cy−0.36r)`, end radius `1.56r`, mapping SVG `cx=0.38, cy=0.32, r=0.78`) + a
+  thin `edge` stroke; two concentric `ring` detail circles (`r·0.66` @ 0.85,
+  `r·0.52` @ 0.55); and a soft white specular arc approximated by a quad curve
+  from `(cx−0.55r, cy−0.35r)` to `(cx+0.55r, cy−0.35r)` (control `(cx,
+  cy−0.85r)`), opacity `0.55` white / `0.28` red. All design stroke widths scale
+  by `geo.scale`; radius-relative offsets use the scaled `geo.checkerRadius`.
+- **`CheckerStyle`** maps `TavliEngine.Color → (fill, hi, ring, edge, text)` from
+  `CaramelPalette`; engine `.black` → red.
+- Two `#Preview`s: the start position (over `BoardView`) and a constructed pinned
+  point (`setPoint(13, [.black, .white, .white])`) with tall stacks to exercise
+  the count label.
 
 ## App.swift
 
-`@main`. Hosts `BoardView()` padded inside a `#ece6dc` page background (the
-reference page color). Replaced the Phase-2 T1 placeholder.
+`@main`. Overlays `CheckersView(points:)` on `BoardView()` in a `ZStack`, padded
+inside a `#ece6dc` page background, showing the Plakoto start position (a
+`GameBoard` with `initializeBoard()`: 15 white@1, 15 red@24).
