@@ -30,7 +30,7 @@ play_time_budget_s: 20.0          # Max time budget per AI move (iterative-deepe
 beam_threshold: 0.08              # Absolute beam fallback (used only when search_relative_cutoff unset)
 search_relative_cutoff: 0.08      # Keep moves within this relative fraction of the best
 search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
-search_max_depth: 3               # Stop iterative deepening here (depth 4+ is never reachable in budget)
+search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
 gold_model_path: models/gold_v9.pth # Frozen reference model checkpoint
 training_state_path: training_state.json # Persisted scheduler state for resumed training

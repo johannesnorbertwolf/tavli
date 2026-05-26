@@ -333,7 +333,7 @@ Relevant entries in `config/config.yml`:
 | `play_time_budget_s` | `20.0` | Max wall-clock budget per AI move (safety ceiling). The AI uses iterative-deepening expectimax and deepens until this elapses *or* `search_max_depth` is reached — usually the latter, so most moves finish well under the budget. |
 | `search_relative_cutoff` | `0.08` | Relative move-pruning width: at each search node, keep moves with `score >= best * (1 - cutoff)`. With `search_max_branch` this keeps ~3.5 moves/node on average. |
 | `search_max_branch` | `5` | Hard cap on moves expanded per search node, applied on top of `search_relative_cutoff`. |
-| `search_max_depth` | `3` | Stop iterative deepening at this depth. Depth 4+ is unreachable within budget, so attempting it would just waste time; capping makes each move cost the depth-3 completion time. |
+| `search_max_depth` | `2` | Stop iterative deepening at this depth. **Currently `2`, which disables 3-ply during play** (3-ply works and wins ~57% vs 2-ply in validation, but is slow — set back to `3` to re-enable). Depth 4+ is unreachable within budget regardless. |
 | `beam_threshold` | `0.08` | Absolute beam fallback, used only when `search_relative_cutoff` is unset. Not used by the play loop. |
 | `play.drill_correct_floor` | `0.01` | Absolute floor for the drill "correct" tolerance (1 pp). Prevents impossible standards in nearly-lost positions. |
 | `play.drill_correct_relative` | `0.03` | Fraction of `best_score` for "correct" tolerance. At best=0.70, correct means within 0.021 (2.1 pp). |
