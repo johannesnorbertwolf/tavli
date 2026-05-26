@@ -25,12 +25,35 @@ ios/
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
+├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
+│   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,
+│   │                            local TavliEngine dep, bundles Resources/
+│   ├── setup.sh                 ensure xcodegen → generate → resolve packages
+│   └── TavliApp/
+│       ├── App.swift            @main + placeholder screen (Phase 2 T1)
+│       ├── Info.plist           landscape-only iPad; UIAppFonts registration
+│       └── Resources/           bundled into the app:
+│           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
+│           ├── CormorantGaramond.ttf    (variable font, committed)
+│           └── Inter.ttf                (variable font, committed)
 └── scripts/
     ├── generate_test_fixtures.py   Python → fixtures.json (encodings, legal moves, scores)
-    └── convert_to_coreml.py        gold_v9.pth → PlakotoValue.mlpackage (+ self parity check)
+    └── convert_to_coreml.py        gold_v9.pth → PlakotoValue.mlpackage, written to BOTH the
+                                     test Fixtures dir and TavliApp/Resources (+ self parity check)
 ```
 
-`TavliApp` (the SwiftUI app, xcodegen project) is Phase 2 and not built yet.
+### Build the app
+
+```bash
+PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/convert_to_coreml.py  # model into Resources/
+bash ios/TavliApp/setup.sh            # generate TavliApp.xcodeproj
+open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
+```
+
+`SWIFT_VERSION` is pinned to 5.9 (Swift-5 mode) on the app target — Swift-6 strict concurrency
+errors on `MLModel` + the non-`Sendable` engine classes. The two display fonts are committed
+TTFs (Cormorant Garamond + Inter, both variable) registered via `Info.plist` `UIAppFonts`; the
+Core ML model is a generated artifact (gitignored, recreate with the convert script).
 
 ## Key conventions / gotchas
 
