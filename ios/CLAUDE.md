@@ -24,12 +24,22 @@ so the game flow is validated without a simulator.
 
 - **`MoveBuilder`** incrementally composes a full `Move` from half-moves. It holds
   `activeMoves` (legal `Move`s still consistent with what's been picked) + `built: [HalfMove]`.
-  `selectableSourcePoints` / `validDestinations(for:)` drive highlighting at index `built.count`;
-  `commit(halfMove:)` filters `activeMoves` and returns whether the move is complete;
-  `canFinishNow` is true when some surviving move has exactly `built.count` halves (a shorter
-  move that is a prefix of a longer one is *finishable*, not *forced*); `undo(allLegal:)` rebuilds
-  `activeMoves` from scratch; `completedMove` is the first surviving move of length `built.count`.
-  It does **not** touch the board — the session applies/undoes half-moves in step.
+  **Order-independent:** the engine stores each multi-die move in one canonical order (die-1
+  first — so a dice (3,5) two-checker move is `[1→4, 1→6]`), but the player may play those halves
+  in either order, so the builder treats a move's half-moves as a *bag*. At each step it offers
+  every half-move that could come next in *some* valid ordering (`playableNext`): a remaining
+  half-move is offerable unless another remaining half-move delivers a checker to its `from` (a
+  chain dependency like a pasch `1→3→5`); independent half-moves are freely reorderable. So
+  selecting point 1 on a (3,5) roll offers 4, 6, **and** 9 (the merged single-checker move),
+  matching the design — not just the stored-order 4/9. `remaining(of:)` validates `built` is a
+  legal ordering prefix and returns the leftover half-moves; `selectableSourcePoints` /
+  `validDestinations(for:)` are the `from`/`to` of `playableNext(remaining)` across surviving
+  moves; `commit(halfMove:)` keeps the moves in which the half-move is offerable, appends it, and
+  returns whether nothing remains (complete); `canFinishNow` is true when some surviving move has
+  no remaining halves (a shorter move that is a prefix of a longer one is *finishable*, not
+  *forced*); `undo(allLegal:)` rebuilds `activeMoves` from scratch; `completedMove` is a surviving
+  move with no remaining halves. It does **not** touch the board — the session applies/undoes
+  half-moves in step (in the player's chosen order, always a legal ordering).
 
 - **`GameSession`** (`@MainActor`, `ObservableObject`) owns the `Game` and drives the turn state
   machine. Phases: `awaitingRoll / picking / moving / aiThinking / animating / gameOver(winner:)`
@@ -79,15 +89,22 @@ through its published read-state + intents — no game logic lives in views.
     brief tumble animation then `session.roll()`, gated on `phase == .awaitingRoll`.
   - `ManualDiceControl` — two 1…6 steppers + "Set dice" → `session.setManualDice(d1,d2)`; only
     active while awaiting a roll. Same legal-move computation as a roll.
+- **`PlayableBoardView.swift`** (T7) — the interactive board: `ZStack`s `BoardView`, a
+  `TargetHighlightView` (gold frame/fill on legal targets), `CheckersView`, and a
+  `SourceRingView` (gold ring on the selected source's checkers), and maps tap/drag to
+  `GameSession` intents via `BoardGeometry.hitTest`. `HighlightStyle` (`.frame` default / `.fill`)
+  is the design's two-readings constant. Binds via `@ObservedObject`; no game logic in the view.
+  See `Views/CLAUDE.md`.
 - **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
   plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
   meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. A standalone
   component (no host yet) — T10 drops it onto the game screen. See `Views/CLAUDE.md`.
 
-`App.swift` currently overlays `CheckersView` (start position) on `BoardView` (the static board)
-on the reference page background. The earlier T8 `DiceDemoScreen` harness has been retired now
-that a real surface exists; `DiceView` remains exercisable via its `#Preview`. All are
-placeholders until the screen assembly in T10.
+`App.swift` now hosts `PlayableBoardView` bound to a `GameSession(startingPlayer: .white)` rolled
+to `3·5` (the design's reference highlight scenario) on the reference page background — a T7
+sign-off bootstrap (only the first turn is playable without a dice UI). The earlier T8
+`DiceDemoScreen` harness has been retired; `DiceView` remains exercisable via its `#Preview`.
+These remain placeholders until the screen assembly in T10.
 
 ## Layout
 
@@ -105,8 +122,9 @@ ios/
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main — overlays CheckersView on BoardView (T3/T4); T10 replaces
-│       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4), DiceView (T8),
+│       ├── App.swift            @main — hosts PlayableBoardView (T7 sign-off bootstrap); T10 replaces
+│       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4),
+│       │                        DiceView (T8), PlayableBoardView (T7),
 │       │                        DebugOverlay (T11; unhosted component until T10)
 │       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:

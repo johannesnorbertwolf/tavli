@@ -89,6 +89,42 @@ final class MoveBuilderTests: XCTestCase {
         XCTAssertTrue(b.built.isEmpty)
         XCTAssertEqual(b.selectableSourcePoints, [1])  // back to start
     }
+
+    func testIndependentHalfMovesAreReorderable() {
+        // The dice (3,5)-from-point-1 case: the engine stores the two-checker
+        // move die-1 first ([1→4, 1→6]), plus the merged single-checker [1→9].
+        // Either independent half-move may be played first, so all three
+        // destinations are offered up front.
+        let legal = [
+            move([(1, 4), (1, 6)]),
+            move([(1, 9)]),
+        ]
+        let b = MoveBuilder(legalMoves: legal)
+        XCTAssertEqual(b.selectableSourcePoints, [1])
+        XCTAssertEqual(b.validDestinations(for: 1), [4, 6, 9])
+
+        // Play the die-5 half (1→6) first — impossible under stored-order logic.
+        XCTAssertFalse(b.commit(halfMove: hm(1, 6)))
+        XCTAssertEqual(b.activeMoves, [move([(1, 4), (1, 6)])])
+        XCTAssertEqual(b.validDestinations(for: 1), [4])
+        XCTAssertTrue(b.commit(halfMove: hm(1, 4)))
+        XCTAssertEqual(b.completedMove, move([(1, 4), (1, 6)]))
+    }
+
+    func testChainedHalfMovesAreNotReorderable() {
+        // A single-checker chain 1→3→5: the second half can't be played until the
+        // first delivers a checker to point 3.
+        let legal = [move([(1, 3), (3, 5)])]
+        let b = MoveBuilder(legalMoves: legal)
+        XCTAssertEqual(b.selectableSourcePoints, [1])   // not 3
+        XCTAssertEqual(b.validDestinations(for: 1), [3])
+        XCTAssertEqual(b.validDestinations(for: 3), [])  // blocked until 1→3
+
+        XCTAssertFalse(b.commit(halfMove: hm(1, 3)))     // 3→5 still to play
+        XCTAssertEqual(b.validDestinations(for: 3), [5])
+        XCTAssertTrue(b.commit(halfMove: hm(3, 5)))      // now complete
+        XCTAssertEqual(b.completedMove, move([(1, 3), (3, 5)]))
+    }
 }
 
 // ── GameSession ──────────────────────────────────────────────────────────────

@@ -203,6 +203,11 @@ enum CaramelPalette {
     static let redRing = Color(hex: 0x5e160b)
     static let redEdge = Color(hex: 0x2a0a04)
     static let redText = Color(hex: 0xfff3d6)
+
+    // Move highlight (T7) — ported from the `hl*` keys in the design reference.
+    static let hl = Color(hex: 0xf4b400)      // saturated amber: source ring + target frame
+    static let hlEdge = Color(hex: 0x7a5400)
+    static let hlFill = Color(hex: 0xf6c623)  // slightly lighter for the fill-mode target
 }
 
 extension Color {
