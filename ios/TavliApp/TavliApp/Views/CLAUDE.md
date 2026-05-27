@@ -38,10 +38,12 @@ interactivity — those land in later tickets.
 ### CaramelPalette + `Color(hex:)`
 
 `CaramelPalette` is an `enum` of `static let Color`s ported verbatim from the
-`CARAMEL` table in the reference. It carries the empty-board colors plus the T4
-checker colors (`whiteFill/Hi/Ring/Edge/Text`, `redFill/Hi/Ring/Edge/Text`).
-`Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors (highlight gold,
-dice) here as those views land.
+`CARAMEL` table in the reference. It carries the empty-board colors, the T4
+checker colors (`whiteFill/Hi/Ring/Edge/Text`, `redFill/Hi/Ring/Edge/Text`), and
+the T7 move-highlight colors (`hl` `#f4b400` — source ring + target frame;
+`hlEdge` `#7a5400`; `hlFill` `#f6c623` — the fill-mode target). `Color(hex:
+UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors (dice) here as those views
+land.
 
 ## CheckersView.swift (T4 — checker stacks)
 
@@ -76,8 +78,62 @@ fit and the checkers register with the triangles.
   point (`setPoint(13, [.black, .white, .white])`) with tall stacks to exercise
   the count label.
 
+## PlayableBoardView.swift (T7 — move input + highlighting)
+
+The interactive board: composes the static board, highlight overlays, and
+checkers, and turns tap / drag gestures into `GameSession` intents. Binds to a
+`GameSession` via `@ObservedObject`; **no game logic lives here** — it only reads
+the published view contract (`selectableSources`, `validTargets`, `selectedPoint`,
+`game.board.points`) and calls `selectPoint` / `commitHalfMove`.
+
+- **Layer order** (a `GeometryReader` + `ZStack`, bottom → top): `BoardView()` →
+  `TargetHighlightView` (below the checkers so a fill sits under them) →
+  `CheckersView(points:)` → `SourceRingView` (above, so the ring haloes the
+  selected stack). All layers rebuild an identical `BoardGeometry` from the same
+  square fit, so they register exactly; the gesture geometry is built from the
+  same `GeometryReader` size. The container is `.aspectRatio(1, .fit)`.
+- **Gesture** — a single `DragGesture(minimumDistance: 0)` serves both
+  interactions, discriminated by travel vs. `dragThreshold` (10pt):
+  - **Tap** (travel ≤ threshold, resolved in `onEnded`): `hitTest` over `1…25`;
+    if a target is tapped with a source already selected → `commitHalfMove`,
+    else `selectPoint(tapped)` (a non-selectable index clears the selection,
+    since `GameSession.selectPoint` ignores it).
+  - **Drag** (travel > threshold): on first movement, `hitTest` the *start*
+    location over `selectableSources` and `selectPoint` it (lift); on `onEnded`,
+    `hitTest` the drop over `validTargets` → `commitHalfMove`. A missed drop
+    leaves the source selected so the user can still tap a target.
+  - No floating ghost checker — the ring + target marks are the feedback, per the
+    Caramel design.
+- **`HighlightStyle`** (`enum { frame, fill }`) — the design's "two readings".
+  Default `.frame` (gold outline, preserves the wood/ivory look); `.fill` is the
+  higher-visibility solid-gold variant, kept behind this constant
+  (`PlayableBoardView(session:highlightStyle:)`).
+- **`TargetHighlightView`** — a pure `Canvas` (`.allowsHitTesting(false)`)
+  marking each legal target:
+  - **Playable points (1…24)** — `markTriangle` redraws the triangle path
+    (`baselineLeft → baselineRight → tip`): `.frame` strokes it `hl` width `5·s`;
+    `.fill` fills `hlFill` + the normal `2.6·s` dark stroke.
+  - **Bear-off (0/25)** — `markBearOff` draws a gold **tray box** on the
+    corresponding half of the right frame strip (slot 25 top = White, slot 0
+    bottom = Black): the slot's `hitRect` inset `(5·s, 10·s)` as a rounded-rect
+    (corner `8·s`); `.frame` strokes it `hl` (`5·s`), `.fill` fills `hlFill` with
+    a `hlEdge` `2·s` edge. The Caramel design has no bear-off art, so this box is
+    the only bear-off visual; there is no persistent tray chrome (borne-off
+    checker rendering remains a separate, later concern).
+- **`SourceRingView`** — a pure `Canvas` (`.allowsHitTesting(false)`) that, for
+  the selected point's `min(count, 5)` visible checkers, strokes a gold circle at
+  `geo.checkerCenter(point:slot:)` with radius `checkerRadius + 3.2·s`, width
+  `3.4·s` — matching the reference's `selected` ring.
+- `#Preview`s: frame + fill drive a `GameSession(startingPlayer: .white)` with
+  manual dice `3·5` and point 1 selected, reproducing the design's reference
+  highlight scenario (targets 4, 6, 9); two more drive `TargetHighlightView`
+  directly with `targets: [0, 25]` (frame + fill) to show the bear-off tray boxes
+  without building a near-end-of-game board.
+
 ## App.swift
 
-`@main`. Overlays `CheckersView(points:)` on `BoardView()` in a `ZStack`, padded
-inside a `#ece6dc` page background, showing the Plakoto start position (a
-`GameBoard` with `initializeBoard()`: 15 white@1, 15 red@24).
+`@main`. Hosts `PlayableBoardView` bound to a `@StateObject`
+`GameSession(startingPlayer: .white)` rolled to `3·5` (the design's reference
+scenario), padded inside a `#ece6dc` page background. This is a T7 sign-off
+bootstrap — without a dice UI only the first turn is playable; T8 (dice) and T10
+(screen assembly) replace it.
