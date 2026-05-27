@@ -128,6 +128,12 @@ ios/
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
+│   ├── TavliAppUITests/         XCUITest target — drives the real gesture stack:
+│   │                            BoardInteractionUITests (tap/drag move, visual
+│   │                            repaint, full-turn → AI response). Launched with
+│   │                            `-uiTestGame` (RootView starts a deterministic
+│   │                            Black-to-move game, dice 3·5); asserts via the
+│   │                            board's `accessibilityValue` checker-count signature.
 │   └── TavliApp/
 │       ├── App.swift            @main — hosts RootView (T10)
 │       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4),

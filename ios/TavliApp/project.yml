@@ -31,3 +31,29 @@ targets:
         INFOPLIST_FILE: TavliApp/Info.plist
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: ""
+  TavliAppUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: TavliAppUITests
+    dependencies:
+      - target: TavliApp
+      - package: TavliEngine
+        product: BoardGeometry
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "2"
+        PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliAppUITests
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_TEAM: ""
+        TEST_TARGET_NAME: TavliApp
+schemes:
+  TavliApp:
+    build:
+      targets:
+        TavliApp: all
+        TavliAppUITests: [test]
+    test:
+      targets:
+        - TavliAppUITests

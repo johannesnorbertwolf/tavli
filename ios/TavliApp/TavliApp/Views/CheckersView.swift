@@ -14,10 +14,15 @@ import TavliEngine
 /// `BoardGeometry.checkerCenter(point:slot:)`; all design literals scale by
 /// `geo.scale`.
 struct CheckersView: View {
-    /// Engine board, indexed 0…25 (bottom→top stacks). Empty points are skipped.
-    let points: [TavliEngine.Point]
+    /// Per-slot stacks, indexed 0…25 (bottom→top). **Value type on purpose:** the
+    /// engine `Board` holds `Point` *reference* objects mutated in place, so a
+    /// `[Point]` input is reference-identical across moves and SwiftUI skips
+    /// repainting the Canvas (the board freezes while the model advances). Passing
+    /// a `[[Color]]` snapshot makes the input change by value, so every committed
+    /// move reliably repaints.
+    let stacks: [[TavliEngine.Color]]
 
-    init(points: [TavliEngine.Point]) { self.points = points }
+    init(stacks: [[TavliEngine.Color]]) { self.stacks = stacks }
 
     var body: some View {
         Canvas { context, size in
@@ -31,7 +36,7 @@ struct CheckersView: View {
         // Bear-off trays (0/25) are intentionally not drawn — the Caramel design
         // never renders bear-off; out of scope for T4.
         for n in 1...24 {
-            let pieces = points[n].pieces
+            let pieces = stacks[n]
             guard !pieces.isEmpty else { continue }
             drawStack(in: &context, geo: geo, point: n, pieces: pieces)
         }
@@ -135,7 +140,7 @@ private struct CheckerStyle {
     board.initializeBoard()
     return ZStack {
         BoardView()
-        CheckersView(points: board.points)
+        CheckersView(stacks: board.points.map(\.pieces))
     }
     .padding(24)
     .background(Color(hex: 0xece6dc))
@@ -151,7 +156,7 @@ private struct CheckerStyle {
     board.setPoint(24, pieces: Array(repeating: .black, count: 6))
     return ZStack {
         BoardView()
-        CheckersView(points: board.points)
+        CheckersView(stacks: board.points.map(\.pieces))
     }
     .padding(24)
     .background(Color(hex: 0xece6dc))

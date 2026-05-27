@@ -33,67 +33,64 @@ struct PlayableBoardView: View {
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
-    @State private var didDrag = false
-
     var body: some View {
         GeometryReader { proxy in
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size))
+            let stacks = session.game.board.points.map(\.pieces)
             ZStack {
                 BoardView()
                 TargetHighlightView(targets: session.validTargets, style: highlightStyle)
-                CheckersView(points: session.game.board.points)
-                SourceRingView(
-                    selectedPoint: session.selectedPoint,
-                    points: session.game.board.points
-                )
+                CheckersView(stacks: stacks)
+                SourceRingView(selectedPoint: session.selectedPoint, stacks: stacks)
             }
             .contentShape(Rectangle())
             .gesture(boardGesture(geo: geo))
+            .accessibilityElement()
+            .accessibilityIdentifier("board")
+            .accessibilityValue(boardSignature)
         }
         .aspectRatio(1, contentMode: .fit)
     }
 
+    /// Compact per-point checker counts, exposed for UI tests to assert board
+    /// mutations without pixel inspection (the board is Canvas-drawn).
+    private var boardSignature: String {
+        (0...25).map { String(session.game.board.points[$0].count) }.joined(separator: ",")
+    }
+
     // ── Gesture ─────────────────────────────────────────────────────────────
 
-    /// One `DragGesture(minimumDistance: 0)` serves both interactions: a small
-    /// press is a tap (select source → tap target), a larger press is a drag
-    /// (lift source → drop on target). Both resolve through `BoardGeometry`.
+    /// One `DragGesture(minimumDistance: 0)` serves both interactions, resolved
+    /// entirely in `onEnded`. Mutating session state mid-gesture (in `onChanged`)
+    /// republishes and rebuilds this `GeometryReader`, which cancels the in-flight
+    /// gesture so the drop never fires — so all intent dispatch waits for release.
+    ///
+    /// A press that travels past `dragThreshold` from a selectable source is a
+    /// drag (lift → drop): select that source, then commit if released over a
+    /// legal target. Anything else is a tap and routes through `handleTap`.
     private func boardGesture(geo: BoardGeometry) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onChanged { value in
-                guard hypot(value.translation.width, value.translation.height) > dragThreshold,
-                      !didDrag else { return }
-                didDrag = true
-                // Lift: select the source under the start location, if any.
-                if let src = geo.hitTest(value.startLocation,
+            .onEnded { value in
+                let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
+                if moved,
+                   let src = geo.hitTest(value.startLocation,
                                          candidates: Array(session.selectableSources)) {
                     session.selectPoint(src)
-                }
-            }
-            .onEnded { value in
-                defer { didDrag = false }
-                if didDrag {
-                    handleDrop(value.location, geo: geo)
+                    if let dest = geo.hitTest(value.location,
+                                              candidates: Array(session.validTargets)) {
+                        session.commitHalfMove(from: src, to: dest)
+                    }
                 } else {
                     handleTap(value.location, geo: geo)
                 }
             }
     }
 
-    /// Drop ends a drag: commit if released over a legal target; otherwise leave
-    /// the source selected so the user can still tap a target.
-    private func handleDrop(_ location: CGPoint, geo: BoardGeometry) {
-        guard let sel = session.selectedPoint,
-              let dest = geo.hitTest(location, candidates: Array(session.validTargets))
-        else { return }
-        session.commitHalfMove(from: sel, to: dest)
-    }
-
     /// Tap: commit when a target is tapped with a source already selected;
     /// otherwise (re)select the tapped point. Tapping empty space or a
     /// non-selectable point clears the selection (`selectPoint` ignores it).
     private func handleTap(_ location: CGPoint, geo: BoardGeometry) {
-        let tapped = geo.hitTest(location, candidates: Array(1...25)) ?? -1
+        let tapped = geo.hitTest(location, candidates: Array(0...25)) ?? -1
         if let sel = session.selectedPoint, session.validTargets.contains(tapped) {
             session.commitHalfMove(from: sel, to: tapped)
         } else {
@@ -169,7 +166,9 @@ struct TargetHighlightView: View {
 /// `checkerRadius + 3.2`), matching the design's `selected` ring.
 struct SourceRingView: View {
     let selectedPoint: Int?
-    let points: [TavliEngine.Point]
+    /// Per-slot stacks (value type) so the ring tracks the selected stack reliably;
+    /// see `CheckersView` for why `[Point]` references can't drive a Canvas redraw.
+    let stacks: [[TavliEngine.Color]]
 
     var body: some View {
         Canvas { context, size in
@@ -177,7 +176,7 @@ struct SourceRingView: View {
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
             let r = geo.checkerRadius
             let s = geo.scale
-            let visible = min(points[sel].count, 5)
+            let visible = min(stacks[sel].count, 5)
             for slot in 0..<visible {
                 let c = geo.checkerCenter(point: sel, slot: slot)
                 let ringR = r + 3.2 * s

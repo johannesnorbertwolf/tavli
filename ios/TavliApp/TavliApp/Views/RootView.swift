@@ -10,7 +10,19 @@ private typealias EngineColor = TavliEngine.Color
 /// across re-renders; `GameView` observes it. Picking a color builds a fresh
 /// human-vs-AI session; Back tears it down and returns to the picker.
 struct RootView: View {
-    @State private var session: GameSession? = nil
+    @State private var session: GameSession?
+
+    init() {
+        // UI-test hook: start directly in a deterministic human-vs-AI game so the
+        // board interaction can be driven without the picker or random dice.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestGame") {
+            let s = RootView.makeSession(humanColor: .black)  // human (Black) opens
+            s.setManualDice(3, 5)
+            _session = State(initialValue: s)
+        } else {
+            _session = State(initialValue: nil)
+        }
+    }
 
     var body: some View {
         if let session {

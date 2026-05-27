@@ -48,8 +48,14 @@ land.
 ## CheckersView.swift (T4 — checker stacks)
 
 Renders the checker stacks on top of `BoardView` — a **pure function of board
-state** (`[TavliEngine.Point]`, indexed 0…25). No highlights, interaction, or
-animation (later tickets). Like `BoardView` it's a single `Canvas` +
+state**, taking `stacks: [[TavliEngine.Color]]` (per-slot piece colors, indexed
+0…25). **Value type on purpose:** the engine `Board` mutates `Point` *reference*
+objects in place, so a `[Point]` input is reference-identical across moves and
+SwiftUI skips repainting the Canvas — the board freezes while the model advances
+(the move-input bug). The `[[Color]]` snapshot (`points.map(\.pieces)`, built once
+in `PlayableBoardView` and shared with `SourceRingView`) changes by value, so each
+committed move reliably repaints. No highlights, interaction, or animation (later
+tickets). Like `BoardView` it's a single `Canvas` +
 `.aspectRatio(1, .fit)` building `BoardGeometry(rect:)`, so an overlaid
 `ZStack { BoardView(); CheckersView(points:) }` shares the same centered-square
 fit and the checkers register with the triangles.
@@ -92,18 +98,26 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   selected stack). All layers rebuild an identical `BoardGeometry` from the same
   square fit, so they register exactly; the gesture geometry is built from the
   same `GeometryReader` size. The container is `.aspectRatio(1, .fit)`.
-- **Gesture** — a single `DragGesture(minimumDistance: 0)` serves both
-  interactions, discriminated by travel vs. `dragThreshold` (10pt):
-  - **Tap** (travel ≤ threshold, resolved in `onEnded`): `hitTest` over `1…25`;
-    if a target is tapped with a source already selected → `commitHalfMove`,
-    else `selectPoint(tapped)` (a non-selectable index clears the selection,
-    since `GameSession.selectPoint` ignores it).
-  - **Drag** (travel > threshold): on first movement, `hitTest` the *start*
-    location over `selectableSources` and `selectPoint` it (lift); on `onEnded`,
-    `hitTest` the drop over `validTargets` → `commitHalfMove`. A missed drop
-    leaves the source selected so the user can still tap a target.
+- **Gesture** — a single `DragGesture(minimumDistance: 0)` whose intent dispatch
+  is resolved **entirely in `onEnded`**. This is deliberate: mutating session
+  state from `onChanged` (the earlier design's mid-drag `selectPoint`) republishes
+  and rebuilds the enclosing `GeometryReader`, which **cancels the in-flight
+  gesture so `onEnded` never fires and the drop is lost** — a real-device failure
+  (selection highlights, but the move never commits) that the simulator and
+  XCUITest's synthetic events do not reproduce. On release:
+  - **Drag** (travel > `dragThreshold` 10pt *and* the press started on a
+    selectable source): `selectPoint(source)`, then `hitTest` the drop over
+    `validTargets` → `commitHalfMove`. A miss just leaves the source selected.
+  - **Tap** (everything else, via `handleTap`): `hitTest` over **`0…25`** (slots
+    0/25 included so bear-off targets are tappable); if a target is tapped with a
+    source already selected → `commitHalfMove`, else `selectPoint(tapped)` (a
+    non-selectable index clears the selection, since `selectPoint` ignores it).
   - No floating ghost checker — the ring + target marks are the feedback, per the
     Caramel design.
+- **Test hook** — the ZStack carries `accessibilityIdentifier("board")` plus an
+  `accessibilityValue` of comma-joined per-slot checker counts (`boardSignature`),
+  so `TavliAppUITests` can locate the board's frame (to map `BoardGeometry`
+  coordinates to taps) and assert board mutations without inspecting Canvas pixels.
 - **`HighlightStyle`** (`enum { frame, fill }`) — the design's "two readings".
   Default `.frame` (gold outline, preserves the wood/ivory look); `.fill` is the
   higher-visibility solid-gold variant, kept behind this constant
