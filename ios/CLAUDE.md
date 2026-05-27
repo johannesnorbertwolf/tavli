@@ -71,7 +71,9 @@ ios/
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main + placeholder screen (Phase 2 T1)
+│       ├── App.swift            @main + throwaway DebugDemoView host (replaced by T10)
+│       ├── Views/
+│       │   └── DebugOverlay.swift   T11 eval overlay + bug-icon toggle (Phase 2)
 │       ├── Info.plist           landscape-only iPad; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
@@ -95,6 +97,37 @@ open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
 errors on `MLModel` + the non-`Sendable` engine classes. The two display fonts are committed
 TTFs (Cormorant Garamond + Inter, both variable) registered via `Info.plist` `UIAppFonts`; the
 Core ML model is a generated artifact (gitignored, recreate with the convert script).
+
+## UI views
+
+### `DebugOverlay.swift` (T11 — debug eval overlay)
+
+Two `View`s, both bound to a `GameSession` via `@ObservedObject`, read-only with no
+effect on gameplay:
+
+- **`DebugOverlayToggle`** — the drop-in any screen hosts (T10 puts it on the game
+  screen). A `ladybug.fill` bug-icon button with `@State isOn = false` (off by
+  default); tinted yellow when on, dim white when off. When on it reveals
+  `DebugOverlay` below it with a 0.15s opacity transition. Typically pinned
+  top-trailing as an overlay.
+- **`DebugOverlay`** — the ~200pt translucent-black panel. Three rows:
+  1. **Win-probability meter** — a yellow capsule fill over a black track sized to
+     `session.winProbability` (always WHITE's view), plus the numeric `%`.
+  2. **Top moves** — the top-3 candidate moves. Computed by
+     `agent.evaluateMoves(board, legalMoves, color:)` zipped with `legalMoves` →
+     `(move.description, score)`, sorted desc, `prefix(3)`. Cached in `@State`,
+     recomputed on `onAppear` and on `onChange(of: positionSignature)` (a string of
+     player/dice/move-count/phase) — never per render, so Core ML isn't re-run
+     needlessly. Recompute is **guarded to a clean turn-start**
+     (`agent != nil && moveBuilder.built.isEmpty && !legalMoves.isEmpty`) so we never
+     apply a full move onto a partially-built sequence; shows `—` otherwise.
+     `evaluateMoves` apply/undoes on the shared board on the main actor (same actor
+     as the session that owns the board), leaving it unchanged.
+  3. **Status line** — current player + the two dice values.
+
+The throwaway `DebugDemoView` in `App.swift` hosts the toggle so T11 is exercisable
+before the real screen exists (AI = BLACK moving first so `winProbability` updates;
+human = WHITE rolls to surface candidates); it is replaced by T10's screen assembly.
 
 ## Key conventions / gotchas
 
