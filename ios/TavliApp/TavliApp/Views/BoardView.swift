@@ -191,6 +191,18 @@ enum CaramelPalette {
     static let diamondTileLight = Color(hex: 0xf0dab0)
     static let diamondTileEdge = Color(hex: 0x2a1408)
     static let diamondDot = Color(hex: 0x1a0a04)
+
+    // Checkers (T4) — ported from the CARAMEL table. Engine `.black` → red.
+    static let whiteFill = Color(hex: 0xf1e6c8)
+    static let whiteHi = Color(hex: 0xfbf3d8)
+    static let whiteRing = Color(hex: 0xa8915f)
+    static let whiteEdge = Color(hex: 0x5a4828)
+    static let whiteText = Color(hex: 0x2a1408)
+    static let redFill = Color(hex: 0xc0392b)
+    static let redHi = Color(hex: 0xdc5040)
+    static let redRing = Color(hex: 0x5e160b)
+    static let redEdge = Color(hex: 0x2a0a04)
+    static let redText = Color(hex: 0xfff3d6)
 }
 
 extension Color {
