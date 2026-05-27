@@ -174,6 +174,33 @@ to screen assembly (T10).
   which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
   contextual buttons without T7.
 
+## DebugOverlay.swift (T11 — debug eval overlay)
+
+A toggleable, off-by-default panel exposing the AI's evaluation of the current
+position. Two `View`s, both bound to a `GameSession` (`@ObservedObject`), read-only
+with **no effect on gameplay**. It is a standalone component with no host yet — T10's
+screen assembly drops it onto the game screen (typically a top-trailing overlay).
+
+- **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
+  button with `@State isOn = false` (off by default): tinted yellow when on, dim white
+  when off. When on it reveals `DebugOverlay` below it with a 0.15s opacity transition.
+- **`DebugOverlay`** — a ~200pt translucent-black panel with three rows:
+  1. **Win-probability meter** — a yellow `Capsule` fill over a black track, width =
+     `geo.size.width * session.winProbability` (always WHITE's view), plus the numeric `%`.
+  2. **Top moves** — the top-3 candidate moves. `agent.evaluateMoves(board, legalMoves,
+     color:)` zipped with `legalMoves` → `(move.description, score)`, sorted desc,
+     `prefix(3)`. Cached in `@State`; recomputed on `onAppear` and
+     `onChange(of: positionSignature)` (a string of player/dice/legal-count/built-count/
+     phase) — never per render, so Core ML isn't re-run needlessly. Recompute is **guarded
+     to a clean turn-start** (`session.agent != nil && moveBuilder.built.isEmpty &&
+     !legalMoves.isEmpty`) so a full move is never applied onto a partially-built sequence;
+     shows `—` otherwise. `evaluateMoves` apply/undoes on the shared board on the main actor
+     (the same actor that owns the board), leaving it unchanged.
+  3. **Status line** — `session.currentPlayer` + the two dice values.
+
+  Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
+  not need `Color(hex:)` or `ChromeTheme`.
+
 ## App.swift
 
 `@main`. Hosts `PlayableBoardView` bound to a `@StateObject`

@@ -95,6 +95,10 @@ through its published read-state + intents — no game logic lives in views.
   `GameSession` intents via `BoardGeometry.hitTest`. `HighlightStyle` (`.frame` default / `.fill`)
   is the design's two-readings constant. Binds via `@ObservedObject`; no game logic in the view.
   See `Views/CLAUDE.md`.
+- **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
+  plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
+  meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. A standalone
+  component (no host yet) — T10 drops it onto the game screen. See `Views/CLAUDE.md`.
 
 `App.swift` now hosts `PlayableBoardView` bound to a `GameSession(startingPlayer: .white)` rolled
 to `3·5` (the design's reference highlight scenario) on the reference page background — a T7
@@ -120,7 +124,8 @@ ios/
 │   └── TavliApp/
 │       ├── App.swift            @main — hosts PlayableBoardView (T7 sign-off bootstrap); T10 replaces
 │       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4),
-│       │                        DiceView (T8), PlayableBoardView (T7)
+│       │                        DiceView (T8), PlayableBoardView (T7),
+│       │                        DebugOverlay (T11; unhosted component until T10)
 │       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
