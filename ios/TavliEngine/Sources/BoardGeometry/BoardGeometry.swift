@@ -128,7 +128,11 @@ public struct BoardGeometry {
         let r = Self.checkerR
         let step = 2 * r + 0.5
         if index == 0 || index == 25 {
-            let stripX = Self.frame + Self.inner + Self.frame / 2  // 880
+            // A full-size checker is wider than the 40u strip; centering on the
+            // strip (880) would clip it at the board edge. Pull the stack center
+            // in only as far as needed so the full disc floats within the board.
+            let stripCenter = Self.frame + Self.inner + Self.frame / 2  // 880
+            let stripX = min(stripCenter, Self.designSide - r - 1)      // ≈ 873.5
             let top = index == 25
             let cy = top
                 ? Self.frame + r + 1 + CGFloat(slot) * step
