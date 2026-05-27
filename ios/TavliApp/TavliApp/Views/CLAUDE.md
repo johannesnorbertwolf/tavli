@@ -130,10 +130,55 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   directly with `targets: [0, 25]` (frame + fill) to show the bear-off tray boxes
   without building a near-end-of-game board.
 
+## GameView.swift (T9 — game chrome)
+
+The non-board UI framing a game, assembled with the static `BoardView` into a
+responsive layout. Pure presentation: every sub-view binds to a `GameSession`'s
+published read-state and calls its intents — no game logic lives here. The board
+stays visually static: `GameView` embeds the empty `BoardView()` only — overlaying
+the landed `CheckersView` (T4) and wiring move input (T7, still open) are deferred
+to screen assembly (T10).
+
+- **`GameView`** (`@ObservedObject session`). A `GeometryReader` switches layout on
+  `width >= height`:
+  - **Landscape:** `HStack` with `BoardView()` (`.aspectRatio(1, .fit)`) centered
+    between spacers, and a fixed 300pt `sidePanel` on the trailing edge (turn
+    indicator + the two borne-off counters on top, controls anchored at the bottom).
+  - **Portrait (acceptable):** `VStack` — a `topBar` (counters flanking the turn
+    indicator), the centered board, then the controls row at the bottom.
+  - A `ZStack` overlays `WinOverlayView` whenever `session.phase` is `.gameOver`.
+  - Page background is `#ece6dc` (matches `App.swift`).
+- **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
+  "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
+  `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
+  "`<Name>` moving…"; `.gameOver(w)` → "`<Name>` wins!". `<Name>` and the player come
+  from `ChromeTheme` + `session.currentPlayer`.
+- **`BorneOffView(session:color:)`** — a checker-colored disc + count + label. Counts
+  read straight off the board on each session publish: white =
+  `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
+  refresh because `phase`/`selectableSources` republish on every transition.
+- **`ControlsView`** — the existing tap-to-roll `DiceView(session:)` plus contextual
+  buttons shown only while `phase == .picking || .moving`: **Undo** (`session.undo()`)
+  when `moveBuilder.built` is non-empty; **Done** (`session.confirm()`) when
+  `moveBuilder.canFinishNow && !built.isEmpty`. Styled by `ControlButtonStyle` (palette
+  pill). These are wired to the real contract but only fully exercise once move input
+  (T7) lets a human compose a partial move; until then they appear only in the scripted
+  `#Preview`.
+- **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
+  New Game button calling `session.newGame()`.
+- **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
+  visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
+  **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
+  plus `ink`/button tints. Reuses `Color(hex:)` from `BoardView.swift`.
+- **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, and `"Undo/Done"`
+  which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
+  contextual buttons without T7.
+
 ## App.swift
 
 `@main`. Hosts `PlayableBoardView` bound to a `@StateObject`
 `GameSession(startingPlayer: .white)` rolled to `3·5` (the design's reference
 scenario), padded inside a `#ece6dc` page background. This is a T7 sign-off
-bootstrap — without a dice UI only the first turn is playable; T8 (dice) and T10
-(screen assembly) replace it.
+bootstrap — without a dice UI only the first turn is playable. T10 (mode picker +
+screen assembly) will assemble the real screen from `GameView` (T9) + the
+interactive board.
