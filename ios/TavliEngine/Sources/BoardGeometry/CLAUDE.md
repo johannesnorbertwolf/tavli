@@ -78,7 +78,7 @@ Slots are 0…25. 1–24 are playable triangles; 0 and 25 are bear-off trays.
 ## Bear-off trays (slots 0 and 25)
 
 The Caramel reference never draws bear-off, so this is a project convention,
-placed by bearing direction (refine when rendering lands):
+placed by bearing direction (refined now that #31 renders borne-off checkers):
 
 - The right frame strip, `x ∈ [frame+inner, designSide]` (i.e. `[860, 900]`),
   width = `frame`.
@@ -97,8 +97,12 @@ cy = top ? baseY + r + 1 + slot*(2r+0.5)
          : baseY - r - 1 - slot*(2r+0.5)
 ```
 
-Bear-off trays stack down from the top (slot 25) / up from the bottom (slot 0)
-along the strip center `x = 880`.
+Bear-off trays stack down from the top (slot 25) / up from the bottom (slot 0).
+A full-size checker is wider than the 40u strip, so the stack center is pulled
+in from the strip center (`880`) only as far as needed to keep the disc within
+the board square: `stripX = min(880, designSide - r - 1)` (≈ 873.5). The checker
+floats over the strip and the play-surface edge rather than being clipped at the
+board edge.
 
 ## Hit-testing — `hitTest(_ location:candidates:)`
 

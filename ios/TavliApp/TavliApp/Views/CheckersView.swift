@@ -28,9 +28,9 @@ struct CheckersView: View {
     }
 
     private func draw(in context: inout GraphicsContext, geo: BoardGeometry) {
-        // Bear-off trays (0/25) are intentionally not drawn — the Caramel design
-        // never renders bear-off; out of scope for T4.
-        for n in 1...24 {
+        // Slots 0/25 are the bear-off trays: borne-off checkers stack there
+        // (White at 25, Black at 0) via the same stacking path as playable points.
+        for n in 0...25 {
             let pieces = points[n].pieces
             guard !pieces.isEmpty else { continue }
             drawStack(in: &context, geo: geo, point: n, pieces: pieces)
@@ -149,6 +149,10 @@ private struct CheckerStyle {
     board.setPoint(1, pieces: Array(repeating: .white, count: 8))
     // A tall red stack on the opposite row.
     board.setPoint(24, pieces: Array(repeating: .black, count: 6))
+    // Borne-off trays: White (25, top half) tall enough for the count badge,
+    // Black (0, bottom half) a short stack.
+    board.setPoint(25, pieces: Array(repeating: .white, count: 8))
+    board.setPoint(0, pieces: Array(repeating: .black, count: 3))
     return ZStack {
         BoardView()
         CheckersView(points: board.points)

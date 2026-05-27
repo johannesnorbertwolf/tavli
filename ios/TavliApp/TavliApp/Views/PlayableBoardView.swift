@@ -216,6 +216,23 @@ private func startScenarioSession() -> GameSession {
         .background(Color(hex: 0xece6dc))
 }
 
+// A near-end position with borne-off checkers in both trays — White (25, top)
+// tall enough to show the count badge, Black (0, bottom) a short stack — so the
+// persistent tray chrome + stacked borne-off checkers read against the board.
+@MainActor
+private func bearOffScenarioSession() -> GameSession {
+    let session = GameSession(startingPlayer: .white)
+    session.game.board.setPoint(25, pieces: Array(repeating: .white, count: 8))
+    session.game.board.setPoint(0, pieces: Array(repeating: .black, count: 3))
+    return session
+}
+
+#Preview("Borne-off checkers in trays") {
+    PlayableBoardView(session: bearOffScenarioSession())
+        .padding(24)
+        .background(Color(hex: 0xece6dc))
+}
+
 // Bear-off target boxes on the right strip (top = White/25, bottom = Black/0).
 // Driven directly (not via a session) to show the design without setting up a
 // near-end-of-game board.
