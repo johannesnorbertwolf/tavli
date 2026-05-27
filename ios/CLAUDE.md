@@ -55,6 +55,40 @@ so the game flow is validated without a simulator.
   updates only from a real model score and stays at its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
 
+## SwiftUI views
+
+`TavliApp/TavliApp/Views/` holds the rendering layer. Views are thin and bind to `GameSession`
+through its published read-state + intents — no game logic lives in views.
+
+- **`BoardView.swift`** (T3) — static empty Caramel board drawn with a single `Canvas` on top
+  of `BoardGeometry` (frame, surface, triangles + tip pips, bar line, diamonds, wordmark). No
+  game state yet. See `Views/CLAUDE.md` for the full breakdown.
+- **`CheckersView.swift`** (T4) — checker stacks drawn with a single `Canvas` on top of
+  `BoardGeometry`, a pure function of board state (`[Point]`); overlays `BoardView` in a
+  `ZStack`. Radial-gradient ivory/red discs, detail rings, specular arc, drop shadow; ≤5
+  visible per point with a base-checker count label when >5; pinned checker = its opponent
+  color at the base. See `Views/CLAUDE.md`.
+- **`DiceView.swift`** (T8) — the dice. Layered as three views:
+  - `DieFace` — one ivory die (`#f5ead0` fill, `#2a1408` edge + pips, faint white inner
+    highlight, soft drop shadow); pip positions are the design's normalized `PIP_LAYOUTS`.
+    All metrics scale off `size` (default 56). `isUsed` greys it (opacity + desaturation).
+  - `DiceRow` — pure row of `DieFace`s, driven by explicit `values` + `usedCount`; renders any
+    state for previews (normal, pasch=4, partially/fully consumed).
+  - `DiceView` — binds `DiceRow` to a `GameSession`: a pasch shows four dice; `usedCount` =
+    `moveBuilder.built.count` (one die greyed per committed half-move, left→right); tap runs a
+    brief tumble animation then `session.roll()`, gated on `phase == .awaitingRoll`.
+  - `ManualDiceControl` — two 1…6 steppers + "Set dice" → `session.setManualDice(d1,d2)`; only
+    active while awaiting a roll. Same legal-move computation as a roll.
+- **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
+  plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
+  meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. A standalone
+  component (no host yet) — T10 drops it onto the game screen. See `Views/CLAUDE.md`.
+
+`App.swift` currently overlays `CheckersView` (start position) on `BoardView` (the static board)
+on the reference page background. The earlier T8 `DiceDemoScreen` harness has been retired now
+that a real surface exists; `DiceView` remains exercisable via its `#Preview`. All are
+placeholders until the screen assembly in T10.
+
 ## Layout
 
 ```
@@ -67,14 +101,14 @@ ios/
 │                                MoveBuilderTests, GameSessionTests, GameSessionAITests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
-│   ├── project.yml              xcodegen spec — iPad-only landscape, iOS 17, Swift-5 mode,
+│   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main + throwaway DebugDemoView host (replaced by T10)
-│       ├── Views/
-│       │   └── DebugOverlay.swift   T11 eval overlay + bug-icon toggle (Phase 2)
-│       ├── Info.plist           landscape-only iPad; UIAppFonts registration
+│       ├── App.swift            @main — overlays CheckersView on BoardView (T3/T4); T10 replaces
+│       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4), DiceView (T8),
+│       │                        DebugOverlay (T11; unhosted component until T10)
+│       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
 │           ├── CormorantGaramond.ttf    (variable font, committed)
@@ -97,37 +131,6 @@ open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
 errors on `MLModel` + the non-`Sendable` engine classes. The two display fonts are committed
 TTFs (Cormorant Garamond + Inter, both variable) registered via `Info.plist` `UIAppFonts`; the
 Core ML model is a generated artifact (gitignored, recreate with the convert script).
-
-## UI views
-
-### `DebugOverlay.swift` (T11 — debug eval overlay)
-
-Two `View`s, both bound to a `GameSession` via `@ObservedObject`, read-only with no
-effect on gameplay:
-
-- **`DebugOverlayToggle`** — the drop-in any screen hosts (T10 puts it on the game
-  screen). A `ladybug.fill` bug-icon button with `@State isOn = false` (off by
-  default); tinted yellow when on, dim white when off. When on it reveals
-  `DebugOverlay` below it with a 0.15s opacity transition. Typically pinned
-  top-trailing as an overlay.
-- **`DebugOverlay`** — the ~200pt translucent-black panel. Three rows:
-  1. **Win-probability meter** — a yellow capsule fill over a black track sized to
-     `session.winProbability` (always WHITE's view), plus the numeric `%`.
-  2. **Top moves** — the top-3 candidate moves. Computed by
-     `agent.evaluateMoves(board, legalMoves, color:)` zipped with `legalMoves` →
-     `(move.description, score)`, sorted desc, `prefix(3)`. Cached in `@State`,
-     recomputed on `onAppear` and on `onChange(of: positionSignature)` (a string of
-     player/dice/move-count/phase) — never per render, so Core ML isn't re-run
-     needlessly. Recompute is **guarded to a clean turn-start**
-     (`agent != nil && moveBuilder.built.isEmpty && !legalMoves.isEmpty`) so we never
-     apply a full move onto a partially-built sequence; shows `—` otherwise.
-     `evaluateMoves` apply/undoes on the shared board on the main actor (same actor
-     as the session that owns the board), leaving it unchanged.
-  3. **Status line** — current player + the two dice values.
-
-The throwaway `DebugDemoView` in `App.swift` hosts the toggle so T11 is exercisable
-before the real screen exists (AI = BLACK moving first so `winProbability` updates;
-human = WHITE rolls to surface candidates); it is replaced by T10's screen assembly.
 
 ## Key conventions / gotchas
 

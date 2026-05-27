@@ -14,10 +14,15 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: TavliApp
+        excludes:
+          - "**/*.md"
     resources:
       - path: TavliApp/Resources
     dependencies:
       - package: TavliEngine
+        product: TavliEngine
+      - package: TavliEngine
+        product: BoardGeometry
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "2"

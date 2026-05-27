@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Pull requests
+
+When opening a PR that addresses a tracked issue, always put a closing keyword in the PR
+description, e.g. `Closes #10` (one line per issue if it resolves several). This auto-closes
+the linked issue on merge, which moves its card to Done on the "Tavli" GitHub Project board.
+If a PR relates to an issue but shouldn't close it, use `Refs #10` instead.
+
 ## What this is
 
 A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant). A neural network learns to play by playing against itself, evaluated against frozen "gold" reference models in `models/`.
