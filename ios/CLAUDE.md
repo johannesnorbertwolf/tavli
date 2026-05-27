@@ -95,16 +95,23 @@ through its published read-state + intents — no game logic lives in views.
   `GameSession` intents via `BoardGeometry.hitTest`. `HighlightStyle` (`.frame` default / `.fill`)
   is the design's two-readings constant. Binds via `@ObservedObject`; no game logic in the view.
   See `Views/CLAUDE.md`.
+- **`GameView.swift`** (T9 chrome + T10 assembly) — the assembled game screen: the interactive
+  `PlayableBoardView` plus turn indicator, borne-off counters, contextual Undo/Done + dice, a
+  top-leading Back button (`onBack`), a top-trailing hosted `DebugOverlayToggle`, and the win
+  overlay. Responsive landscape/portrait layout bound to a `GameSession`. See `Views/CLAUDE.md`.
 - **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
   plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
-  meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. A standalone
-  component (no host yet) — T10 drops it onto the game screen. See `Views/CLAUDE.md`.
+  meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. Hosted by
+  `GameView` (T10) as a top-trailing overlay. See `Views/CLAUDE.md`.
+- **`RootView.swift`** (T10) — app root: switches between the caramel mode picker
+  (`ModePickerView`: "Tavli" wordmark + two "Play vs AI — You play White/Black" buttons) and a
+  live `GameView`. Picking a color builds a human-vs-AI `GameSession(aiColor: humanColor.opponent)`
+  (Black opens for now); Back returns to the picker. See `Views/CLAUDE.md`.
 
-`App.swift` now hosts `PlayableBoardView` bound to a `GameSession(startingPlayer: .white)` rolled
-to `3·5` (the design's reference highlight scenario) on the reference page background — a T7
-sign-off bootstrap (only the first turn is playable without a dice UI). The earlier T8
-`DiceDemoScreen` harness has been retired; `DiceView` remains exercisable via its `#Preview`.
-These remain placeholders until the screen assembly in T10.
+`App.swift` is `@main` hosting `RootView()`. The app launches on the mode picker; choosing a side
+starts a fully playable human-vs-AI game. (The earlier T7 sign-off bootstrap that hosted a fixed
+`PlayableBoardView`, and the retired T8 `DiceDemoScreen`, are gone; `DiceView` remains exercisable
+via its `#Preview`.)
 
 ## Layout
 
@@ -122,10 +129,10 @@ ios/
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 ensure xcodegen → generate → resolve packages
 │   └── TavliApp/
-│       ├── App.swift            @main — hosts PlayableBoardView (T7 sign-off bootstrap); T10 replaces
+│       ├── App.swift            @main — hosts RootView (T10)
 │       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4),
-│       │                        DiceView (T8), PlayableBoardView (T7),
-│       │                        DebugOverlay (T11; unhosted component until T10)
+│       │                        DiceView (T8), PlayableBoardView (T7), GameView (T9+T10),
+│       │                        DebugOverlay (T11), RootView (T10 — picker + navigation)
 │       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)

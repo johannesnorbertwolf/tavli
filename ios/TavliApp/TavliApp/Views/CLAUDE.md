@@ -130,24 +130,32 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   directly with `targets: [0, 25]` (frame + fill) to show the bear-off tray boxes
   without building a near-end-of-game board.
 
-## GameView.swift (T9 — game chrome)
+## GameView.swift (T9 chrome + T10 assembly)
 
-The non-board UI framing a game, assembled with the static `BoardView` into a
-responsive layout. Pure presentation: every sub-view binds to a `GameSession`'s
-published read-state and calls its intents — no game logic lives here. The board
-stays visually static: `GameView` embeds the empty `BoardView()` only — overlaying
-the landed `CheckersView` (T4) and wiring move input (T7, still open) are deferred
-to screen assembly (T10).
+The non-board UI framing a game, assembled with the **interactive** `PlayableBoardView`
+into a responsive layout. Pure presentation: every sub-view binds to a `GameSession`'s
+published read-state and calls its intents — no game logic lives here. (T9 first wired
+this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the assembled
+screen is fully playable, and added the Back button + hosted debug toggle.)
 
-- **`GameView`** (`@ObservedObject session`). A `GeometryReader` switches layout on
-  `width >= height`:
-  - **Landscape:** `HStack` with `BoardView()` (`.aspectRatio(1, .fit)`) centered
-    between spacers, and a fixed 300pt `sidePanel` on the trailing edge (turn
-    indicator + the two borne-off counters on top, controls anchored at the bottom).
-  - **Portrait (acceptable):** `VStack` — a `topBar` (counters flanking the turn
-    indicator), the centered board, then the controls row at the bottom.
-  - A `ZStack` overlays `WinOverlayView` whenever `session.phase` is `.gameOver`.
-  - Page background is `#ece6dc` (matches `App.swift`).
+- **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
+  the mode picker; defaults to a no-op so `#Preview`s compile). A `GeometryReader`
+  switches layout on `width >= height`:
+  - **Landscape:** `HStack` with `PlayableBoardView(session:)` centered between spacers,
+    and a fixed 300pt `sidePanel` on the trailing edge (turn indicator + the two
+    borne-off counters on top, controls anchored at the bottom; top-padded `44` so the
+    indicator clears the corner Back/debug overlays).
+  - **Portrait (acceptable):** `VStack` — a `topBar` (counters + turn indicator as a
+    **centered** group, leaving the top corners free), the centered board, then the
+    controls row at the bottom.
+  - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`) and a
+    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
+    via `.frame(maxWidth/Height: .infinity, alignment:)`.
+  - `WinOverlayView` is layered **last** (above Back/debug) whenever `session.phase` is
+    `.gameOver`.
+  - Page background is `#ece6dc` (matches `RootView`'s picker).
+- **`BackButton`** — a caramel pill (chevron + "Back") tinted from `ChromeTheme`,
+  calling the injected `onBack`.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
@@ -178,8 +186,8 @@ to screen assembly (T10).
 
 A toggleable, off-by-default panel exposing the AI's evaluation of the current
 position. Two `View`s, both bound to a `GameSession` (`@ObservedObject`), read-only
-with **no effect on gameplay**. It is a standalone component with no host yet — T10's
-screen assembly drops it onto the game screen (typically a top-trailing overlay).
+with **no effect on gameplay**. `GameView` (T10) hosts `DebugOverlayToggle` as a
+top-trailing overlay on the game screen.
 
 - **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
   button with `@State isOn = false` (off by default): tinted yellow when on, dim white
@@ -201,11 +209,28 @@ screen assembly drops it onto the game screen (typically a top-trailing overlay)
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
 
+## RootView.swift (T10 — root navigation + mode picker)
+
+The app's top-level view: switches between the caramel **mode picker** and a live game.
+
+- **`RootView`** — `@State private var session: GameSession?`. `nil` → show
+  `ModePickerView`; non-`nil` → show `GameView(session:onBack:)` with `onBack` resetting
+  `session = nil` (returns to the picker). Holding the session in `@State` keeps the
+  reference stable across re-renders (`GameView` observes it). `makeSession(humanColor:)`
+  builds `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
+  humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
+  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
+  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
+- **`ModePickerView(onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
+  "Tavli" wordmark in `CaramelPalette.frameText`, and two caramel `ModeButton`s: "Play vs
+  AI / You play White" → `.white`, "Play vs AI / You play Black" → `.black`. The design
+  reference's "Watch AI vs AI" mode is **deferred** (out of scope).
+- **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
+  gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
+- `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
+  `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
+
 ## App.swift
 
-`@main`. Hosts `PlayableBoardView` bound to a `@StateObject`
-`GameSession(startingPlayer: .white)` rolled to `3·5` (the design's reference
-scenario), padded inside a `#ece6dc` page background. This is a T7 sign-off
-bootstrap — without a dice UI only the first turn is playable. T10 (mode picker +
-screen assembly) will assemble the real screen from `GameView` (T9) + the
-interactive board.
+`@main`. Minimal — `WindowGroup { RootView() }`. (Earlier the T7 sign-off bootstrap
+hosted `PlayableBoardView` on a fixed scenario here; T10 moved the entry to `RootView`.)
