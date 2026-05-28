@@ -8,8 +8,19 @@ geometry lives in the `BoardGeometry` package (engine-free) and game logic in
 
 Renders the **empty** Caramel board: beechwood frame, mahogany play surface, 24
 ivory triangles with tip pips, the slim center bar line, two diamond ornaments,
-and the italic `TAVLI` wordmark. No checkers, dice, highlights, or
-interactivity — those land in later tickets.
+the italic `TAVLI` wordmark, and (since #31) the two persistent bear-off tray
+recesses. No checkers, dice, highlights, or interactivity — those land in later
+tickets.
+
+- **Bear-off tray chrome** (#31): a subtle always-present recess on each half of
+  the right frame strip (White 25 top, Black 0 bottom), drawn from
+  `geo.point(0/25).hitRect` inset `(4·s, 8·s)` as a rounded-rect (corner `8·s`),
+  filled with `trayFill` @ 0.22 + a `trayEdge` @ 0.45 hairline. Slightly larger
+  than the T7 gold target box's `(5·s, 10·s)` inset so that box reads cleanly
+  *inside* the tray. The Caramel reference has no bear-off art — this is the
+  project's tray chrome, giving borne-off checkers and the gold cue a tray to sit
+  in. Drawn right after the play surface (below the triangles); it does not
+  overlap the diamonds or wordmark.
 
 - **Single `Canvas`.** `body` is one `Canvas { context, size in … }` with
   `.aspectRatio(1, .fit)`. It builds `BoardGeometry(rect: CGRect(origin: .zero,
@@ -41,9 +52,10 @@ interactivity — those land in later tickets.
 `CARAMEL` table in the reference. It carries the empty-board colors, the T4
 checker colors (`whiteFill/Hi/Ring/Edge/Text`, `redFill/Hi/Ring/Edge/Text`), and
 the T7 move-highlight colors (`hl` `#f4b400` — source ring + target frame;
-`hlEdge` `#7a5400`; `hlFill` `#f6c623` — the fill-mode target). `Color(hex:
-UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors (dice) here as those views
-land.
+`hlEdge` `#7a5400`; `hlFill` `#f6c623` — the fill-mode target), and the #31
+bear-off tray chrome (`trayFill` `#2a1408`, `trayEdge` `#1a0a04`, both applied at
+low opacity). `Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors
+(dice) here as those views land.
 
 ## CheckersView.swift (T4 — checker stacks)
 
@@ -57,18 +69,21 @@ in `PlayableBoardView` and shared with `SourceRingView`) changes by value, so ea
 committed move reliably repaints. No highlights, interaction, or animation (later
 tickets). Like `BoardView` it's a single `Canvas` +
 `.aspectRatio(1, .fit)` building `BoardGeometry(rect:)`, so an overlaid
-`ZStack { BoardView(); CheckersView(points:) }` shares the same centered-square
+`ZStack { BoardView(); CheckersView(stacks:) }` shares the same centered-square
 fit and the checkers register with the triangles.
 
-- **Stacks** (`drawStack`, porting the reference `Stack`): for each playable
-  point 1…24 with a non-empty stack, draw `min(count, 5)` checkers at
+- **Stacks** (`drawStack`, porting the reference `Stack`): for **every** slot
+  `0…25` with a non-empty stack, draw `min(count, 5)` checkers at
   `geo.checkerCenter(point:slot:)` (slot 0 = base, growing away from the
   baseline). Each checker uses its **actual per-slot color** (`pieces[slot]`), so
   a pinned point shows the trapped opponent checker in its own color at the base
   — the color *is* the distinct rendering (no extra marker). When `count > 5`, a
   Cormorant Garamond count label is drawn on the base checker (slot 0), in
-  `pieces[0]`'s text color. Bear-off slots (0/25) are **not** drawn (the Caramel
-  design never renders bear-off; out of scope for T4).
+  `pieces[0]`'s text color. Slots 0/25 are the **bear-off trays** (#31): borne-off
+  checkers (Black at 0, White at 25 — the board model accumulates them there)
+  stack via the same path, full-size discs floating over the right frame strip
+  (the strip chrome itself lives in `BoardView`). Same `count > 5` badge, so a
+  borne-off stack up to 15 reads consistently with on-board stacks.
 - **Checkers** (`drawChecker`, porting the reference `Checker`): wrapped in a
   `context.drawLayer` with a `.shadow` filter (the spec's drop shadow). Inside:
   the disc filled with a radial gradient (`hi → fill`, center `(cx−0.24r,
@@ -94,7 +109,7 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
 
 - **Layer order** (a `GeometryReader` + `ZStack`, bottom → top): `BoardView()` →
   `TargetHighlightView` (below the checkers so a fill sits under them) →
-  `CheckersView(points:)` → `SourceRingView` (above, so the ring haloes the
+  `CheckersView(stacks:)` → `SourceRingView` (above, so the ring haloes the
   selected stack). All layers rebuild an identical `BoardGeometry` from the same
   square fit, so they register exactly; the gesture geometry is built from the
   same `GeometryReader` size. The container is `.aspectRatio(1, .fit)`.
@@ -131,18 +146,21 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
     corresponding half of the right frame strip (slot 25 top = White, slot 0
     bottom = Black): the slot's `hitRect` inset `(5·s, 10·s)` as a rounded-rect
     (corner `8·s`); `.frame` strokes it `hl` (`5·s`), `.fill` fills `hlFill` with
-    a `hlEdge` `2·s` edge. The Caramel design has no bear-off art, so this box is
-    the only bear-off visual; there is no persistent tray chrome (borne-off
-    checker rendering remains a separate, later concern).
+    a `hlEdge` `2·s` edge. Since #31 this gold target box reads *inside* the
+    persistent tray chrome (drawn by `BoardView`, a touch larger), and borne-off
+    checkers (drawn by `CheckersView`, layered above) stack on top of it.
 - **`SourceRingView`** — a pure `Canvas` (`.allowsHitTesting(false)`) that, for
   the selected point's `min(count, 5)` visible checkers, strokes a gold circle at
   `geo.checkerCenter(point:slot:)` with radius `checkerRadius + 3.2·s`, width
   `3.4·s` — matching the reference's `selected` ring.
 - `#Preview`s: frame + fill drive a `GameSession(startingPlayer: .white)` with
   manual dice `3·5` and point 1 selected, reproducing the design's reference
-  highlight scenario (targets 4, 6, 9); two more drive `TargetHighlightView`
-  directly with `targets: [0, 25]` (frame + fill) to show the bear-off tray boxes
-  without building a near-end-of-game board.
+  highlight scenario (targets 4, 6, 9); a "Borne-off checkers in trays" preview
+  (#31) seeds the session's board with borne-off checkers (`setPoint(25, …×8)`,
+  `setPoint(0, …×3)`) to show the tray chrome + stacked borne-off checkers + count
+  badge; two more drive `TargetHighlightView` directly with `targets: [0, 25]`
+  (frame + fill) to show the bear-off tray boxes without building a
+  near-end-of-game board.
 
 ## GameView.swift (T9 chrome + T10 assembly)
 

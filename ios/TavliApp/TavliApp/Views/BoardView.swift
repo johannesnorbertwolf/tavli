@@ -60,6 +60,18 @@ public struct BoardView: View {
         // Approximate the SVG inset shadow with a soft dark inner edge.
         context.stroke(surface, with: .color(.black.opacity(0.35)), lineWidth: 2 * s)
 
+        // ── Bear-off trays ──────────────────────────────────────────────────
+        // Subtle always-present recesses on the right frame strip (White 25 top,
+        // Black 0 bottom) so borne-off checkers and the T7 gold target box have a
+        // tray to sit in. The Caramel reference has no bear-off art — this is the
+        // project's tray chrome.
+        for slot in [0, 25] {
+            let tray = geo.point(slot).hitRect.insetBy(dx: 4 * s, dy: 8 * s)
+            let box = Path(roundedRect: tray, cornerRadius: 8 * s)
+            context.fill(box, with: .color(p.trayFill.opacity(0.22)))
+            context.stroke(box, with: .color(p.trayEdge.opacity(0.45)), lineWidth: 1 * s)
+        }
+
         // ── Triangles + tip pips ────────────────────────────────────────────
         for n in 1...24 {
             let pt = geo.point(n)
@@ -191,6 +203,11 @@ enum CaramelPalette {
     static let diamondTileLight = Color(hex: 0xf0dab0)
     static let diamondTileEdge = Color(hex: 0x2a1408)
     static let diamondDot = Color(hex: 0x1a0a04)
+
+    // Bear-off tray chrome (#31) — a recessed dark tint on the frame strip;
+    // applied at low opacity so it reads as a subtle tray, not a solid block.
+    static let trayFill = Color(hex: 0x2a1408)
+    static let trayEdge = Color(hex: 0x1a0a04)
 
     // Checkers (T4) — ported from the CARAMEL table. Engine `.black` → red.
     static let whiteFill = Color(hex: 0xf1e6c8)

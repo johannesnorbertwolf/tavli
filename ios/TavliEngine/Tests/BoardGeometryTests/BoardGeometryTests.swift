@@ -89,6 +89,33 @@ final class BoardGeometryTests: XCTestCase {
         XCTAssertGreaterThan(black.hitRect.height, 0)
     }
 
+    // 5b ── Bear-off checker stacking ──────────────────────────────────────
+    func testBearOffCheckerStacking() {
+        let r = geom.checkerRadius
+        // White (25) stacks downward from the top; Black (0) upward from the
+        // bottom. Both keep a constant strip x across slots.
+        let w0 = geom.checkerCenter(point: 25, slot: 0)
+        let w1 = geom.checkerCenter(point: 25, slot: 1)
+        XCTAssertEqual(w0.x, w1.x, accuracy: eps)
+        XCTAssertGreaterThan(w1.y, w0.y, "white tray stacks downward")
+        let b0 = geom.checkerCenter(point: 0, slot: 0)
+        let b1 = geom.checkerCenter(point: 0, slot: 1)
+        XCTAssertEqual(b0.x, b1.x, accuracy: eps)
+        XCTAssertLessThan(b1.y, b0.y, "black tray stacks upward")
+        // A full-size checker is wider than the strip but must not clip the
+        // board's right edge (it floats over the strip + play-surface edge).
+        for slot in 0..<5 {
+            XCTAssertLessThanOrEqual(
+                geom.checkerCenter(point: 25, slot: slot).x + r, geom.boardRect.maxX,
+                "white tray checker slot \(slot) clips the board edge"
+            )
+            XCTAssertLessThanOrEqual(
+                geom.checkerCenter(point: 0, slot: slot).x + r, geom.boardRect.maxX,
+                "black tray checker slot \(slot) clips the board edge"
+            )
+        }
+    }
+
     // 6 ── Scaling / fit ───────────────────────────────────────────────────
     func testHalfScale() {
         let half = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 450, height: 450))
