@@ -12,6 +12,9 @@ private typealias SColor = SwiftUI.Color
 struct GameView: View {
     @ObservedObject var session: GameSession
 
+    /// Return to the mode picker. Defaults to a no-op so `#Preview`s compile.
+    var onBack: () -> Void = {}
+
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
@@ -21,8 +24,7 @@ struct GameView: View {
                 if landscape {
                     HStack(spacing: 0) {
                         Spacer(minLength: 0)
-                        BoardView()
-                            .aspectRatio(1, contentMode: .fit)
+                        PlayableBoardView(session: session)
                             .padding(24)
                         Spacer(minLength: 0)
                         sidePanel
@@ -36,8 +38,7 @@ struct GameView: View {
                             .padding(.horizontal, 24)
                             .padding(.top, 12)
                         Spacer(minLength: 0)
-                        BoardView()
-                            .aspectRatio(1, contentMode: .fit)
+                        PlayableBoardView(session: session)
                             .padding(.horizontal, 24)
                         Spacer(minLength: 0)
                         ControlsView(session: session)
@@ -45,6 +46,18 @@ struct GameView: View {
                             .padding(.bottom, 16)
                     }
                 }
+
+                // Floating chrome: Back (top-leading) + debug toggle (top-trailing).
+                // The portrait `topBar` keeps its counters centered so these corners
+                // stay clear; in landscape the corners overlay the board / panel head.
+                BackButton(action: onBack)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                DebugOverlayToggle(session: session)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
 
                 if case .gameOver(let winner) = session.phase {
                     WinOverlayView(winner: winner) { session.newGame() }
@@ -54,6 +67,7 @@ struct GameView: View {
     }
 
     // Landscape: turn indicator + counters on top, controls anchored at the bottom.
+    // Top-padded so the turn indicator clears the corner Back/debug overlays.
     private var sidePanel: some View {
         VStack(spacing: 24) {
             TurnIndicatorView(session: session)
@@ -64,18 +78,42 @@ struct GameView: View {
             Spacer(minLength: 0)
             ControlsView(session: session)
         }
+        .padding(.top, 44)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    // Portrait: counters flank the turn indicator across the top.
+    // Portrait: counters flank the turn indicator as a centered group, leaving the
+    // top corners free for the Back button and debug toggle.
     private var topBar: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 24) {
+            Spacer(minLength: 0)
             BorneOffView(session: session, color: .white)
-            Spacer()
             TurnIndicatorView(session: session)
-            Spacer()
             BorneOffView(session: session, color: .black)
+            Spacer(minLength: 0)
         }
+    }
+}
+
+/// Caramel pill that returns to the mode picker.
+private struct BackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left")
+                Text("Back")
+            }
+            .font(.callout.bold())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(ChromeTheme.undoTint.opacity(0.22))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.undoTint.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(ChromeTheme.ink)
+        }
+        .buttonStyle(.plain)
     }
 }
 

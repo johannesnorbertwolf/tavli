@@ -60,10 +60,16 @@ low opacity). `Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors
 ## CheckersView.swift (T4 — checker stacks)
 
 Renders the checker stacks on top of `BoardView` — a **pure function of board
-state** (`[TavliEngine.Point]`, indexed 0…25). No highlights, interaction, or
-animation (later tickets). Like `BoardView` it's a single `Canvas` +
+state**, taking `stacks: [[TavliEngine.Color]]` (per-slot piece colors, indexed
+0…25). **Value type on purpose:** the engine `Board` mutates `Point` *reference*
+objects in place, so a `[Point]` input is reference-identical across moves and
+SwiftUI skips repainting the Canvas — the board freezes while the model advances
+(the move-input bug). The `[[Color]]` snapshot (`points.map(\.pieces)`, built once
+in `PlayableBoardView` and shared with `SourceRingView`) changes by value, so each
+committed move reliably repaints. No highlights, interaction, or animation (later
+tickets). Like `BoardView` it's a single `Canvas` +
 `.aspectRatio(1, .fit)` building `BoardGeometry(rect:)`, so an overlaid
-`ZStack { BoardView(); CheckersView(points:) }` shares the same centered-square
+`ZStack { BoardView(); CheckersView(stacks:) }` shares the same centered-square
 fit and the checkers register with the triangles.
 
 - **Stacks** (`drawStack`, porting the reference `Stack`): for **every** slot
@@ -103,22 +109,30 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
 
 - **Layer order** (a `GeometryReader` + `ZStack`, bottom → top): `BoardView()` →
   `TargetHighlightView` (below the checkers so a fill sits under them) →
-  `CheckersView(points:)` → `SourceRingView` (above, so the ring haloes the
+  `CheckersView(stacks:)` → `SourceRingView` (above, so the ring haloes the
   selected stack). All layers rebuild an identical `BoardGeometry` from the same
   square fit, so they register exactly; the gesture geometry is built from the
   same `GeometryReader` size. The container is `.aspectRatio(1, .fit)`.
-- **Gesture** — a single `DragGesture(minimumDistance: 0)` serves both
-  interactions, discriminated by travel vs. `dragThreshold` (10pt):
-  - **Tap** (travel ≤ threshold, resolved in `onEnded`): `hitTest` over `1…25`;
-    if a target is tapped with a source already selected → `commitHalfMove`,
-    else `selectPoint(tapped)` (a non-selectable index clears the selection,
-    since `GameSession.selectPoint` ignores it).
-  - **Drag** (travel > threshold): on first movement, `hitTest` the *start*
-    location over `selectableSources` and `selectPoint` it (lift); on `onEnded`,
-    `hitTest` the drop over `validTargets` → `commitHalfMove`. A missed drop
-    leaves the source selected so the user can still tap a target.
+- **Gesture** — a single `DragGesture(minimumDistance: 0)` whose intent dispatch
+  is resolved **entirely in `onEnded`**. This is deliberate: mutating session
+  state from `onChanged` (the earlier design's mid-drag `selectPoint`) republishes
+  and rebuilds the enclosing `GeometryReader`, which **cancels the in-flight
+  gesture so `onEnded` never fires and the drop is lost** — a real-device failure
+  (selection highlights, but the move never commits) that the simulator and
+  XCUITest's synthetic events do not reproduce. On release:
+  - **Drag** (travel > `dragThreshold` 10pt *and* the press started on a
+    selectable source): `selectPoint(source)`, then `hitTest` the drop over
+    `validTargets` → `commitHalfMove`. A miss just leaves the source selected.
+  - **Tap** (everything else, via `handleTap`): `hitTest` over **`0…25`** (slots
+    0/25 included so bear-off targets are tappable); if a target is tapped with a
+    source already selected → `commitHalfMove`, else `selectPoint(tapped)` (a
+    non-selectable index clears the selection, since `selectPoint` ignores it).
   - No floating ghost checker — the ring + target marks are the feedback, per the
     Caramel design.
+- **Test hook** — the ZStack carries `accessibilityIdentifier("board")` plus an
+  `accessibilityValue` of comma-joined per-slot checker counts (`boardSignature`),
+  so `TavliAppUITests` can locate the board's frame (to map `BoardGeometry`
+  coordinates to taps) and assert board mutations without inspecting Canvas pixels.
 - **`HighlightStyle`** (`enum { frame, fill }`) — the design's "two readings".
   Default `.frame` (gold outline, preserves the wood/ivory look); `.fill` is the
   higher-visibility solid-gold variant, kept behind this constant
@@ -148,24 +162,32 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   (frame + fill) to show the bear-off tray boxes without building a
   near-end-of-game board.
 
-## GameView.swift (T9 — game chrome)
+## GameView.swift (T9 chrome + T10 assembly)
 
-The non-board UI framing a game, assembled with the static `BoardView` into a
-responsive layout. Pure presentation: every sub-view binds to a `GameSession`'s
-published read-state and calls its intents — no game logic lives here. The board
-stays visually static: `GameView` embeds the empty `BoardView()` only — overlaying
-the landed `CheckersView` (T4) and wiring move input (T7, still open) are deferred
-to screen assembly (T10).
+The non-board UI framing a game, assembled with the **interactive** `PlayableBoardView`
+into a responsive layout. Pure presentation: every sub-view binds to a `GameSession`'s
+published read-state and calls its intents — no game logic lives here. (T9 first wired
+this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the assembled
+screen is fully playable, and added the Back button + hosted debug toggle.)
 
-- **`GameView`** (`@ObservedObject session`). A `GeometryReader` switches layout on
-  `width >= height`:
-  - **Landscape:** `HStack` with `BoardView()` (`.aspectRatio(1, .fit)`) centered
-    between spacers, and a fixed 300pt `sidePanel` on the trailing edge (turn
-    indicator + the two borne-off counters on top, controls anchored at the bottom).
-  - **Portrait (acceptable):** `VStack` — a `topBar` (counters flanking the turn
-    indicator), the centered board, then the controls row at the bottom.
-  - A `ZStack` overlays `WinOverlayView` whenever `session.phase` is `.gameOver`.
-  - Page background is `#ece6dc` (matches `App.swift`).
+- **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
+  the mode picker; defaults to a no-op so `#Preview`s compile). A `GeometryReader`
+  switches layout on `width >= height`:
+  - **Landscape:** `HStack` with `PlayableBoardView(session:)` centered between spacers,
+    and a fixed 300pt `sidePanel` on the trailing edge (turn indicator + the two
+    borne-off counters on top, controls anchored at the bottom; top-padded `44` so the
+    indicator clears the corner Back/debug overlays).
+  - **Portrait (acceptable):** `VStack` — a `topBar` (counters + turn indicator as a
+    **centered** group, leaving the top corners free), the centered board, then the
+    controls row at the bottom.
+  - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`) and a
+    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
+    via `.frame(maxWidth/Height: .infinity, alignment:)`.
+  - `WinOverlayView` is layered **last** (above Back/debug) whenever `session.phase` is
+    `.gameOver`.
+  - Page background is `#ece6dc` (matches `RootView`'s picker).
+- **`BackButton`** — a caramel pill (chevron + "Back") tinted from `ChromeTheme`,
+  calling the injected `onBack`.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
@@ -196,8 +218,8 @@ to screen assembly (T10).
 
 A toggleable, off-by-default panel exposing the AI's evaluation of the current
 position. Two `View`s, both bound to a `GameSession` (`@ObservedObject`), read-only
-with **no effect on gameplay**. It is a standalone component with no host yet — T10's
-screen assembly drops it onto the game screen (typically a top-trailing overlay).
+with **no effect on gameplay**. `GameView` (T10) hosts `DebugOverlayToggle` as a
+top-trailing overlay on the game screen.
 
 - **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
   button with `@State isOn = false` (off by default): tinted yellow when on, dim white
@@ -219,11 +241,28 @@ screen assembly drops it onto the game screen (typically a top-trailing overlay)
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
 
+## RootView.swift (T10 — root navigation + mode picker)
+
+The app's top-level view: switches between the caramel **mode picker** and a live game.
+
+- **`RootView`** — `@State private var session: GameSession?`. `nil` → show
+  `ModePickerView`; non-`nil` → show `GameView(session:onBack:)` with `onBack` resetting
+  `session = nil` (returns to the picker). Holding the session in `@State` keeps the
+  reference stable across re-renders (`GameView` observes it). `makeSession(humanColor:)`
+  builds `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
+  humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
+  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
+  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
+- **`ModePickerView(onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
+  "Tavli" wordmark in `CaramelPalette.frameText`, and two caramel `ModeButton`s: "Play vs
+  AI / You play White" → `.white`, "Play vs AI / You play Black" → `.black`. The design
+  reference's "Watch AI vs AI" mode is **deferred** (out of scope).
+- **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
+  gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
+- `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
+  `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
+
 ## App.swift
 
-`@main`. Hosts `PlayableBoardView` bound to a `@StateObject`
-`GameSession(startingPlayer: .white)` rolled to `3·5` (the design's reference
-scenario), padded inside a `#ece6dc` page background. This is a T7 sign-off
-bootstrap — without a dice UI only the first turn is playable. T10 (mode picker +
-screen assembly) will assemble the real screen from `GameView` (T9) + the
-interactive board.
+`@main`. Minimal — `WindowGroup { RootView() }`. (Earlier the T7 sign-off bootstrap
+hosted `PlayableBoardView` on a fixed scenario here; T10 moved the entry to `RootView`.)

@@ -20,7 +20,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TavliEngineTests",
-            dependencies: ["TavliEngine"],
+            dependencies: ["TavliEngine", "BoardGeometry"],
             resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
