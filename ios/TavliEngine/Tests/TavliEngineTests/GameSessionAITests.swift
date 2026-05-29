@@ -79,6 +79,51 @@ final class GameSessionAITests: XCTestCase {
                           "winProbability never updated — AI likely fell back to random")
     }
 
+    /// Reproduces the debug overlay's path: `DebugOverlay.recomputeCandidates`
+    /// scores the live shared board with `evaluateMoves` on every clean human turn.
+    /// A thrown Core ML error mid-scoring (swallowed by the overlay's `try?`) must
+    /// not leave a move applied — `evaluateMoves`'s `defer` guarantees the undo.
+    /// Plays a full game, scoring the way the overlay does, and asserts checkers are
+    /// conserved throughout; a leaked analysis apply would drift the counts.
+    func testOverlayScoringPreservesCheckers() async throws {
+        let agent = try loadAgent()
+        let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black)
+        s.start()
+        await waitForAI(s)
+
+        func assertConserved() {
+            let total = s.game.board.points.reduce(0) { $0 + $1.count }
+            XCTAssertEqual(total, 2 * s.game.board.numberOfPieces,
+                           "checkers must be conserved across overlay scoring")
+        }
+
+        var turns = 0
+        loop: while true {
+            switch s.phase {
+            case .gameOver:
+                break loop
+            case .awaitingRoll:
+                turns += 1
+                XCTAssertLessThan(turns, 100_000, "game failed to terminate")
+                assertConserved()
+                s.setManualDice(Int.random(in: 1...6), Int.random(in: 1...6))
+            case .picking, .moving:
+                // Mimic the overlay: score the live board at a clean turn start.
+                if s.moveBuilder.built.isEmpty, !s.legalMoves.isEmpty {
+                    _ = try? agent.evaluateMoves(s.game.board, s.legalMoves, color: s.currentPlayer)
+                    assertConserved()
+                }
+                playHumanTurn(s)
+                await waitForAI(s)
+            case .aiThinking, .animating:
+                await waitForAI(s)
+            }
+        }
+
+        guard case .gameOver = s.phase else { return XCTFail("game did not finish") }
+        assertConserved()
+    }
+
     /// Real model: the win probability goes live on the human's turn — it sits at
     /// the 0.5 default before the first roll, then moves off it once the human rolls
     /// (the model scores the live board, before any AI move).
