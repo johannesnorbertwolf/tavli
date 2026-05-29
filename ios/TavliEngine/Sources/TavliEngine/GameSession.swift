@@ -62,9 +62,20 @@ public final class GameSession: ObservableObject {
 
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
     /// Returns `nil` when the model is absent so callers can fall back to random play.
+    ///
+    /// Prefers a pre-compiled `.mlmodelc`, but the model ships as a `.mlpackage`
+    /// under Copy Bundle Resources (xcodegen copies it verbatim rather than running
+    /// the Core ML compiler), so we compile it at launch — the same path the tests use.
     public static func makeAgent() -> Agent? {
-        guard let url = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc"),
-              let model = try? MLModel(contentsOf: url) else {
+        let compiledURL: URL?
+        if let c = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc") {
+            compiledURL = c
+        } else if let pkg = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlpackage") {
+            compiledURL = try? MLModel.compileModel(at: pkg)
+        } else {
+            compiledURL = nil
+        }
+        guard let compiledURL, let model = try? MLModel(contentsOf: compiledURL) else {
             return nil
         }
         return Agent(model: model, encoder: BoardEncoder(config: .standard))
@@ -186,6 +197,18 @@ public final class GameSession: ObservableObject {
     private func refreshSources() {
         selectableSources = moveBuilder.selectableSourcePoints
         phase = .picking
+        refreshEvaluation()
+    }
+
+    /// Re-score the live board from the current player's view and publish it as
+    /// WHITE's win probability, keeping the overlay live on the human's turn (after
+    /// a roll, a committed half-move, or an undo). No-op without a model, so the
+    /// random fallback leaves `winProbability` at its 0.5 default. The AI's turn is
+    /// covered separately by `applyAIMove`.
+    private func refreshEvaluation() {
+        guard let agent,
+              let v = try? agent.winProbability(game.board, color: currentPlayer) else { return }
+        winProbability = currentPlayer.isWhite ? Double(v) : 1 - Double(v)
     }
 
     private func clearSelection() {

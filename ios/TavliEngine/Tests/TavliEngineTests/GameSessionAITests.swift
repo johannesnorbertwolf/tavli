@@ -74,6 +74,19 @@ final class GameSessionAITests: XCTestCase {
                           "winProbability never updated — AI likely fell back to random")
     }
 
+    /// Real model: the win probability goes live on the human's turn — it sits at
+    /// the 0.5 default before the first roll, then moves off it once the human rolls
+    /// (the model scores the live board, before any AI move).
+    func testWinProbUpdatesOnHumanTurn() throws {
+        let agent = try loadAgent()
+        let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black)
+        s.start()                                             // human (white) to move
+        XCTAssertEqual(s.winProbability, 0.5, accuracy: 1e-9) // not yet evaluated
+        s.setManualDice(3, 5)                                 // beginTurn → refreshEvaluation
+        XCTAssertNotEqual(s.winProbability, 0.5, accuracy: 1e-9,
+                          "win prob should update on the human's turn after rolling")
+    }
+
     /// Missing model: AI turns fall back to random legal moves, the game still
     /// terminates, and `winProbability` stays at its 0.5 default (never scored).
     func testMissingModelFallsBackToRandom() throws {

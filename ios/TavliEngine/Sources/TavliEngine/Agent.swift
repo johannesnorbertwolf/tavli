@@ -34,6 +34,11 @@ public final class Agent {
         return mv[0].floatValue
     }
 
+    /// Win probability for `color` in the given static board (no move applied).
+    public func winProbability(_ board: GameBoard, color: Color) throws -> Float {
+        try value(encoder.encode(board, isWhitesTurn: color.isWhite))
+    }
+
     /// 1-ply score per candidate move, aligned to `moves`.
     public func evaluateMoves(_ board: GameBoard, _ moves: [Move], color: Color) throws -> [Float] {
         let opponentToMoveIsWhite = !color.isWhite
