@@ -180,6 +180,11 @@ public struct PossibleMoves {
         _ otherDieValue: Int,
         _ outsideHomeCount: Int
     ) {
+        // Probing applies a half-move to test whether the other die is then
+        // playable; the outer restore guarantees the live board is left untouched
+        // even if the loop ever exits early.
+        let saved = board.captureStacks()
+        defer { board.restoreStacks(saved) }
         for hm in halfMoves where hm.isValid() {
             if !isHalfMoveLegalWithHomeRule(hm, outsideHomeCount) { continue }
             board.applyHalfMove(hm)

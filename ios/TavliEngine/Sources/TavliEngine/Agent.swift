@@ -41,21 +41,24 @@ public final class Agent {
 
     /// 1-ply score per candidate move, aligned to `moves`.
     ///
-    /// Scores apply/undo on the shared live board. `defer` guarantees the undo even
-    /// when `value` throws mid-loop — otherwise a thrown Core ML error would leave the
-    /// last move applied, silently corrupting the board for every later turn.
+    /// Scoring apply/undoes each candidate on the shared live board. The outer
+    /// `defer` restores the exact pre-scoring stacks no matter how the loop exits —
+    /// a thrown Core ML error, an early return, or a future change that forgets an
+    /// undo — so analysis can never leave the game position corrupted.
     public func evaluateMoves(_ board: GameBoard, _ moves: [Move], color: Color) throws -> [Float] {
         let opponentToMoveIsWhite = !color.isWhite
+        let saved = board.captureStacks()
+        defer { board.restoreStacks(saved) }
         var scores = [Float](repeating: 0, count: moves.count)
         for (idx, move) in moves.enumerated() {
             board.apply(move)
-            defer { board.undo(move) }
             if board.hasWon(color) {
                 scores[idx] = 1.0
             } else {
                 let enc = encoder.encode(board, isWhitesTurn: opponentToMoveIsWhite)
                 scores[idx] = 1.0 - (try value(enc))
             }
+            board.undo(move)
         }
         return scores
     }

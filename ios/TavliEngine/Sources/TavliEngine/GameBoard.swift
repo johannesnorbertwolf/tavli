@@ -33,6 +33,17 @@ public final class GameBoard: CustomStringConvertible {
         (0...(boardSize + 1)).reversed().map { points[$0].description }.joined(separator: "\n")
     }
 
+    /// Capture every point's stack (bottom→top) for a later exact restore.
+    /// Analysis passes (move scoring, single-die probing) mutate the live board in
+    /// place; pairing this with `restoreStacks` guarantees they leave the position
+    /// byte-identical even if a step throws or returns early partway through.
+    public func captureStacks() -> [[Color]] { points.map(\.pieces) }
+
+    /// Restore stacks captured by `captureStacks()`.
+    public func restoreStacks(_ stacks: [[Color]]) {
+        for i in points.indices { points[i].pieces = stacks[i] }
+    }
+
     public func apply(_ move: Move) {
         for hm in move.halfMoves { applyHalfMove(hm) }
     }
