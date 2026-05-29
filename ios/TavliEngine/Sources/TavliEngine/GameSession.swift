@@ -47,15 +47,17 @@ public final class GameSession: ObservableObject {
     @Published public private(set) var selectableSources: Set<Int> = []
 
     /// Incrementally narrows the legal-move set as half-moves are committed.
-    public private(set) var moveBuilder = MoveBuilder(legalMoves: [])
+    public private(set) var moveBuilder: MoveBuilder
 
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
                 aiColor: Color? = nil) {
-        self.game = Game(config: config, startingPlayer: startingPlayer)
+        let game = Game(config: config, startingPlayer: startingPlayer)
+        self.game = game
         self.agent = agent
         self.aiColor = aiColor
+        self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
     public var currentPlayer: Color { game.currentPlayer }
@@ -110,20 +112,26 @@ public final class GameSession: ObservableObject {
         phase = .moving
     }
 
-    /// Commit a single half-move `from -> to`, applying it to the board. Advances
-    /// to the next half-move, or finishes the turn when the move is complete (or
-    /// the only remaining continuation is itself a complete legal move).
+    /// Commit a move from `from` to `to`, applying it to the board. On a Pasch a
+    /// far destination is a multi-hop chain, so this commits every intervening
+    /// single-die hop. Advances to the next half-move, or finishes the turn when
+    /// the move is complete (or the only remaining continuation is itself a
+    /// complete legal move).
     public func commitHalfMove(from fromIndex: Int, to toIndex: Int) {
         guard phase == .picking || phase == .moving else { return }
-        guard selectableSources.contains(fromIndex),
-              moveBuilder.validDestinations(for: fromIndex).contains(toIndex) else { return }
+        guard selectableSources.contains(fromIndex) else { return }
 
-        let hm = HalfMove(from: game.board.points[fromIndex],
-                          to: game.board.points[toIndex],
-                          color: game.currentPlayer)
-        game.board.applyHalfMove(hm)
+        let hops = moveBuilder.path(from: fromIndex, to: toIndex)
+        guard !hops.isEmpty else { return }
 
-        let complete = moveBuilder.commit(halfMove: hm)
+        var complete = false
+        for hop in hops {
+            let hm = HalfMove(from: game.board.points[hop.from.position],
+                              to: game.board.points[hop.to.position],
+                              color: game.currentPlayer)
+            game.board.applyHalfMove(hm)
+            complete = moveBuilder.commit(halfMove: hm)
+        }
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
@@ -137,7 +145,7 @@ public final class GameSession: ObservableObject {
     public func undo() {
         guard let last = moveBuilder.built.last else { return }
         game.board.undoHalfMove(last)
-        moveBuilder.undo(allLegal: legalMoves)
+        moveBuilder.undo()
         clearSelection()
         refreshSources()
     }
@@ -154,7 +162,7 @@ public final class GameSession: ObservableObject {
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
         legalMoves = []
-        moveBuilder = MoveBuilder(legalMoves: [])
+        moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
         selectableSources = []
         winProbability = 0.5
@@ -173,12 +181,13 @@ public final class GameSession: ObservableObject {
 
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
-            moveBuilder = MoveBuilder(legalMoves: [])
+            moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
             finishTurn()
             return
         }
 
-        moveBuilder = MoveBuilder(legalMoves: legalMoves)
+        moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
+                                  die1: game.dice.die1.value, die2: game.dice.die2.value)
         clearSelection()
         refreshSources()
     }
@@ -225,11 +234,12 @@ public final class GameSession: ObservableObject {
         ).findMoves()
 
         guard !legalMoves.isEmpty else {
-            moveBuilder = MoveBuilder(legalMoves: [])
+            moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
             finishTurn()
             return
         }
-        moveBuilder = MoveBuilder(legalMoves: legalMoves)
+        moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
+                                  die1: game.dice.die1.value, die2: game.dice.die2.value)
 
         guard let agent else {
             // No model available — fall back to a random legal move.

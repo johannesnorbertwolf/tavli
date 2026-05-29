@@ -37,7 +37,10 @@ final class BoardInteractionTests: XCTestCase {
         s.commitHalfMove(from: 24, to: target)
         XCTAssertEqual(s.game.board.points[target].count, before + 1,
                        "committing 24→\(target) must move a checker onto \(target)")
-        XCTAssertTrue(s.moveBuilder.built.contains { $0.from.position == 24 && $0.to.position == target })
+        // A merged (two-die) target unmerges into single-die hops, so assert the
+        // committed chain leaves 24 and lands on the tapped target.
+        XCTAssertEqual(s.moveBuilder.built.first?.from.position, 24)
+        XCTAssertEqual(s.moveBuilder.built.last?.to.position, target)
     }
 
     /// Every highlighted target a source offers must hit-test back to itself, so a
