@@ -22,108 +22,189 @@ private func move(_ pairs: [(Int, Int)], _ color: Color = .white) -> Move {
     Move(pairs.map { hm($0.0, $0.1, color) })
 }
 
+/// An all-empty standard board seeded with `occupancy` (point index -> stack).
+private func makeBoard(_ occupancy: [Int: [Color]]) -> GameBoard {
+    let b = GameBoard(config: .standard)   // GameBoard starts empty
+    for (pos, pieces) in occupancy { b.setPoint(pos, pieces: pieces) }
+    return b
+}
+
+/// Commit a half-move through the builder while mutating the board in step, exactly
+/// as `GameSession` does — the builder reads occupancy, so the board must advance
+/// with each commit.
+@discardableResult
+private func play(_ b: MoveBuilder, on board: GameBoard,
+                  _ from: Int, _ to: Int, _ color: Color = .white) -> Bool {
+    let h = HalfMove(from: board.points[from], to: board.points[to], color: color)
+    board.applyHalfMove(h)
+    return b.commit(halfMove: h)
+}
+
+/// Undo the last half-move through the builder while reverting the board, mirroring
+/// `GameSession.undo`.
+private func unplay(_ b: MoveBuilder, on board: GameBoard,
+                    _ from: Int, _ to: Int, _ color: Color = .white) {
+    board.undoHalfMove(HalfMove(from: board.points[from], to: board.points[to], color: color))
+    b.undo()
+}
+
 // ── MoveBuilder ────────────────────────────────────────────────────────────────
 
 final class MoveBuilderTests: XCTestCase {
-    func testSelectableSourcesAndDestinations() {
+    func testSelectableSourcesAndImmediateDestinations() {
+        // Two independent white checkers; curated single-hop options.
+        let bd = makeBoard([1: [.white], 5: [.white]])
         let legal = [
-            move([(1, 3), (3, 6)]),
-            move([(1, 4), (4, 8)]),
-            move([(5, 8)]),
+            move([(1, 3), (5, 8)]),
+            move([(1, 4), (5, 8)]),
         ]
-        let b = MoveBuilder(legalMoves: legal)
+        let b = MoveBuilder(legalMoves: legal, board: bd)
         XCTAssertEqual(b.selectableSourcePoints, [1, 5])
         XCTAssertEqual(b.validDestinations(for: 1), [3, 4])
         XCTAssertEqual(b.validDestinations(for: 5), [8])
         XCTAssertEqual(b.validDestinations(for: 9), [])
     }
 
-    func testCommitNarrowsAndCompletes() {
-        let legal = [
-            move([(1, 3), (3, 6)]),
-            move([(1, 4), (4, 8)]),
-            move([(5, 8)]),
-        ]
-        let b = MoveBuilder(legalMoves: legal)
+    func testMultiHopChainDestinationsAndPaths() {
+        // A single checker on a Pasch chains along the die ray (die = 2).
+        let bd = makeBoard([1: [.white]])
+        let legal = [move([(1, 3), (3, 5), (5, 7), (7, 9)])]
+        let b = MoveBuilder(legalMoves: legal, board: bd)
 
-        XCTAssertFalse(b.commit(halfMove: hm(1, 3)))  // not yet complete
-        XCTAssertEqual(b.activeMoves.count, 1)        // only the (1,3),(3,6) survives
-        XCTAssertEqual(b.selectableSourcePoints, [3])
+        XCTAssertEqual(b.selectableSourcePoints, [1])           // only the real checker
+        XCTAssertEqual(b.validDestinations(for: 1), [3, 5, 7, 9])  // full ray
+        XCTAssertEqual(b.validDestinations(for: 3), [])         // empty until 1→3
+        XCTAssertEqual(b.path(from: 1, to: 5), [hm(1, 3), hm(3, 5)])
+        XCTAssertEqual(b.path(from: 1, to: 9), [hm(1, 3), hm(3, 5), hm(5, 7), hm(7, 9)])
+        XCTAssertEqual(b.path(from: 1, to: 6), [])              // unreachable
+    }
+
+    func testCommitNarrowsAndCompletes() {
+        let bd = makeBoard([1: [.white], 5: [.white]])
+        let legal = [
+            move([(1, 3), (5, 8)]),
+            move([(1, 4), (5, 8)]),
+        ]
+        let b = MoveBuilder(legalMoves: legal, board: bd)
+
+        XCTAssertFalse(play(b, on: bd, 1, 3))         // not yet complete
+        XCTAssertEqual(b.activeMoves.count, 1)        // only (1,3),(5,8) survives
+        XCTAssertEqual(b.selectableSourcePoints, [5])
         XCTAssertFalse(b.canFinishNow)
 
-        XCTAssertTrue(b.commit(halfMove: hm(3, 6)))   // now complete
-        XCTAssertEqual(b.completedMove, move([(1, 3), (3, 6)]))
+        XCTAssertTrue(play(b, on: bd, 5, 8))          // now complete
+        XCTAssertEqual(b.completedMove, move([(1, 3), (5, 8)]))
     }
 
     func testCanFinishNowWhenShorterMoveIsPrefix() {
+        let bd = makeBoard([1: [.white]])
         let legal = [
             move([(1, 3)]),
-            move([(1, 3), (3, 6)]),
+            move([(1, 3), (3, 5)]),
         ]
-        let b = MoveBuilder(legalMoves: legal)
+        let b = MoveBuilder(legalMoves: legal, board: bd)
 
         // Committing the shared first half-move: a 1-half move is already legal,
         // but a 2-half continuation also survives, so it is finishable, not forced.
-        XCTAssertFalse(b.commit(halfMove: hm(1, 3)))
+        XCTAssertFalse(play(b, on: bd, 1, 3))
         XCTAssertTrue(b.canFinishNow)
         XCTAssertEqual(b.completedMove, move([(1, 3)]))
         XCTAssertEqual(b.selectableSourcePoints, [3])  // can also play on
     }
 
     func testUndoRebuildsFromScratch() {
+        let bd = makeBoard([1: [.white], 5: [.white]])
         let legal = [
-            move([(1, 3), (3, 6)]),
-            move([(1, 4), (4, 8)]),
+            move([(1, 3), (5, 8)]),
+            move([(1, 4), (5, 8)]),
         ]
-        let b = MoveBuilder(legalMoves: legal)
-        b.commit(halfMove: hm(1, 3))
-        b.commit(halfMove: hm(3, 6))
+        let b = MoveBuilder(legalMoves: legal, board: bd)
+        play(b, on: bd, 1, 3)
+        play(b, on: bd, 5, 8)
         XCTAssertEqual(b.built.count, 2)
 
-        b.undo(allLegal: legal)
+        unplay(b, on: bd, 5, 8)
         XCTAssertEqual(b.built, [hm(1, 3)])
         XCTAssertEqual(b.activeMoves.count, 1)
-        XCTAssertEqual(b.selectableSourcePoints, [3])
+        XCTAssertEqual(b.selectableSourcePoints, [5])
 
-        b.undo(allLegal: legal)
+        unplay(b, on: bd, 1, 3)
         XCTAssertTrue(b.built.isEmpty)
-        XCTAssertEqual(b.selectableSourcePoints, [1])  // back to start
+        XCTAssertEqual(b.selectableSourcePoints, [1, 5])  // back to start
     }
 
     func testIndependentHalfMovesAreReorderable() {
-        // The dice (3,5)-from-point-1 case: the engine stores the two-checker
-        // move die-1 first ([1→4, 1→6]), plus the merged single-checker [1→9].
-        // Either independent half-move may be played first, so all three
-        // destinations are offered up front.
+        // Two checkers on point 1: the engine stores the two-checker move
+        // ([1→4, 1→6]) plus the merged single-checker [1→9]. Either independent
+        // half-move may be played first, so all three destinations are offered.
+        let bd = makeBoard([1: [.white, .white]])
         let legal = [
             move([(1, 4), (1, 6)]),
             move([(1, 9)]),
         ]
-        let b = MoveBuilder(legalMoves: legal)
+        let b = MoveBuilder(legalMoves: legal, board: bd)
         XCTAssertEqual(b.selectableSourcePoints, [1])
         XCTAssertEqual(b.validDestinations(for: 1), [4, 6, 9])
 
         // Play the die-5 half (1→6) first — impossible under stored-order logic.
-        XCTAssertFalse(b.commit(halfMove: hm(1, 6)))
+        XCTAssertFalse(play(b, on: bd, 1, 6))
         XCTAssertEqual(b.activeMoves, [move([(1, 4), (1, 6)])])
         XCTAssertEqual(b.validDestinations(for: 1), [4])
-        XCTAssertTrue(b.commit(halfMove: hm(1, 4)))
+        XCTAssertTrue(play(b, on: bd, 1, 4))
         XCTAssertEqual(b.completedMove, move([(1, 4), (1, 6)]))
     }
 
     func testChainedHalfMovesAreNotReorderable() {
         // A single-checker chain 1→3→5: the second half can't be played until the
         // first delivers a checker to point 3.
+        let bd = makeBoard([1: [.white]])
         let legal = [move([(1, 3), (3, 5)])]
-        let b = MoveBuilder(legalMoves: legal)
-        XCTAssertEqual(b.selectableSourcePoints, [1])   // not 3
-        XCTAssertEqual(b.validDestinations(for: 1), [3])
-        XCTAssertEqual(b.validDestinations(for: 3), [])  // blocked until 1→3
+        let b = MoveBuilder(legalMoves: legal, board: bd)
+        XCTAssertEqual(b.selectableSourcePoints, [1])     // not 3
+        XCTAssertEqual(b.validDestinations(for: 1), [3, 5])  // reachable as a chain
+        XCTAssertEqual(b.validDestinations(for: 3), [])    // can't start at 3
 
-        XCTAssertFalse(b.commit(halfMove: hm(1, 3)))     // 3→5 still to play
+        XCTAssertFalse(play(b, on: bd, 1, 3))              // 3→5 still to play
         XCTAssertEqual(b.validDestinations(for: 3), [5])
-        XCTAssertTrue(b.commit(halfMove: hm(3, 5)))      // now complete
+        XCTAssertTrue(play(b, on: bd, 3, 5))               // now complete
         XCTAssertEqual(b.completedMove, move([(1, 3), (3, 5)]))
+    }
+
+    func testFalseChainInterleaveAllowsEitherOrder() {
+        // Two INDEPENDENT black checkers whose ray positions coincide (8 and 6),
+        // die = 2. The bag is chain-shaped ([8→6, 6→4]) but the board proves the
+        // checkers are independent: the old board-blind logic wrongly locked 6 out.
+        let bd = makeBoard([8: [.black], 6: [.black]])
+        let legal = [move([(8, 6), (6, 4)], .black)]
+        let b = MoveBuilder(legalMoves: legal, board: bd)
+
+        // Bug #1: both sources offered up front (board-blind logic hid 6).
+        XCTAssertEqual(b.selectableSourcePoints, [8, 6])
+
+        // Bug #2: play 6→4 first, then 8 is still playable.
+        XCTAssertFalse(play(b, on: bd, 6, 4, .black))
+        XCTAssertEqual(b.selectableSourcePoints, [8])
+        XCTAssertTrue(play(b, on: bd, 8, 6, .black))
+        XCTAssertEqual(b.completedMove, move([(8, 6), (6, 4)], .black))
+    }
+
+    func testNonPaschMergedMoveUnmergesIntoContinuableHops() {
+        // Lone white checker, dice 3·5 — the engine stores the single-checker move
+        // merged (1→9). The builder unmerges it so both intermediate stops and the
+        // far endpoint highlight, and the same checker can continue from a stop.
+        let bd = makeBoard([1: [.white]])
+        let legal = [move([(1, 9)])]
+        let b = MoveBuilder(legalMoves: legal, board: bd, die1: 3, die2: 5)
+
+        XCTAssertEqual(b.selectableSourcePoints, [1])
+        XCTAssertEqual(b.validDestinations(for: 1), [4, 6, 9])  // both stops + endpoint
+        XCTAssertEqual(b.path(from: 1, to: 9).count, 2)         // two single-die hops
+
+        // Stop on the die-3 intermediate, then continue the same checker with die 5.
+        XCTAssertFalse(play(b, on: bd, 1, 4))
+        XCTAssertEqual(b.selectableSourcePoints, [4])           // same checker continues
+        XCTAssertEqual(b.validDestinations(for: 4), [9])
+        XCTAssertTrue(play(b, on: bd, 4, 9))
     }
 }
 
@@ -199,6 +280,91 @@ final class GameSessionTests: XCTestCase {
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertTrue(s.legalMoves.isEmpty)
         XCTAssertNil(s.selectedPoint)
+    }
+
+    /// Pasch: selecting a checker highlights the full reachable ray and a tap on the
+    /// far endpoint commits every intervening hop, consuming all four dice.
+    func testPaschMultiHopHighlightsRayAndCommitsChain() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])
+        b.setPoint(24, pieces: [.black])    // keep both colors on the board
+
+        s.setManualDice(2, 2)
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertEqual(s.selectableSources, [1])
+        s.selectPoint(1)
+        XCTAssertEqual(s.validTargets, [3, 5, 7, 9])   // whole ray highlighted
+
+        s.commitHalfMove(from: 1, to: 9)               // tap the far endpoint
+        XCTAssertEqual(s.moveBuilder.built.count, 4)   // four dice consumed
+        XCTAssertEqual(b.points[1].count, 0)
+        XCTAssertEqual(b.points[9].count, 1)
+        XCTAssertEqual(s.currentPlayer, .black)        // turn finished
+    }
+
+    /// Pasch: two independent checkers may be played in any interleaving — A, B,
+    /// back to A, B — reproducing issue #44's forced-ordering and lock-out bugs.
+    func testPaschInterleavesSourcesAcrossPoints() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])
+        b.setPoint(10, pieces: [.white])
+        b.setPoint(24, pieces: [.black])
+
+        s.setManualDice(2, 2)
+        XCTAssertEqual(s.selectableSources, [1, 10])
+
+        // A then B: the other point must stay selectable (bug #1).
+        s.selectPoint(1)
+        s.commitHalfMove(from: 1, to: 3)
+        XCTAssertTrue(s.selectableSources.contains(10), "other point locked out (#1)")
+        XCTAssertTrue(s.selectableSources.contains(3), "moved checker should continue")
+
+        s.selectPoint(10)
+        s.commitHalfMove(from: 10, to: 12)
+        // Back to A's checker (now at 3): must not be locked out (bug #2).
+        XCTAssertTrue(s.selectableSources.contains(3), "first point locked out (#2)")
+        s.selectPoint(3)
+        s.commitHalfMove(from: 3, to: 5)
+
+        s.selectPoint(12)
+        s.commitHalfMove(from: 12, to: 14)
+
+        XCTAssertEqual(s.currentPlayer, .black)   // all four dice consumed
+        XCTAssertEqual(b.points[5].count, 1)
+        XCTAssertEqual(b.points[14].count, 1)
+    }
+
+    /// Non-Pasch: a single checker playing both distinct dice may be played in two
+    /// deliberate steps and continued (issue #44 follow-up). The engine merges the
+    /// move, so without unmerging the same checker would be locked out after the
+    /// first half.
+    func testNonPaschSingleCheckerContinuesThroughSession() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])
+        b.setPoint(24, pieces: [.black])
+
+        s.setManualDice(3, 5)
+        XCTAssertEqual(s.selectableSources, [1])
+        s.selectPoint(1)
+        XCTAssertEqual(s.validTargets, [4, 6, 9])   // stops + merged endpoint
+
+        // Play one die, then continue the SAME checker with the other die.
+        s.commitHalfMove(from: 1, to: 4)
+        XCTAssertEqual(s.moveBuilder.built.count, 1)
+        XCTAssertTrue(s.selectableSources.contains(4), "same checker locked out after first half")
+        s.selectPoint(4)
+        XCTAssertEqual(s.validTargets, [9])
+        s.commitHalfMove(from: 4, to: 9)
+
+        XCTAssertEqual(s.currentPlayer, .black)   // both dice consumed
+        XCTAssertEqual(b.points[1].count, 0)
+        XCTAssertEqual(b.points[9].count, 1)
     }
 
     /// Drives a complete game to a win using only session intents.

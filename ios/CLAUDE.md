@@ -23,23 +23,43 @@ re-validated against the current **array-based domain v2** (`domain/board.py` `B
 so the game flow is validated without a simulator.
 
 - **`MoveBuilder`** incrementally composes a full `Move` from half-moves. It holds
-  `activeMoves` (legal `Move`s still consistent with what's been picked) + `built: [HalfMove]`.
-  **Order-independent:** the engine stores each multi-die move in one canonical order (die-1
-  first — so a dice (3,5) two-checker move is `[1→4, 1→6]`), but the player may play those halves
-  in either order, so the builder treats a move's half-moves as a *bag*. At each step it offers
-  every half-move that could come next in *some* valid ordering (`playableNext`): a remaining
-  half-move is offerable unless another remaining half-move delivers a checker to its `from` (a
-  chain dependency like a pasch `1→3→5`); independent half-moves are freely reorderable. So
-  selecting point 1 on a (3,5) roll offers 4, 6, **and** 9 (the merged single-checker move),
-  matching the design — not just the stored-order 4/9. `remaining(of:)` validates `built` is a
-  legal ordering prefix and returns the leftover half-moves; `selectableSourcePoints` /
-  `validDestinations(for:)` are the `from`/`to` of `playableNext(remaining)` across surviving
-  moves; `commit(halfMove:)` keeps the moves in which the half-move is offerable, appends it, and
-  returns whether nothing remains (complete); `canFinishNow` is true when some surviving move has
-  no remaining halves (a shorter move that is a prefix of a longer one is *finishable*, not
-  *forced*); `undo(allLegal:)` rebuilds `activeMoves` from scratch; `completedMove` is a surviving
-  move with no remaining halves. It does **not** touch the board — the session applies/undoes
-  half-moves in step (in the player's chosen order, always a legal ordering).
+  `activeMoves` (legal `Move`s still consistent with what's been picked) + `built: [HalfMove]`,
+  and a **read-only reference to the live `GameBoard`** (it reads occupancy to decide
+  playability; it never applies/undoes — the session mutates that same board in step, so the
+  builder always sees the position after the built prefix). Constructed with the dice
+  (`init(legalMoves:board:die1:die2:)`) so it can unmerge (below).
+  **Order-independent:** the engine stores each multi-die move in one canonical order, but the
+  player may play those halves in any order, so the builder treats a move's half-moves as a *bag*
+  (`remaining(of:)` is a pure multiset difference of `m.halfMoves` minus `built`; `nil` if `built`
+  isn't a sub-multiset). It decides which half-move may come next from the **live board**, not a
+  board-blind heuristic: a remaining half-move is playable-next iff its `from` currently holds a
+  movable checker (`movablePieces(for:) > 0`, or a checker just arrived there mid-chain) **and**
+  its `to` is open. This distinguishes a genuine single-checker chain (`8→6→4`, where 6 is empty
+  until the first hop fills it, so `6→4` waits) from two *independent* checkers whose ray
+  positions coincide (a checker at 8 and a separate one at 6 — both immediately playable, either
+  order). The old `to == from` test couldn't tell those apart and wrongly locked out the
+  independent checker (issue #44). No ordering re-check is needed in `remaining` because every
+  committed half-move was board-legal in real order at commit time.
+  **Multi-hop (Pasch).** On doubles the engine stores each equal-distance hop as a separate
+  half-move, so `validDestinations(for:)` returns the **full reachable ray** (`s±N, s±2N, …`) and
+  `path(from:to:)` gives the ordered single-die hops the session commits for a tap on a far
+  endpoint.
+  **Unmerged (non-Pasch single checker).** When one checker plays *both* distinct dice the engine
+  stores it *merged* as a single half-move of distance `d1+d2` (e.g. `1→9` for dice 3·5). Left
+  merged the player could only tap the far endpoint, never stop on or continue from the
+  intermediate. So at construction the builder **unmerges** every such move into its single-die hop
+  sequence(s) through whichever intermediate(s) are open at turn start — one expanded `Move` per
+  legal intermediate (`[1→4, 4→9]` and/or `[1→6, 6→9]`). Both the stops and the far endpoint then
+  highlight, and tapping a stop lets the same checker continue; the final board position is
+  identical to the merged half-move. With this, non-Pasch single-checker moves run through the same
+  bag/chaining machinery as Pasch.
+  `selectableSourcePoints` / `validDestinations(for:)` are the `from`/`to` of the board-aware
+  playable-next half-moves across surviving moves; `commit(halfMove:)` keeps the moves whose
+  remaining bag contains the half-move, appends it, and returns whether nothing remains (complete);
+  `canFinishNow` is true when some surviving move has no remaining halves (a shorter move that is a
+  prefix of a longer one is *finishable*, not *forced*); `undo()` (no `allLegal:` argument anymore)
+  rebuilds `activeMoves` from the stored **expanded** legal-move set; `completedMove` is a surviving
+  move with no remaining halves.
 
 - **`GameSession`** (`@MainActor`, `ObservableObject`) owns the `Game` and drives the turn state
   machine. Phases: `awaitingRoll / picking / moving / aiThinking / animating / gameOver(winner:)`

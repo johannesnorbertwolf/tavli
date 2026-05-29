@@ -129,6 +129,12 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
     non-selectable index clears the selection, since `selectPoint` ignores it).
   - No floating ghost checker — the ring + target marks are the feedback, per the
     Caramel design.
+- **Multi-hop targets need no view change.** On a Pasch (and when a single checker plays both
+  dice of a non-Pasch roll), `validTargets` may include endpoints several hops away: a tap on a
+  far endpoint commits multiple half-moves and a tap on an intermediate stop lets the same checker
+  continue. Both are resolved entirely in `GameSession.commitHalfMove(from:to:)` (via
+  `MoveBuilder.path`), so the view still just renders `validTargets` and routes one
+  `commitHalfMove` per tap.
 - **Test hook** — the ZStack carries `accessibilityIdentifier("board")` plus an
   `accessibilityValue` of comma-joined per-slot checker counts (`boardSignature`),
   so `TavliAppUITests` can locate the board's frame (to map `BoardGeometry`
