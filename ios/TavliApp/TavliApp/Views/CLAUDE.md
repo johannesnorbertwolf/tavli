@@ -177,7 +177,8 @@ this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the a
 screen is fully playable, and added the Back button + hosted debug toggle.)
 
 - **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
-  the mode picker; defaults to a no-op so `#Preview`s compile). A `GeometryReader`
+  the mode picker, and `onNewGame: () -> Void = {}` — replaces the finished session with
+  a fresh one; both default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
   - **Landscape:** `HStack` with `PlayableBoardView(session:)` centered between spacers,
     and a fixed 300pt `sidePanel` on the trailing edge (turn indicator + the two
@@ -211,7 +212,8 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   (T7) lets a human compose a partial move; until then they appear only in the scripted
   `#Preview`.
 - **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
-  New Game button calling `session.newGame()`.
+  "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
+  to replace the finished session with a fresh one — see `RootView.swift`).
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
@@ -251,11 +253,14 @@ top-trailing overlay on the game screen.
 
 The app's top-level view: switches between the caramel **mode picker** and a live game.
 
-- **`RootView`** — `@State private var session: GameSession?`. `nil` → show
-  `ModePickerView`; non-`nil` → show `GameView(session:onBack:)` with `onBack` resetting
-  `session = nil` (returns to the picker). Holding the session in `@State` keeps the
-  reference stable across re-renders (`GameView` observes it). `makeSession(humanColor:)`
-  builds `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
+- **`RootView`** — `@State private var session: GameSession?` plus `@State private var
+  humanColor: EngineColor`. `nil` session → show `ModePickerView`; non-`nil` → show
+  `GameView(session:onBack:onNewGame:)`. `onBack` resets `session = nil` (returns to the
+  picker). `onNewGame` replaces the finished session with `makeSession(humanColor:
+  humanColor)` — a fresh `GameSession` with the same human color, leaving the stale
+  session to be deallocated. Holding the session in `@State` keeps the reference stable
+  across re-renders (`GameView` observes it). `makeSession(humanColor:)` builds
+  `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
   humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
   chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
   one die, higher starts, with a manual override — is a separate, deferred ticket.)*

@@ -11,6 +11,7 @@ private typealias EngineColor = TavliEngine.Color
 /// human-vs-AI session; Back tears it down and returns to the picker.
 struct RootView: View {
     @State private var session: GameSession?
+    @State private var humanColor: EngineColor = .white
 
     init() {
         // UI-test hook: start directly in a deterministic human-vs-AI game so the
@@ -19,6 +20,7 @@ struct RootView: View {
             let s = RootView.makeSession(humanColor: .black)  // human (Black) opens
             s.setManualDice(3, 5)
             _session = State(initialValue: s)
+            _humanColor = State(initialValue: .black)
         } else {
             _session = State(initialValue: nil)
         }
@@ -26,9 +28,12 @@ struct RootView: View {
 
     var body: some View {
         if let session {
-            GameView(session: session) { self.session = nil }
+            GameView(session: session, onBack: { self.session = nil }) {
+                self.session = Self.makeSession(humanColor: self.humanColor)
+            }
         } else {
             ModePickerView { color in
+                humanColor = color
                 session = Self.makeSession(humanColor: color)
             }
         }

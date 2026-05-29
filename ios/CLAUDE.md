@@ -126,7 +126,9 @@ through its published read-state + intents — no game logic lives in views.
 - **`RootView.swift`** (T10) — app root: switches between the caramel mode picker
   (`ModePickerView`: "Tavli" wordmark + two "Play vs AI — You play White/Black" buttons) and a
   live `GameView`. Picking a color builds a human-vs-AI `GameSession(aiColor: humanColor.opponent)`
-  (Black opens for now); Back returns to the picker. See `Views/CLAUDE.md`.
+  (Black opens for now); Back returns to the picker. "Play Again" on the win overlay replaces
+  the finished session with a fresh `GameSession` (same human color) by storing `humanColor` in
+  `@State` and reassigning `session`. See `Views/CLAUDE.md`.
 
 `App.swift` is `@main` hosting `RootView()`. The app launches on the mode picker; choosing a side
 starts a fully playable human-vs-AI game. (The earlier T7 sign-off bootstrap that hosted a fixed
