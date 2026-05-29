@@ -64,9 +64,20 @@ public final class GameSession: ObservableObject {
 
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
     /// Returns `nil` when the model is absent so callers can fall back to random play.
+    ///
+    /// Prefers a pre-compiled `.mlmodelc`, but the model ships as a `.mlpackage`
+    /// under Copy Bundle Resources (xcodegen copies it verbatim rather than running
+    /// the Core ML compiler), so we compile it at launch — the same path the tests use.
     public static func makeAgent() -> Agent? {
-        guard let url = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc"),
-              let model = try? MLModel(contentsOf: url) else {
+        let compiledURL: URL?
+        if let c = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc") {
+            compiledURL = c
+        } else if let pkg = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlpackage") {
+            compiledURL = try? MLModel.compileModel(at: pkg)
+        } else {
+            compiledURL = nil
+        }
+        guard let compiledURL, let model = try? MLModel(contentsOf: compiledURL) else {
             return nil
         }
         return Agent(model: model, encoder: BoardEncoder(config: .standard))
@@ -195,6 +206,18 @@ public final class GameSession: ObservableObject {
     private func refreshSources() {
         selectableSources = moveBuilder.selectableSourcePoints
         phase = .picking
+        refreshEvaluation()
+    }
+
+    /// Re-score the live board from the current player's view and publish it as
+    /// WHITE's win probability, keeping the overlay live on the human's turn (after
+    /// a roll, a committed half-move, or an undo). No-op without a model, so the
+    /// random fallback leaves `winProbability` at its 0.5 default. The AI's turn is
+    /// covered separately by `applyAIMove`.
+    private func refreshEvaluation() {
+        guard let agent,
+              let v = try? agent.winProbability(game.board, color: currentPlayer) else { return }
+        winProbability = currentPlayer.isWhite ? Double(v) : 1 - Double(v)
     }
 
     private func clearSelection() {
@@ -248,17 +271,23 @@ public final class GameSession: ObservableObject {
         }
 
         phase = .aiThinking
-        let board = game.board
-        let color = game.currentPlayer
         let moves = legalMoves
-        Task.detached(priority: .userInitiated) {
-            // do/catch via try? — a Core ML failure yields nil and a random fallback.
-            let result = try? agent.getBestMove(board, moves, color: color)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                let chosen = result?.move ?? moves.randomElement()!
-                self.applyAIMove(chosen, score: result?.score)
-            }
+        let color = game.currentPlayer
+        // Scoring apply/undoes on the shared `game.board`, so it must stay on the
+        // board's own actor (main) — never a background task. The UI render and the
+        // debug overlay's own scoring also touch this board; a concurrent analysis
+        // pass would interleave the unbalanced pop/push and corrupt the checker
+        // counts (and crash on a torn `pieces` read). Each `evaluateMoves` has no
+        // internal `await`, so on the main actor it runs atomically and always
+        // restores the board. The unstructured Task + yield lets the human's move
+        // and the "AI thinking…" state paint before we block on inference.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            // try? — a Core ML failure yields nil and a random fallback.
+            let result = try? agent.getBestMove(self.game.board, moves, color: color)
+            let chosen = result?.move ?? moves.randomElement()!
+            self.applyAIMove(chosen, score: result?.score)
         }
     }
 

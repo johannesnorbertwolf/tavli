@@ -34,9 +34,21 @@ public final class Agent {
         return mv[0].floatValue
     }
 
+    /// Win probability for `color` in the given static board (no move applied).
+    public func winProbability(_ board: GameBoard, color: Color) throws -> Float {
+        try value(encoder.encode(board, isWhitesTurn: color.isWhite))
+    }
+
     /// 1-ply score per candidate move, aligned to `moves`.
+    ///
+    /// Scoring apply/undoes each candidate on the shared live board. The outer
+    /// `defer` restores the exact pre-scoring stacks no matter how the loop exits —
+    /// a thrown Core ML error, an early return, or a future change that forgets an
+    /// undo — so analysis can never leave the game position corrupted.
     public func evaluateMoves(_ board: GameBoard, _ moves: [Move], color: Color) throws -> [Float] {
         let opponentToMoveIsWhite = !color.isWhite
+        let saved = board.captureStacks()
+        defer { board.restoreStacks(saved) }
         var scores = [Float](repeating: 0, count: moves.count)
         for (idx, move) in moves.enumerated() {
             board.apply(move)
