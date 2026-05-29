@@ -14,6 +14,8 @@ struct GameView: View {
 
     /// Return to the mode picker. Defaults to a no-op so `#Preview`s compile.
     var onBack: () -> Void = {}
+    /// Replace the finished session with a fresh one (same settings). Defaults to a no-op so `#Preview`s compile.
+    var onNewGame: () -> Void = {}
 
     var body: some View {
         GeometryReader { proxy in
@@ -60,7 +62,7 @@ struct GameView: View {
                     .padding(.top, 12)
 
                 if case .gameOver(let winner) = session.phase {
-                    WinOverlayView(winner: winner) { session.newGame() }
+                    WinOverlayView(winner: winner, onNewGame: onNewGame)
                 }
             }
         }
@@ -227,7 +229,7 @@ private struct ControlButtonStyle: ButtonStyle {
     }
 }
 
-/// Dimmed scrim announcing the winner with a New Game button.
+/// Dimmed scrim announcing the winner with a Play Again button.
 private struct WinOverlayView: View {
     let winner: TavliEngine.Color
     let onNewGame: () -> Void
@@ -239,7 +241,7 @@ private struct WinOverlayView: View {
                 Text("\(ChromeTheme.displayName(winner)) wins!")
                     .font(.system(size: 48, weight: .bold, design: .serif))
                     .foregroundStyle(.white)
-                Button("New Game", action: onNewGame)
+                Button("Play Again", action: onNewGame)
                     .font(.title3.bold())
                     .padding(.horizontal, 32)
                     .padding(.vertical, 14)
