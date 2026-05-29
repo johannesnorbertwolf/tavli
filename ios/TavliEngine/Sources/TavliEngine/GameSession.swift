@@ -261,17 +261,23 @@ public final class GameSession: ObservableObject {
         }
 
         phase = .aiThinking
-        let board = game.board
-        let color = game.currentPlayer
         let moves = legalMoves
-        Task.detached(priority: .userInitiated) {
-            // do/catch via try? — a Core ML failure yields nil and a random fallback.
-            let result = try? agent.getBestMove(board, moves, color: color)
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                let chosen = result?.move ?? moves.randomElement()!
-                self.applyAIMove(chosen, score: result?.score)
-            }
+        let color = game.currentPlayer
+        // Scoring apply/undoes on the shared `game.board`, so it must stay on the
+        // board's own actor (main) — never a background task. The UI render and the
+        // debug overlay's own scoring also touch this board; a concurrent analysis
+        // pass would interleave the unbalanced pop/push and corrupt the checker
+        // counts (and crash on a torn `pieces` read). Each `evaluateMoves` has no
+        // internal `await`, so on the main actor it runs atomically and always
+        // restores the board. The unstructured Task + yield lets the human's move
+        // and the "AI thinking…" state paint before we block on inference.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            // try? — a Core ML failure yields nil and a random fallback.
+            let result = try? agent.getBestMove(self.game.board, moves, color: color)
+            let chosen = result?.move ?? moves.randomElement()!
+            self.applyAIMove(chosen, score: result?.score)
         }
     }
 

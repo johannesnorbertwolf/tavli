@@ -59,6 +59,11 @@ final class GameSessionAITests: XCTestCase {
             case .awaitingRoll:
                 turns += 1
                 XCTAssertLessThan(turns, 100_000, "game failed to terminate")
+                // Analysis (AI + overlay scoring) apply/undoes on the live board;
+                // a leaked move would change the total checker count. Guard it.
+                let total = s.game.board.points.reduce(0) { $0 + $1.count }
+                XCTAssertEqual(total, 2 * s.game.board.numberOfPieces,
+                               "checkers must be conserved across turns")
                 s.setManualDice(Int.random(in: 1...6), Int.random(in: 1...6))
             case .picking, .moving:
                 playHumanTurn(s)
