@@ -41,21 +41,24 @@ struct GameView: View {
                             .padding(.trailing, 12)
                     }
                 } else {
-                    // Board greedily fills the width; chrome sits in the top/bottom
-                    // bands. As in landscape the board owns the leftover height via
-                    // `frame(maxHeight:)` instead of being flanked by `Spacer`s
-                    // (which would shrink it to a third of the width).
-                    VStack(spacing: 0) {
+                    // Board fills the width — a square can't fill a tall screen, so
+                    // some vertical margin is unavoidable. The chrome HUGS the board
+                    // top and bottom and the whole group centers, so the leftover
+                    // pools into one clean band at the very top/bottom (behind the
+                    // floating Back/debug corners) instead of gapping the board away
+                    // from its chrome. Do NOT give the board `frame(maxHeight:)` here:
+                    // that inflates its container and centers the square inside it,
+                    // floating the board with dead space directly above and below.
+                    VStack(spacing: 12) {
                         topBar
                             .padding(.horizontal, 16)
-                            .padding(.top, 12)
                         PlayableBoardView(session: session)
                             .padding(.horizontal, 8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         ControlsView(session: session)
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 12)
                     }
+                    .frame(maxHeight: .infinity)
+                    .padding(.vertical, 12)
                 }
 
                 // Floating chrome: Back (top-leading) + debug toggle (top-trailing).

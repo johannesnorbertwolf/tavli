@@ -240,10 +240,18 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     spacers are gone. The only empty space is now the thin margin where a square board
     can't cover the wide axis. (The board *frame* art is unchanged; only the surrounding
     empty space shrank.)
-  - **Portrait (acceptable):** `VStack` — a `topBar` (counters + turn indicator as a
-    **centered** group, leaving the top corners free), the board greedily filling the
-    width (`.frame(maxWidth:.infinity, maxHeight:.infinity)`, `8pt` horizontal pad, same
-    no-`Spacer` reasoning, #46), then the controls row at the bottom.
+  - **Portrait:** `VStack(spacing: 12)` — a `topBar` (counters + turn indicator as a
+    **centered** group, leaving the top corners free), the board (`8pt` horizontal pad),
+    then the controls row, with the whole `VStack` centered via `.frame(maxHeight:.infinity)`
+    + `12pt` vertical pad. A square board can't fill a tall screen, so some vertical margin
+    is unavoidable; the point of #46 here is **how** that margin is distributed. The board
+    deliberately does **not** get `.frame(maxHeight:.infinity)` in portrait — that would
+    inflate the board's container and center the square inside it, floating the board with
+    dead gaps *between* it and the chrome ("a bunch of space top and bottom" of the board).
+    Instead the chrome **hugs** the board (`12pt` spacing) and the centered group pools the
+    leftover into one clean band at the very top/bottom (behind the floating Back/debug
+    corners). Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a
+    throwaway UI test and inspecting the screenshot attachment.
   - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`) and a
     top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
     via `.frame(maxWidth/Height: .infinity, alignment:)`.
