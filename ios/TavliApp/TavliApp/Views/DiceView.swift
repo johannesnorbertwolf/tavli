@@ -119,9 +119,10 @@ struct DiceView: View {
     @State private var spin: Double = 0
 
     /// A pasch shows four dice; otherwise the two rolled values.
+    /// Pre-roll (value == 0) always shows two dice regardless of isPasch.
     private var values: [Int] {
         let d = session.game.dice
-        if d.isPasch { return Array(repeating: d.die1.value, count: 4) }
+        if d.isPasch && d.die1.value != 0 { return Array(repeating: d.die1.value, count: 4) }
         return [d.die1.value, d.die2.value]
     }
 
@@ -166,9 +167,10 @@ struct BoardDiceView: View {
     @State private var spin: Double = 0
 
     /// A pasch shows four dice; otherwise the two rolled values.
+    /// Pre-roll (value == 0) always shows two dice regardless of isPasch.
     private var values: [Int] {
         let d = session.game.dice
-        if d.isPasch { return Array(repeating: d.die1.value, count: 4) }
+        if d.isPasch && d.die1.value != 0 { return Array(repeating: d.die1.value, count: 4) }
         return [d.die1.value, d.die2.value]
     }
 
