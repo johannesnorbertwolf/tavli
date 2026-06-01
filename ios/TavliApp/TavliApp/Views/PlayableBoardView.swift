@@ -28,6 +28,22 @@ enum HighlightStyle {
 /// fit, so they register exactly; the gesture geometry is computed from the same
 /// `GeometryReader` size. No game logic lives here — the view only reads
 /// `session`'s published state and calls its intents.
+
+/// State tracked by `@GestureState` during an active drag: which point the checker
+/// came from and the current finger position in board-local coordinates.
+private struct LiveDrag {
+    var sourcePoint: Int
+    var location: CGPoint
+}
+
+/// Snap-back animation state after a failed drop: the checker animates from its
+/// drop position back to its origin on the board.
+private struct SnapBack {
+    var position: CGPoint        // current (animated) position
+    let origin: CGPoint          // destination of the spring animation
+    let color: TavliEngine.Color
+}
+
 struct PlayableBoardView: View {
     @ObservedObject var session: GameSession
 
@@ -37,21 +53,64 @@ struct PlayableBoardView: View {
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
+    /// Live drag state — set by `.updating` during an active drag, auto-reset
+    /// to `nil` when the gesture ends. Never mutates session (safe in `onChanged`).
+    @GestureState private var liveDrag: LiveDrag? = nil
+
+    /// Snap-back checker shown after a failed drop while it animates to origin.
+    @State private var snapBack: SnapBack? = nil
+    /// Task that clears `snapBack` after the animation completes. Cancelled and
+    /// replaced on each new failed drop so overlapping drags don't clobber.
+    @State private var snapBackTask: Task<Void, Never>? = nil
+
     var body: some View {
         GeometryReader { proxy in
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size))
-            let stacks = session.game.board.points.map(\.pieces)
+
+            // During drag: show one fewer checker at the source (it's in the air).
+            let boardStacks = session.game.board.points.map(\.pieces)
+            let displayStacks: [[TavliEngine.Color]] = {
+                guard let drag = liveDrag, drag.sourcePoint >= 1, drag.sourcePoint <= 24,
+                      !boardStacks[drag.sourcePoint].isEmpty else { return boardStacks }
+                var s = boardStacks
+                s[drag.sourcePoint] = Array(s[drag.sourcePoint].dropLast())
+                return s
+            }()
+
+            // Highlight targets: drag targets (read-only, no session mutation) while
+            // dragging; fall back to the session's selection-driven targets otherwise.
+            let highlightTargets: Set<Int> = {
+                guard let drag = liveDrag,
+                      session.selectableSources.contains(drag.sourcePoint) else {
+                    return session.validTargets
+                }
+                return session.moveBuilder.validDestinations(for: drag.sourcePoint)
+            }()
+
+            // Source ring: drag source while dragging, session selection otherwise.
+            let ringPoint: Int? = liveDrag?.sourcePoint ?? session.selectedPoint
+
             ZStack {
                 ZStack {
                     BoardView()
-                    TargetHighlightView(targets: session.validTargets, style: highlightStyle)
-                    CheckersView(stacks: stacks)
-                    SourceRingView(selectedPoint: session.selectedPoint, stacks: stacks)
+                    TargetHighlightView(targets: highlightTargets, style: highlightStyle)
+                    CheckersView(stacks: displayStacks)
+                    SourceRingView(selectedPoint: ringPoint, stacks: displayStacks)
                 }
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))
 
                 BoardDiceView(session: session)
+
+                // Floating checker follows the finger above all board layers.
+                if let drag = liveDrag, let topColor = boardStacks[drag.sourcePoint].last {
+                    DraggedCheckerView(geo: geo, location: drag.location, color: topColor)
+                }
+
+                // Snap-back ghost animates to the checker's origin after a failed drop.
+                if let sb = snapBack {
+                    DraggedCheckerView(geo: geo, location: sb.position, color: sb.color)
+                }
             }
             .accessibilityElement()
             .accessibilityIdentifier("board")
@@ -68,16 +127,30 @@ struct PlayableBoardView: View {
 
     // ── Gesture ─────────────────────────────────────────────────────────────
 
-    /// One `DragGesture(minimumDistance: 0)` serves both interactions, resolved
-    /// entirely in `onEnded`. Mutating session state mid-gesture (in `onChanged`)
-    /// republishes and rebuilds this `GeometryReader`, which cancels the in-flight
-    /// gesture so the drop never fires — so all intent dispatch waits for release.
+    /// One `DragGesture(minimumDistance: 0)` serves both interactions.
     ///
-    /// A press that travels past `dragThreshold` from a selectable source is a
-    /// drag (lift → drop): select that source, then commit if released over a
-    /// legal target. Anything else is a tap and routes through `handleTap`.
+    /// **During drag** (`.updating`): the `@GestureState liveDrag` is updated with the
+    /// source point and current finger location. This only reads from session (no mutation,
+    /// no publish), so the gesture is never cancelled mid-flight. The floating checker and
+    /// target highlights update reactively from `liveDrag`.
+    ///
+    /// **On release** (`onEnded`): a drag that started on a selectable source selects it
+    /// and commits if the drop landed on a valid target. A failed drop shows a spring
+    /// snap-back animation. Everything else routes through `handleTap`.
+    ///
+    /// Mutating session state from `onChanged` republishes and rebuilds the enclosing
+    /// `GeometryReader`, cancelling the gesture on real devices — so all session intent
+    /// dispatch stays in `onEnded`.
     private func boardGesture(geo: BoardGeometry) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .updating($liveDrag) { value, state, _ in
+                let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
+                guard moved,
+                      let src = geo.hitTest(value.startLocation,
+                                            candidates: Array(session.selectableSources))
+                else { return }
+                state = LiveDrag(sourcePoint: src, location: value.location)
+            }
             .onEnded { value in
                 let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
                 if moved,
@@ -87,6 +160,26 @@ struct PlayableBoardView: View {
                     if let dest = geo.hitTest(value.location,
                                               candidates: Array(session.validTargets)) {
                         session.commitHalfMove(from: src, to: dest)
+                    } else {
+                        // Failed drop: spring the checker back to its stack position.
+                        let pieces = session.game.board.points[src].pieces
+                        let topSlot = max(0, min(pieces.count, 5) - 1)
+                        let origin = geo.checkerCenter(point: src, slot: topSlot)
+                        snapBack = SnapBack(position: value.location,
+                                           origin: origin,
+                                           color: pieces.last ?? .white)
+                        withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) {
+                            snapBack?.position = origin
+                        }
+                        snapBackTask?.cancel()
+                        snapBackTask = Task { @MainActor in
+                            do {
+                                try await Task.sleep(nanoseconds: 450_000_000)
+                                snapBack = nil
+                            } catch {}
+                        }
+                        // Clear the selection that selectPoint(src) just set.
+                        session.selectPoint(-1)
                     }
                 } else {
                     handleTap(value.location, geo: geo)
