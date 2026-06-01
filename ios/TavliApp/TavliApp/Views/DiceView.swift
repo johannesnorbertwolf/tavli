@@ -71,7 +71,7 @@ struct DieFace: View {
                         radius: size * 0.045, x: 0, y: size * 0.045)
                 .overlay(
                     RoundedRectangle(cornerRadius: size * 0.107, style: .continuous)
-                        .stroke(CaramelPalette.hl, lineWidth: size * 0.057)
+                        .stroke(CaramelPalette.hl, lineWidth: size * (5.0 / 56.0))
                         .opacity(isHighlighted ? 1.0 : 0)
                 )
 
