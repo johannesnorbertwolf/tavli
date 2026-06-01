@@ -46,10 +46,11 @@ private enum DiceStyle {
     }
 }
 
-/// A single ivory die face. Pure: driven only by `value` and `isUsed`.
+/// A single ivory die face. Pure: driven only by `value`, `isUsed`, and `isHighlighted`.
 struct DieFace: View {
     let value: Int
     var isUsed: Bool = false
+    var isHighlighted: Bool = false
     var size: CGFloat = 56
 
     var body: some View {
@@ -68,6 +69,13 @@ struct DieFace: View {
                 .frame(width: size, height: size)
                 .shadow(color: .black.opacity(0.45),
                         radius: size * 0.045, x: 0, y: size * 0.045)
+                .shadow(color: CaramelPalette.hl.opacity(isHighlighted ? 0.85 : 0),
+                        radius: size * 0.18, x: 0, y: 0)
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.107, style: .continuous)
+                        .stroke(CaramelPalette.hl, lineWidth: size * 0.075)
+                        .opacity(isHighlighted ? 1.0 : 0)
+                )
 
             ForEach(Array(DiceStyle.pips(value).enumerated()), id: \.offset) { _, p in
                 Circle()
@@ -81,6 +89,7 @@ struct DieFace: View {
         .opacity(isUsed ? 0.4 : 1.0)
         .saturation(isUsed ? 0.0 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isUsed)
+        .animation(.easeInOut(duration: 0.2), value: isHighlighted)
     }
 }
 
@@ -175,7 +184,8 @@ struct BoardDiceView: View {
             let centers = geo.diceCenters(count: values.count)
             ZStack {
                 ForEach(Array(values.enumerated()), id: \.offset) { idx, val in
-                    DieFace(value: val, isUsed: idx < used.count && used[idx], size: geo.diceSize)
+                    DieFace(value: val, isUsed: idx < used.count && used[idx],
+                            isHighlighted: canRoll, size: geo.diceSize)
                         .onTapGesture(perform: roll)
                         .position(centers[idx])
                 }
