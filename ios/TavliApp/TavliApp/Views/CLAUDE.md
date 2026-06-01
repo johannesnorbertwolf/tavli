@@ -314,21 +314,43 @@ top-trailing overlay on the game screen.
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
 
+## OpeningRollView.swift (#33 — opening roll ceremony)
+
+Pre-game screen that resolves the starting player before creating a `GameSession`. Shown
+between mode picker and game (and again after "Play Again"), so every game picks its own
+starter. Calls `onStart(EngineColor)` with the winner; `onBack` returns to the mode picker.
+
+- **`OpeningRollView`** — `humanColor`, `onStart`, `onBack` injected. State machine:
+  - `.idle` — empty dice, "Roll" button.
+  - `.rolling` — brief 0.42s tumble animation (same pattern as `BoardDiceView`); disabled button.
+  - `.tied(h, a)` — shows the tied values, "Tie (X vs Y) — rolling again…" status; auto
+    re-rolls after 1 second. The user may also tap "Roll Again" to re-roll immediately; the
+    `if case .tied = rollState` guard in the scheduled closure prevents a double fire if the
+    user taps before the timer.
+  - `.resolved(humanDie, aiDie, winner)` — shows final dice and "You / AI go first!"; "Start
+    Game" button calls `onStart(winner)`.
+  - Two manual-override buttons ("You start" / "AI starts") bypass the roll entirely.
+  - Two `dieColumn` sub-views each show a `DieFace(value:, size: 80)` (value 0 = empty face,
+    no pips — the "not rolled yet" indicator) + a numeric label below. The whole dice `HStack`
+    uses the same `rotationEffect`/`scaleEffect` tumble as `DiceView`.
+- **`ORButton` / `ORButtonStyle`** — local caramel pill matching `ModeButtonStyle`; reads
+  `@Environment(\.isEnabled)` to dim at 0.6 opacity when disabled.
+
 ## RootView.swift (T10 — root navigation + mode picker)
 
-The app's top-level view: switches between the caramel **mode picker** and a live game.
+The app's top-level view: switches between the caramel **mode picker**, the opening roll,
+and a live game.
 
-- **`RootView`** — `@State private var session: GameSession?` plus `@State private var
-  humanColor: EngineColor`. `nil` session → show `ModePickerView`; non-`nil` → show
-  `GameView(session:onBack:onNewGame:)`. `onBack` resets `session = nil` (returns to the
-  picker). `onNewGame` replaces the finished session with `makeSession(humanColor:
-  humanColor)` — a fresh `GameSession` with the same human color, leaving the stale
-  session to be deallocated. Holding the session in `@State` keeps the reference stable
-  across re-renders (`GameView` observes it). `makeSession(humanColor:)` builds
-  `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
-  humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
-  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
-  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
+- **`RootView`** — three `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,
+  `pendingHumanColor: EngineColor?`. Body is a three-way branch:
+  - `session != nil` → `GameView`. "Play Again" sets `session = nil` and `pendingHumanColor =
+    humanColor`, which transitions to the opening roll (every game goes through the roll).
+  - `pendingHumanColor != nil` → `OpeningRollView`. Resolving or choosing manually stores
+    `humanColor`, clears `pendingHumanColor`, and creates the session.
+  - else → `ModePickerView`. Tapping a color sets `pendingHumanColor`.
+  `makeSession(humanColor:startingPlayer:)` builds `GameSession(startingPlayer:, aiColor:
+  humanColor.opponent)` and calls `start()`. The UI-test hook bypasses the opening roll and
+  passes `startingPlayer: .black` explicitly.
 - **`ModePickerView(onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
   "Tavli" wordmark in `CaramelPalette.frameText`, and two caramel `ModeButton`s: "Play vs
   AI / You play White" → `.white`, "Play vs AI / You play Black" → `.black`. The design

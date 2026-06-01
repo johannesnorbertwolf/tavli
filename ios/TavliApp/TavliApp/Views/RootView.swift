@@ -12,12 +12,13 @@ private typealias EngineColor = TavliEngine.Color
 struct RootView: View {
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
+    @State private var pendingHumanColor: EngineColor?
 
     init() {
         // UI-test hook: start directly in a deterministic human-vs-AI game so the
         // board interaction can be driven without the picker or random dice.
         if ProcessInfo.processInfo.arguments.contains("-uiTestGame") {
-            let s = RootView.makeSession(humanColor: .black)  // human (Black) opens
+            let s = RootView.makeSession(humanColor: .black, startingPlayer: .black)
             s.setManualDice(3, 5)
             _session = State(initialValue: s)
             _humanColor = State(initialValue: .black)
@@ -29,23 +30,29 @@ struct RootView: View {
     var body: some View {
         if let session {
             GameView(session: session, onBack: { self.session = nil }) {
-                self.session = Self.makeSession(humanColor: self.humanColor)
+                // "Play Again" returns to the opening roll so every game picks a starter.
+                self.session = nil
+                self.pendingHumanColor = self.humanColor
+            }
+        } else if let pending = pendingHumanColor {
+            OpeningRollView(humanColor: pending) { startingPlayer in
+                humanColor = pending
+                pendingHumanColor = nil
+                session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer)
+            } onBack: {
+                pendingHumanColor = nil
             }
         } else {
             ModePickerView { color in
-                humanColor = color
-                session = Self.makeSession(humanColor: color)
+                pendingHumanColor = color
             }
         }
     }
 
-    /// Build a human-vs-AI session. Black always opens for now (the proper
-    /// opening-roll rule is a separate ticket); `start()` lets the AI move first
-    /// when it owns Black (i.e. the human chose White).
     @MainActor
-    private static func makeSession(humanColor: EngineColor) -> GameSession {
+    private static func makeSession(humanColor: EngineColor, startingPlayer: EngineColor) -> GameSession {
         let session = GameSession(
-            startingPlayer: .black,
+            startingPlayer: startingPlayer,
             agent: GameSession.makeAgent(),
             aiColor: humanColor.opponent
         )
