@@ -116,6 +116,30 @@ final class BoardGeometryTests: XCTestCase {
         }
     }
 
+    // 5c ── Dice layout (center bar) ───────────────────────────────────────
+    func testDiceLayout() {
+        // Board center coincides with the bar center; die size is the design 56.
+        XCTAssertEqual(geom.boardCenter.x, 450, accuracy: eps)
+        XCTAssertEqual(geom.boardCenter.y, 450, accuracy: eps)
+        XCTAssertEqual(geom.diceSize, 56, accuracy: eps)
+        // Two dice sit horizontally next to each other, centered on the bar,
+        // one die + gap (56+12=68) apart → design (416,450)/(484,450).
+        let two = geom.diceCenters(count: 2)
+        XCTAssertEqual(two.count, 2)
+        XCTAssertEqual(two[0], CGPoint(x: 416, y: 450))
+        XCTAssertEqual(two[1], CGPoint(x: 484, y: 450))
+        // A pasch is all four dice in a single horizontal row (same y, left→right).
+        let four = geom.diceCenters(count: 4)
+        XCTAssertEqual(four, [
+            CGPoint(x: 348, y: 450), CGPoint(x: 416, y: 450),
+            CGPoint(x: 484, y: 450), CGPoint(x: 552, y: 450),
+        ])
+        // Layout scales with the board.
+        let half = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 450, height: 450))
+        XCTAssertEqual(half.diceSize, 28, accuracy: eps)
+        XCTAssertEqual(half.diceCenters(count: 2)[0], CGPoint(x: 208, y: 225))
+    }
+
     // 6 ── Scaling / fit ───────────────────────────────────────────────────
     func testHalfScale() {
         let half = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 450, height: 450))

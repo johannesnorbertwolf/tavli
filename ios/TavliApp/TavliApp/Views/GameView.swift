@@ -24,28 +24,37 @@ struct GameView: View {
                 SColor(hex: 0xece6dc).ignoresSafeArea()
 
                 if landscape {
+                    // Board greedily fills the height; the chrome column takes a
+                    // fixed strip on the trailing edge, so the only empty space is
+                    // a thin margin where a square board can't cover the wide axis.
+                    // The board MUST own the leftover width via `frame(maxWidth:)` —
+                    // flanking it with `Spacer`s makes the two spacers and the
+                    // equally-flexible aspect-fit board split the width three ways,
+                    // shrinking the board to a third of the height.
                     HStack(spacing: 0) {
-                        Spacer(minLength: 0)
                         PlayableBoardView(session: session)
-                            .padding(24)
-                        Spacer(minLength: 0)
+                            .padding(8)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         sidePanel
-                            .frame(width: 300)
-                            .padding(.vertical, 24)
-                            .padding(.trailing, 24)
+                            .frame(width: 260)
+                            .padding(.vertical, 12)
+                            .padding(.trailing, 12)
                     }
                 } else {
+                    // Board greedily fills the width; chrome sits in the top/bottom
+                    // bands. As in landscape the board owns the leftover height via
+                    // `frame(maxHeight:)` instead of being flanked by `Spacer`s
+                    // (which would shrink it to a third of the width).
                     VStack(spacing: 0) {
                         topBar
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 16)
                             .padding(.top, 12)
-                        Spacer(minLength: 0)
                         PlayableBoardView(session: session)
-                            .padding(.horizontal, 24)
-                        Spacer(minLength: 0)
+                            .padding(.horizontal, 8)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         ControlsView(session: session)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 16)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
                     }
                 }
 
@@ -182,8 +191,9 @@ private struct BorneOffView: View {
     }
 }
 
-/// Dice (tap-to-roll, existing `DiceView`) plus contextual Undo/Done buttons
-/// that appear only when the move builder makes them valid.
+/// Contextual Undo/Done buttons that appear only when the move builder makes
+/// them valid. The dice no longer live here — they sit on the board's center bar
+/// (`BoardDiceView`, #46), which frees the side rails.
 private struct ControlsView: View {
     @ObservedObject var session: GameSession
 
@@ -198,9 +208,7 @@ private struct ControlsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 20) {
-            DiceView(session: session)
-            Spacer(minLength: 0)
+        HStack(spacing: 16) {
             if canUndo {
                 Button("Undo") { session.undo() }
                     .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
@@ -210,6 +218,7 @@ private struct ControlsView: View {
                     .buttonStyle(ControlButtonStyle(tint: ChromeTheme.doneTint))
             }
         }
+        .frame(maxWidth: .infinity)
     }
 }
 

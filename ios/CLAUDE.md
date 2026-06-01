@@ -98,15 +98,21 @@ through its published read-state + intents — no game logic lives in views.
   `ZStack`. Radial-gradient ivory/red discs, detail rings, specular arc, drop shadow; ≤5
   visible per point with a base-checker count label when >5; pinned checker = its opponent
   color at the base. See `Views/CLAUDE.md`.
-- **`DiceView.swift`** (T8) — the dice. Layered as three views:
+- **`DiceView.swift`** (T8; dice relocated to the board center bar in #46) — the dice:
   - `DieFace` — one ivory die (`#f5ead0` fill, `#2a1408` edge + pips, faint white inner
     highlight, soft drop shadow); pip positions are the design's normalized `PIP_LAYOUTS`.
     All metrics scale off `size` (default 56). `isUsed` greys it (opacity + desaturation).
-  - `DiceRow` — pure row of `DieFace`s, driven by explicit `values` + `usedCount`; renders any
-    state for previews (normal, pasch=4, partially/fully consumed).
-  - `DiceView` — binds `DiceRow` to a `GameSession`: a pasch shows four dice; `usedCount` =
-    `moveBuilder.built.count` (one die greyed per committed half-move, left→right); tap runs a
-    brief tumble animation then `session.roll()`, gated on `phase == .awaitingRoll`.
+  - `DiceRow` — pure row of `DieFace`s, driven by explicit `values` + a parallel
+    `used: [Bool]`; renders any state for previews (normal, pasch=4, partially/fully
+    consumed).
+  - `usedDiceFlags(values:built:)` — greys the die **actually played**, not the leftmost
+    (#46 fix): a half-move's die value is its signed point delta (no bear-off overshoot),
+    matched to the first free slot of that value.
+  - `BoardDiceView` — the live dice on the board's **center bar** (#46): lays each `DieFace`
+    at `BoardGeometry.diceCenters(count:)`, a sibling overlay above the board's gesture
+    stack with `.allowsHitTesting(canRoll)`. A pasch shows four; tap runs a brief tumble then
+    `session.roll()`, gated on `phase == .awaitingRoll`. (`DiceView` is the equivalent chrome
+    host, retained for previews.)
   - `ManualDiceControl` — two 1…6 steppers + "Set dice" → `session.setManualDice(d1,d2)`; only
     active while awaiting a roll. Same legal-move computation as a roll.
 - **`PlayableBoardView.swift`** (T7) — the interactive board: `ZStack`s `BoardView`, a
@@ -116,9 +122,11 @@ through its published read-state + intents — no game logic lives in views.
   is the design's two-readings constant. Binds via `@ObservedObject`; no game logic in the view.
   See `Views/CLAUDE.md`.
 - **`GameView.swift`** (T9 chrome + T10 assembly) — the assembled game screen: the interactive
-  `PlayableBoardView` plus turn indicator, borne-off counters, contextual Undo/Done + dice, a
-  top-leading Back button (`onBack`), a top-trailing hosted `DebugOverlayToggle`, and the win
-  overlay. Responsive landscape/portrait layout bound to a `GameSession`. See `Views/CLAUDE.md`.
+  `PlayableBoardView` (which now hosts the center-bar dice) plus turn indicator, borne-off
+  counters, contextual Undo/Done (dice no longer in the chrome, #46), a top-leading Back button
+  (`onBack`), a top-trailing hosted `DebugOverlayToggle`, and the win overlay. Responsive
+  landscape/portrait layout, padded tight so the board fills the display (#46), bound to a
+  `GameSession`. See `Views/CLAUDE.md`.
 - **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
   plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
   meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. Hosted by

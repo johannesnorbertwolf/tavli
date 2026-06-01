@@ -40,11 +40,15 @@ barCenterX = 450            // frame + halfW + bar/2
 leftDiamondCX  = 222.5      // frame + halfW/2
 rightDiamondCX = 677.5      // frame + halfW + bar + halfW/2
 diamond size   = 78 × 138, centered at y = 450
+diceFace       = 56         // die edge length (design)
+diceGap        = 12         // gap between adjacent dice in the row
 ```
 
 Exposed (scaled) on the struct: `boardRect`, `scale`, `frameInset`,
 `pointWidth`, `pointHeight`, `checkerRadius`, `barTop`/`barBottom` (bar line
-endpoints), `leftDiamondCenter`/`rightDiamondCenter`, `diamondSize`.
+endpoints), `leftDiamondCenter`/`rightDiamondCenter`, `diamondSize`,
+`boardCenter` (the bar/board midpoint, `(450, 450)` in design space), and
+`diceSize` (the scaled die edge).
 
 ## Point layout — `point(_ index: Int) -> PointGeometry`
 
@@ -104,6 +108,23 @@ the board square: `stripX = min(880, designSide - r - 1)` (≈ 873.5). The check
 floats over the strip and the play-surface edge rather than being clipped at the
 board edge.
 
+## Dice layout — `diceCenters(count:)`
+
+The dice live on the **center bar** (#46 — the traditional placement, freeing
+the side rails), laid out **horizontally in a single row centered on
+`boardCenter`**, adjacent centers `step = (diceFace + diceGap)·scale` apart:
+
+- **2 dice** (a normal roll): two side-by-side, `±0.5·step` about center →
+  design `(416, 450)` / `(484, 450)`.
+- **4 dice** (a Pasch): all four in one row, `±0.5·step` and `±1.5·step` about
+  center → design `(348, 450)` / `(416, 450)` / `(484, 450)` / `(552, 450)`.
+
+Offsets are symmetric about center (`(i − (n−1)/2)·step` for `n` dice), so the
+row stays centered. Same `y` for every die (the dice sit in the clear vertical
+band between the top and bottom triangle tips, so they never overlap checkers).
+Callers pass `count` (2 normal, 4 pasch) and lay a `diceSize`-wide die at each
+returned center; the math is pure geometry, the engine decides the count.
+
 ## Hit-testing — `hitTest(_ location:candidates:)`
 
 Iterates `candidates` (slot indices the caller deems selectable) and returns the
@@ -116,5 +137,7 @@ respected, so callers control precedence when regions could overlap.
 `Tests/BoardGeometryTests/BoardGeometryTests.swift` (run via `swift test`,
 headless on macOS — no simulator). Covers quadrant mapping, row mapping, exact
 baseline centers + within-row ordering, tip direction & baseline width, bear-off
-slot placement, scaling/centered-square fit, and hit-testing (playable point,
-bar-gap miss, bear-off).
+slot placement, bear-off checker stacking, dice layout (`boardCenter`,
+`diceSize`, the horizontal two-dice row + the four-in-a-row pasch, and that both
+scale with the board), scaling/centered-square fit, and hit-testing (playable
+point, bar-gap miss, bear-off).

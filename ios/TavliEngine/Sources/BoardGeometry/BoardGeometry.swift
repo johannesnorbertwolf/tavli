@@ -47,6 +47,8 @@ public struct BoardGeometry {
     private static let pointW: CGFloat = halfW / 6               // 60.833…
     private static let pointH: CGFloat = inner * 0.40            // 328
     private static let checkerR: CGFloat = pointW * 0.42
+    private static let diceFace: CGFloat = 56                    // design die size
+    private static let diceGap: CGFloat = 12                     // gap between adjacent dice
 
     // ── Derived screen geometry ────────────────────────────────────────────
     /// The fitted, centered square actually used inside the input rect.
@@ -61,6 +63,10 @@ public struct BoardGeometry {
     public let leftDiamondCenter: CGPoint
     public let rightDiamondCenter: CGPoint
     public let diamondSize: CGSize
+    /// Center of the board square (and of the center bar), where the dice sit.
+    public let boardCenter: CGPoint
+    /// Side length of one die face, scaled from the design reference.
+    public let diceSize: CGFloat
 
     public init(rect: CGRect) {
         let side = min(rect.width, rect.height)
@@ -85,6 +91,8 @@ public struct BoardGeometry {
         rightDiamondCenter = screen(Self.frame + Self.halfW + Self.bar + Self.halfW / 2,
                                     Self.designSide / 2)
         diamondSize = CGSize(width: 78 * s, height: 138 * s)
+        boardCenter = screen(barCenterX, Self.designSide / 2)
+        diceSize = Self.diceFace * s
     }
 
     // ── Public API ─────────────────────────────────────────────────────────
@@ -144,6 +152,20 @@ public struct BoardGeometry {
             ? raw.baseY + r + 1 + CGFloat(slot) * step
             : raw.baseY - r - 1 - CGFloat(slot) * step
         return toScreen(raw.cx, cy)
+    }
+
+    /// Centers for the dice rendered on the center bar, laid out **horizontally**
+    /// in a single row centered on `boardCenter` (`diceFace + diceGap` apart): two
+    /// dice for a normal roll, four side-by-side for a pasch. Returned in render
+    /// order, so `diceCenters(count:)[i]` pairs with the i-th displayed die.
+    public func diceCenters(count: Int) -> [CGPoint] {
+        let step = (Self.diceFace + Self.diceGap) * scale
+        let c = boardCenter
+        let n = count >= 4 ? 4 : 2
+        // Center the row: offsets are symmetric about 0 (e.g. ±0.5·step for two,
+        // ±0.5·step and ±1.5·step for four).
+        let mid = CGFloat(n - 1) / 2
+        return (0..<n).map { CGPoint(x: c.x + (CGFloat($0) - mid) * step, y: c.y) }
     }
 
     /// Returns the first candidate slot whose `hitRect` contains `location`, or
