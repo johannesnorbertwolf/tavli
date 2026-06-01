@@ -20,6 +20,10 @@ enum HighlightStyle {
 ///   3. `CheckersView`        — the checker stacks
 ///   4. `SourceRingView`      — gold ring on every checker of the selected source
 ///
+/// `BoardDiceView` is layered above as a *sibling* of the gesture-bearing stack
+/// (not inside it), so its tap-to-roll and the board's tap/drag never contend:
+/// the dice claim taps only while awaiting a roll, and pass through otherwise.
+///
 /// All layers build an identical `BoardGeometry` from the same square, centered
 /// fit, so they register exactly; the gesture geometry is computed from the same
 /// `GeometryReader` size. No game logic lives here — the view only reads
@@ -38,13 +42,17 @@ struct PlayableBoardView: View {
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size))
             let stacks = session.game.board.points.map(\.pieces)
             ZStack {
-                BoardView()
-                TargetHighlightView(targets: session.validTargets, style: highlightStyle)
-                CheckersView(stacks: stacks)
-                SourceRingView(selectedPoint: session.selectedPoint, stacks: stacks)
+                ZStack {
+                    BoardView()
+                    TargetHighlightView(targets: session.validTargets, style: highlightStyle)
+                    CheckersView(stacks: stacks)
+                    SourceRingView(selectedPoint: session.selectedPoint, stacks: stacks)
+                }
+                .contentShape(Rectangle())
+                .gesture(boardGesture(geo: geo))
+
+                BoardDiceView(session: session)
             }
-            .contentShape(Rectangle())
-            .gesture(boardGesture(geo: geo))
             .accessibilityElement()
             .accessibilityIdentifier("board")
             .accessibilityValue(boardSignature)

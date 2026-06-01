@@ -1,7 +1,25 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
+
+/// Which displayed dice have been consumed, matched by the die actually used
+/// (not by left-to-right position). The engine has no bear-off overshoot, so a
+/// built half-move's die value is exactly its signed point delta. Returns flags
+/// parallel to `values`; duplicate values (a pasch) consume the first free slot.
+private func usedDiceFlags(values: [Int], built: [HalfMove]) -> [Bool] {
+    var flags = [Bool](repeating: false, count: values.count)
+    for hm in built {
+        let used = hm.color.isWhite
+            ? hm.to.position - hm.from.position
+            : hm.from.position - hm.to.position
+        if let idx = values.indices.first(where: { !flags[$0] && values[$0] == used }) {
+            flags[idx] = true
+        }
+    }
+    return flags
+}
 
 /// Design palette for the dice (from docs/design — the Caramel board).
 private enum DiceStyle {
@@ -66,18 +84,19 @@ struct DieFace: View {
     }
 }
 
-/// A row of dice (2, or 4 for a pasch), with used dice greyed left-to-right.
-/// Pure: takes explicit values + used count, so it renders any state in previews.
+/// A row of dice (2, or 4 for a pasch). Pure: takes explicit values + a parallel
+/// per-die `used` flag array, so it renders any state in previews and greys the
+/// die actually consumed (not merely the leftmost).
 struct DiceRow: View {
     let values: [Int]
-    let usedCount: Int
+    let used: [Bool]
     var size: CGFloat = 56
     var spacing: CGFloat = 12
 
     var body: some View {
         HStack(spacing: spacing) {
             ForEach(Array(values.enumerated()), id: \.offset) { idx, val in
-                DieFace(value: val, isUsed: idx < usedCount, size: size)
+                DieFace(value: val, isUsed: idx < used.count && used[idx], size: size)
             }
         }
     }
@@ -99,18 +118,73 @@ struct DiceView: View {
         return [d.die1.value, d.die2.value]
     }
 
-    /// Each committed half-move consumes one die slot, left to right.
-    private var usedCount: Int { session.moveBuilder.built.count }
+    /// Per-die consumed flags, matched to the die actually played.
+    private var used: [Bool] { usedDiceFlags(values: values, built: session.moveBuilder.built) }
 
     private var canRoll: Bool { session.phase == .awaitingRoll }
 
     var body: some View {
-        DiceRow(values: values, usedCount: usedCount, size: size)
+        DiceRow(values: values, used: used, size: size)
             .rotationEffect(.degrees(tumbling ? spin : 0))
             .scaleEffect(tumbling ? 0.9 : 1.0)
             .contentShape(Rectangle())
             .onTapGesture(perform: roll)
             .opacity(canRoll ? 1.0 : 0.95)
+    }
+
+    private func roll() {
+        guard canRoll, !tumbling else { return }
+        withAnimation(.easeInOut(duration: 0.09).repeatCount(4, autoreverses: false)) {
+            spin += 360
+            tumbling = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+            tumbling = false
+            session.roll()
+        }
+    }
+}
+
+/// The dice rendered on the board's center bar (#46 — the traditional placement,
+/// freeing the side rails). Two dice straddle the center diagonally; a pasch
+/// shows four in a 2×2 cluster. Positioned via `BoardGeometry`, so it registers
+/// with the board when overlaid in `PlayableBoardView`. Tap to roll — only while
+/// the human is awaiting a roll (`allowsHitTesting`); otherwise the dice display
+/// and the board beneath stays interactive. Each committed half-move greys the
+/// die actually used. (Roll-feel polish is tracked separately in #24.)
+struct BoardDiceView: View {
+    @ObservedObject var session: GameSession
+
+    @State private var tumbling = false
+    @State private var spin: Double = 0
+
+    /// A pasch shows four dice; otherwise the two rolled values.
+    private var values: [Int] {
+        let d = session.game.dice
+        if d.isPasch { return Array(repeating: d.die1.value, count: 4) }
+        return [d.die1.value, d.die2.value]
+    }
+
+    private var used: [Bool] { usedDiceFlags(values: values, built: session.moveBuilder.built) }
+
+    private var canRoll: Bool { session.phase == .awaitingRoll }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size))
+            let centers = geo.diceCenters(count: values.count)
+            ZStack {
+                ForEach(Array(values.enumerated()), id: \.offset) { idx, val in
+                    DieFace(value: val, isUsed: idx < used.count && used[idx], size: geo.diceSize)
+                        .onTapGesture(perform: roll)
+                        .position(centers[idx])
+                }
+            }
+            .rotationEffect(.degrees(tumbling ? spin : 0))
+            .scaleEffect(tumbling ? 0.92 : 1.0)
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .allowsHitTesting(canRoll)
     }
 
     private func roll() {
@@ -167,11 +241,12 @@ struct ManualDiceControl: View {
 
 #Preview("Dice — states") {
     VStack(spacing: 28) {
-        DiceRow(values: [3, 5], usedCount: 0)
-        DiceRow(values: [3, 5], usedCount: 1)          // first die consumed
-        DiceRow(values: [6, 6, 6, 6], usedCount: 0)    // pasch → four dice
-        DiceRow(values: [6, 6, 6, 6], usedCount: 2)    // pasch, two consumed
-        DiceRow(values: [1, 2], usedCount: 2)          // all consumed
+        DiceRow(values: [3, 5], used: [false, false])
+        DiceRow(values: [3, 5], used: [true, false])   // left die (3) consumed
+        DiceRow(values: [3, 5], used: [false, true])   // right die (5) consumed
+        DiceRow(values: [6, 6, 6, 6], used: [false, false, false, false]) // pasch
+        DiceRow(values: [6, 6, 6, 6], used: [true, true, false, false])   // two consumed
+        DiceRow(values: [1, 2], used: [true, true])    // all consumed
     }
     .padding(40)
     .background(SColor(red: 138 / 255, green: 74 / 255, blue: 34 / 255))

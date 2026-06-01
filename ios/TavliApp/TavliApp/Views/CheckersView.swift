@@ -43,7 +43,10 @@ struct CheckersView: View {
     }
 
     /// One point's stack: ≤5 visible checkers growing away from the baseline; a
-    /// count label on the base checker (slot 0) when the stack exceeds 5.
+    /// count label when the stack exceeds 5. The label sits on the *owning team's*
+    /// checker, centered and bold — not on a pinned opponent checker parked at the
+    /// base (slot 0). A pinned point has `pieces[0] != pieces[1]`, so the owner's
+    /// first checker is slot 1; otherwise it's slot 0.
     private func drawStack(
         in context: inout GraphicsContext,
         geo: BoardGeometry,
@@ -59,13 +62,14 @@ struct CheckersView: View {
             drawChecker(in: &context, center: center, r: r, s: s, color: pieces[slot])
         }
         if count > 5 {
-            let base = geo.checkerCenter(point: n, slot: 0)
-            let style = CheckerStyle.of(pieces[0])
+            let labelSlot = (pieces[0] != pieces[1]) ? 1 : 0
+            let center = geo.checkerCenter(point: n, slot: labelSlot)
+            let style = CheckerStyle.of(pieces[labelSlot])
             let label = Text(String(count))
-                .font(.custom("Cormorant Garamond", size: r * 0.95))
-                .fontWeight(.semibold)
+                .font(.custom("Cormorant Garamond", size: r * 1.2))
+                .fontWeight(.bold)
                 .foregroundStyle(style.text)
-            context.draw(label, at: CGPoint(x: base.x, y: base.y + r * 0.30), anchor: .center)
+            context.draw(label, at: center, anchor: .center)
         }
     }
 
@@ -148,8 +152,9 @@ private struct CheckerStyle {
 
 #Preview("Pinned + tall stacks") {
     let board = GameBoard()
-    // Point 13: black checker pinned at the base under two white (owner) checkers.
-    board.setPoint(13, pieces: [.black, .white, .white])
+    // Point 13: a black checker pinned at the base under a tall white (owner)
+    // stack — the count label must land on the white checker, not the black one.
+    board.setPoint(13, pieces: [.black] + Array(repeating: .white, count: 6))
     // A tall white stack (>5) to exercise the count label.
     board.setPoint(1, pieces: Array(repeating: .white, count: 8))
     // A tall red stack on the opposite row.
