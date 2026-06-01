@@ -12,6 +12,17 @@ targets:
     type: application
     platform: iOS
     deploymentTarget: "17.0"
+    preBuildScripts:
+      - name: Require Core ML model
+        basedOnDependencyAnalysis: false
+        script: |
+          MODEL="$SRCROOT/TavliApp/Resources/PlakotoValue.mlpackage"
+          if [ ! -f "$MODEL/Manifest.json" ]; then
+            echo "error: PlakotoValue.mlpackage is missing — the app would silently fall back to random AI moves."
+            echo "error: Generate it, then regenerate the project:"
+            echo "error:   PYTHONPATH=. .venv/bin/python ios/scripts/convert_to_coreml.py && bash ios/TavliApp/setup.sh"
+            exit 1
+          fi
     sources:
       - path: TavliApp
         excludes:
