@@ -230,28 +230,32 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   the mode picker, and `onNewGame: () -> Void = {}` — replaces the finished session with
   a fresh one; both default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
-  - **Landscape:** `HStack` with `PlayableBoardView(session:)` greedily filling the
-    height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`, `8pt` pad) and a fixed
-    260pt `sidePanel` on the trailing edge (turn indicator + the two borne-off counters
-    on top, controls anchored at the bottom; top-padded `44` so the indicator clears the
-    corner Back/debug overlays). **The board owns the leftover width via that frame, not
-    `Spacer`s** (#46): two flanking spacers and the equally-flexible aspect-fit board
-    split the width three ways, shrinking the board to a third of the height — the
-    spacers are gone. The only empty space is now the thin margin where a square board
-    can't cover the wide axis. (The board *frame* art is unchanged; only the surrounding
-    empty space shrank.)
-  - **Portrait:** `VStack(spacing: 12)` — a `topBar` (counters + turn indicator as a
-    **centered** group, leaving the top corners free), the board (`8pt` horizontal pad),
-    then the controls row, with the whole `VStack` centered via `.frame(maxHeight:.infinity)`
-    + `12pt` vertical pad. A square board can't fill a tall screen, so some vertical margin
-    is unavoidable; the point of #46 here is **how** that margin is distributed. The board
-    deliberately does **not** get `.frame(maxHeight:.infinity)` in portrait — that would
-    inflate the board's container and center the square inside it, floating the board with
-    dead gaps *between* it and the chrome ("a bunch of space top and bottom" of the board).
-    Instead the chrome **hugs** the board (`12pt` spacing) and the centered group pools the
-    leftover into one clean band at the very top/bottom (behind the floating Back/debug
-    corners). Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a
-    throwaway UI test and inspecting the screenshot attachment.
+  - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
+    **bound to the leading edge** (`.frame(maxWidth:.infinity, maxHeight:.infinity,
+    alignment: .leading)`, `8pt` pad) and a fixed 260pt `sidePanel` on the trailing edge
+    (turn indicator + the two borne-off counters on top, controls anchored at the bottom;
+    top-padded `44` so the indicator clears the corner Back/debug overlays). **The board
+    owns the leftover width via that frame, not `Spacer`s** (#46): two flanking spacers and
+    the equally-flexible aspect-fit board split the width three ways, shrinking the board to
+    a third of the height — the spacers are gone. `.leading` pins the square to the left so
+    the slack between board and panel sits on the right and the board never shifts as the
+    panel chrome changes. (The board *frame* art is unchanged; only the surrounding empty
+    space shrank.)
+  - **Portrait:** `VStack(spacing: 12)` — the `topBar` (counters + turn indicator as a
+    **centered** group, leaving the top corners free) pinned to the top, a flexible
+    `Spacer(minLength: 0)`, then the controls row and the board (`8pt` horizontal pad),
+    with the `VStack` filling the height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`
+    + `12pt` vertical pad). A square board can't fill a tall screen, so some vertical margin
+    is unavoidable; #46 controls **where** it goes. The board is **bound to the bottom edge**:
+    the chrome pins to the top, the `Spacer` pools the slack into the middle, and the board
+    sits at the bottom with the contextual controls hugging just above it. Anchoring the
+    board this way stops it from jumping — the earlier *centered* group re-centred on every
+    turn/phase change (the "Tap dice to roll" caption, the Undo/Done row), visibly shifting
+    the board. `.layoutPriority(1)` on the board lets it claim its full-width square first so
+    the `Spacer` (not the board) absorbs the slack; without it two equally-flexible children
+    (Spacer + aspect-fit board) split the height and the board shrinks below full width.
+    Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
+    test and inspecting the screenshot attachment.
   - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`) and a
     top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
     via `.frame(maxWidth/Height: .infinity, alignment:)`.
