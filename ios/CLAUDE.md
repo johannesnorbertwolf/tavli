@@ -208,7 +208,7 @@ ios/
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
-│   ├── setup.sh                 ensure xcodegen → generate → resolve packages
+│   ├── setup.sh                 generate model (if missing) → ensure xcodegen → generate project → resolve packages
 │   ├── TavliAppUITests/         XCUITest target — drives the real gesture stack:
 │   │                            BoardInteractionUITests (tap/drag move, visual
 │   │                            repaint, full-turn → AI response). Launched with
@@ -234,10 +234,15 @@ ios/
 ### Build the app
 
 ```bash
-PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/convert_to_coreml.py  # model into Resources/
-bash ios/TavliApp/setup.sh            # generate TavliApp.xcodeproj
+bash ios/TavliApp/setup.sh            # generates the Core ML model (if missing) + TavliApp.xcodeproj
 open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
 ```
+
+`setup.sh` generates `PlakotoValue.mlpackage` only when it is absent (it shells out to
+`convert_to_coreml.py` via the repo `.venv`); pass `--force-model` to regenerate after changing
+`gold_model_path` or the encoder. A `preBuildScript` guard in `project.yml` fails the build
+outright if the model is still missing, so the app can never silently ship the random-move
+fallback.
 
 `SWIFT_VERSION` is pinned to 5.9 (Swift-5 mode) on the app target — Swift-6 strict concurrency
 errors on `MLModel` + the non-`Sendable` engine classes. The two display fonts are committed

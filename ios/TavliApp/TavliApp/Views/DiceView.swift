@@ -46,10 +46,11 @@ private enum DiceStyle {
     }
 }
 
-/// A single ivory die face. Pure: driven only by `value` and `isUsed`.
+/// A single ivory die face. Pure: driven only by `value`, `isUsed`, and `isHighlighted`.
 struct DieFace: View {
     let value: Int
     var isUsed: Bool = false
+    var isHighlighted: Bool = false
     var size: CGFloat = 56
 
     var body: some View {
@@ -68,6 +69,11 @@ struct DieFace: View {
                 .frame(width: size, height: size)
                 .shadow(color: .black.opacity(0.45),
                         radius: size * 0.045, x: 0, y: size * 0.045)
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.107, style: .continuous)
+                        .stroke(CaramelPalette.hl, lineWidth: size * (5.0 / 56.0))
+                        .opacity(isHighlighted ? 1.0 : 0)
+                )
 
             ForEach(Array(DiceStyle.pips(value).enumerated()), id: \.offset) { _, p in
                 Circle()
@@ -81,6 +87,7 @@ struct DieFace: View {
         .opacity(isUsed ? 0.4 : 1.0)
         .saturation(isUsed ? 0.0 : 1.0)
         .animation(.easeInOut(duration: 0.2), value: isUsed)
+        .animation(.easeInOut(duration: 0.2), value: isHighlighted)
     }
 }
 
@@ -112,9 +119,10 @@ struct DiceView: View {
     @State private var spin: Double = 0
 
     /// A pasch shows four dice; otherwise the two rolled values.
+    /// Pre-roll (value == 0) always shows two dice regardless of isPasch.
     private var values: [Int] {
         let d = session.game.dice
-        if d.isPasch { return Array(repeating: d.die1.value, count: 4) }
+        if d.isPasch && d.die1.value != 0 { return Array(repeating: d.die1.value, count: 4) }
         return [d.die1.value, d.die2.value]
     }
 
@@ -159,9 +167,10 @@ struct BoardDiceView: View {
     @State private var spin: Double = 0
 
     /// A pasch shows four dice; otherwise the two rolled values.
+    /// Pre-roll (value == 0) always shows two dice regardless of isPasch.
     private var values: [Int] {
         let d = session.game.dice
-        if d.isPasch { return Array(repeating: d.die1.value, count: 4) }
+        if d.isPasch && d.die1.value != 0 { return Array(repeating: d.die1.value, count: 4) }
         return [d.die1.value, d.die2.value]
     }
 
@@ -175,7 +184,8 @@ struct BoardDiceView: View {
             let centers = geo.diceCenters(count: values.count)
             ZStack {
                 ForEach(Array(values.enumerated()), id: \.offset) { idx, val in
-                    DieFace(value: val, isUsed: idx < used.count && used[idx], size: geo.diceSize)
+                    DieFace(value: val, isUsed: idx < used.count && used[idx],
+                            isHighlighted: canRoll, size: geo.diceSize)
                         .onTapGesture(perform: roll)
                         .position(centers[idx])
                 }
