@@ -252,14 +252,20 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     leftover into one clean band at the very top/bottom (behind the floating Back/debug
     corners). Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a
     throwaway UI test and inspecting the screenshot attachment.
-  - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`) and a
-    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
+  - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`), a
+    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), and a
+    bottom-leading `HistoryButton` (#60, toggles the `showHistory` sheet), each pinned
     via `.frame(maxWidth/Height: .infinity, alignment:)`.
-  - `WinOverlayView` is layered **last** (above Back/debug) whenever `session.phase` is
-    `.gameOver`.
+  - `WinOverlayView` is layered **last** (above Back/debug/History) whenever `session.phase`
+    is `.gameOver`. Since the scrim covers the in-chrome `HistoryButton`, the overlay carries
+    its own History button.
+  - The move-history sheet (#60) is attached to the `ZStack` via
+    `.sheet(isPresented: $showHistory) { HistoryView(session:) }`.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
 - **`BackButton`** — a caramel pill (chevron + "Back") tinted from `ChromeTheme`,
   calling the injected `onBack`.
+- **`HistoryButton`** (#60) — a caramel pill (clock icon + "History") mirroring
+  `BackButton`'s style; sets `showHistory = true` to present the move-log sheet.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
@@ -276,16 +282,27 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   they moved to the board's center bar (`BoardDiceView`, #46), which freed the side
   rails. These buttons only fully exercise once a human composes a partial move;
   until then they appear only in the scripted `#Preview`.
-- **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
+- **`WinOverlayView(winner:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!", a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
-  to replace the finished session with a fresh one — see `RootView.swift`).
+  to replace the finished session with a fresh one — see `RootView.swift`), and a secondary
+  "History" button (`onHistory`) so the log stays reachable after the game, when the scrim
+  covers the in-chrome `HistoryButton`.
+- **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
+  button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
+  one `HistoryRow` per `session.history` ply, auto-scrolling to the newest on appear and on
+  `history.count` change. Empty history shows "No moves yet". Bound via `@ObservedObject`, so a
+  freshly committed ply appears immediately. `#ece6dc` background.
+  - **`HistoryRow(ply:)`** — a row showing the ply `index`, a `ChromeTheme.checkerColor(mover)`
+    disc, the dice (`d=<d1> <d2>`), and the move text (hops as `from→to`, joined by `, `; or
+    a dimmed "(pass)"). Monospaced so the columns align.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
   plus `ink`/button tints. Reuses `Color(hex:)` from `BoardView.swift`.
-- **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, and `"Undo/Done"`
+- **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, `"Undo/Done"`
   which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
-  contextual buttons without T7.
+  contextual buttons without T7, and `"History"` which scripts a ply and shows
+  `HistoryView` directly.
 
 ## DebugOverlay.swift (T11 — debug eval overlay)
 

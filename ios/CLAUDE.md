@@ -69,9 +69,18 @@ so the game flow is validated without a simulator.
   `undo` / `confirm` / `newGame`. On roll it computes `legalMoves` via `PossibleMoves`; an empty
   set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
   board and auto-finishes when the move is complete or the only continuation is itself legal.
-  Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
+  Win detection uses `game.getWinner()`; `finishTurn(record:wasPass:)` records the just-completed
+  ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
-  `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+  `winProbability`, `history`) is the view contract. No animation or rendering live here (later tickets).
+
+- **Move history (#60).** `history: [PlyRecord]` is an append-only log published for the move-log
+  sheet. Every turn-completing path funnels through `finishTurn(record:wasPass:)`, which calls
+  `recordPly` **before** `switchTurn` (so the mover and dice still reflect this ply): a human move
+  records `moveBuilder.built` (the played hops, in play order), the AI records its chosen
+  `move.halfMoves`, and a forced pass records `wasPass: true` with no hops. `PlyRecord` carries the
+  1-based `index`, `mover`, `die1`/`die2`, and `hops` (`[Hop(from:to:)]`, empty == pass); `summary`
+  formats the CLI `h` line (`"<i>.  <W|B>  d=<d1> <d2>  <move|(pass)>"`). `newGame` clears it.
 
 - **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
   Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled

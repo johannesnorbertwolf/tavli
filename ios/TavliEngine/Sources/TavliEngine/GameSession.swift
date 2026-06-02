@@ -17,6 +17,32 @@ public enum TurnPhase: Equatable {
     case gameOver(winner: Color)
 }
 
+/// One completed ply, recorded for the move-history log (issue #60). Mirrors the
+/// CLI `h`/`history` line: ply index, mover, dice, and the half-moves played
+/// (empty `hops` == a forced pass).
+public struct PlyRecord: Identifiable, Equatable, Sendable {
+    public struct Hop: Equatable, Sendable {
+        public let from: Int
+        public let to: Int
+    }
+
+    public let index: Int          // 1-based ply number
+    public let mover: Color
+    public let die1: Int
+    public let die2: Int
+    public let hops: [Hop]         // empty == forced pass
+
+    public var id: Int { index }
+    public var wasPass: Bool { hops.isEmpty }
+
+    /// Faithful to the CLI `h` output: `"<index>.  <W|B>  d=<d1> <d2>  <move|(pass)>"`.
+    public var summary: String {
+        let prefix = "\(index).  \(mover.rawValue)  d=\(die1) \(die2)  "
+        guard !wasPass else { return prefix + "(pass)" }
+        return prefix + hops.map { "\($0.from)->\($0.to)" }.joined(separator: ", ")
+    }
+}
+
 /// Headless, UI-agnostic controller for a single game.
 ///
 /// Owns the `Game`, drives the turn state machine, and exposes observable
@@ -45,6 +71,11 @@ public final class GameSession: ObservableObject {
     @Published public private(set) var validTargets: Set<Int> = []
     /// Points a checker may be picked up from for the next half-move.
     @Published public private(set) var selectableSources: Set<Int> = []
+
+    /// Every ply played so far, oldest first (issue #60). Appended as each turn
+    /// finishes — a committed move, a forced pass, or the AI's move — so views can
+    /// render a live move log.
+    @Published public private(set) var history: [PlyRecord] = []
 
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
@@ -143,10 +174,11 @@ public final class GameSession: ObservableObject {
             game.board.applyHalfMove(hm)
             complete = moveBuilder.commit(halfMove: hm)
         }
+        let played = moveBuilder.built
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
-            finishTurn()
+            finishTurn(record: played, wasPass: false)
         } else {
             refreshSources()
         }
@@ -164,7 +196,7 @@ public final class GameSession: ObservableObject {
     /// Finish the turn early when the partial sequence is already a legal move.
     public func confirm() {
         guard phase == .picking || phase == .moving, moveBuilder.canFinishNow else { return }
-        finishTurn()
+        finishTurn(record: moveBuilder.built, wasPass: false)
     }
 
     /// Reset to a fresh game, current player rolling first.
@@ -176,6 +208,7 @@ public final class GameSession: ObservableObject {
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
         selectableSources = []
+        history = []
         winProbability = 0.5
         phase = .awaitingRoll
         maybeStartAITurn()
@@ -193,7 +226,7 @@ public final class GameSession: ObservableObject {
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn()
+            finishTurn(record: [], wasPass: true)
             return
         }
 
@@ -225,7 +258,10 @@ public final class GameSession: ObservableObject {
         validTargets = []
     }
 
-    private func finishTurn() {
+    /// Records the just-completed ply and advances the turn (or ends the game).
+    /// Must run before `switchTurn` so the mover and dice still reflect this ply.
+    private func finishTurn(record hops: [HalfMove], wasPass: Bool) {
+        recordPly(hops: hops, wasPass: wasPass)
         clearSelection()
         selectableSources = []
 
@@ -237,6 +273,16 @@ public final class GameSession: ObservableObject {
         game.switchTurn()
         phase = .awaitingRoll
         maybeStartAITurn()
+    }
+
+    private func recordPly(hops: [HalfMove], wasPass: Bool) {
+        history.append(PlyRecord(
+            index: history.count + 1,
+            mover: game.currentPlayer,
+            die1: game.dice.die1.value,
+            die2: game.dice.die2.value,
+            hops: wasPass ? [] : hops.map { PlyRecord.Hop(from: $0.from.position, to: $0.to.position) }
+        ))
     }
 
     // ── AI turn ────────────────────────────────────────────────────────────────
@@ -258,7 +304,7 @@ public final class GameSession: ObservableObject {
 
         guard !legalMoves.isEmpty else {
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn()
+            finishTurn(record: [], wasPass: true)
             return
         }
         moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
@@ -298,6 +344,6 @@ public final class GameSession: ObservableObject {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
-        finishTurn()
+        finishTurn(record: move.halfMoves, wasPass: false)
     }
 }

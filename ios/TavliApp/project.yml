@@ -56,6 +56,7 @@ targets:
       base:
         TARGETED_DEVICE_FAMILY: "2"
         PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliAppUITests
+        GENERATE_INFOPLIST_FILE: "YES"
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: ""
         TEST_TARGET_NAME: TavliApp

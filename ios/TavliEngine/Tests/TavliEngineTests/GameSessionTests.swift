@@ -367,6 +367,49 @@ final class GameSessionTests: XCTestCase {
         XCTAssertEqual(b.points[9].count, 1)
     }
 
+    /// A committed move appends one ply with the mover, dice, and played hops, and
+    /// formats to the CLI `h` line.
+    func testHistoryRecordsCommittedMove() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])
+        b.setPoint(24, pieces: [.black])
+
+        // White plays the merged single checker 1→9 (dice 3·5) as two hops.
+        s.setManualDice(3, 5)
+        s.commitHalfMove(from: 1, to: 4)
+        s.commitHalfMove(from: 4, to: 9)
+
+        XCTAssertEqual(s.history.count, 1)
+        let ply = s.history[0]
+        XCTAssertEqual(ply.index, 1)
+        XCTAssertEqual(ply.mover, .white)
+        XCTAssertEqual(ply.die1, 3)
+        XCTAssertEqual(ply.die2, 5)
+        XCTAssertEqual(ply.hops.map { [$0.from, $0.to] }, [[1, 4], [4, 9]])
+        XCTAssertFalse(ply.wasPass)
+        XCTAssertEqual(ply.summary, "1.  W  d=3 5  1->4, 4->9")
+    }
+
+    /// A forced pass records a pass ply; `newGame` clears the log.
+    func testHistoryRecordsForcedPassAndNewGameResets() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(5, pieces: [.white])
+        b.setPoint(6, pieces: [.black, .black])     // blocks die=1
+        b.setPoint(7, pieces: [.black, .black])     // blocks die=2
+
+        s.setManualDice(1, 2)
+        XCTAssertEqual(s.history.count, 1)
+        XCTAssertTrue(s.history[0].wasPass)
+        XCTAssertEqual(s.history[0].summary, "1.  W  d=1 2  (pass)")
+
+        s.newGame(startingPlayer: .black)
+        XCTAssertTrue(s.history.isEmpty)
+    }
+
     /// Drives a complete game to a win using only session intents.
     func testScriptedFullGameReachesWin() {
         let s = GameSession(startingPlayer: .black)
