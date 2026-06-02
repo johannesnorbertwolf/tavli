@@ -246,8 +246,9 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
 
 - **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
   the mode picker, `onNewGame: () -> Void = {}` — replaces the finished session with
-  a fresh one, and `onSave: (String) -> Void = { _ in }` (#61) — persists the game under the
-  given name; all default to no-ops so `#Preview`s compile). A `GeometryReader`
+  a fresh one, `onSave: (String) -> Void = { _ in }` (#61) — persists the game under the
+  given name, and `onAutosave: () -> Void = {}` (#61) — writes the single autosave slot; all
+  default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
   - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
     **bound to the leading edge** (`.frame(maxWidth:.infinity, maxHeight:.infinity,
@@ -284,6 +285,11 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     game", isPresented:)` hosts a `TextField` + "Save"/"Cancel"; "Save" trims the field and
     calls `onSave(name)` (falling back to the timestamp default if left empty). `RootView`
     provides `onSave` to write a named manual save via the `SaveStore`.
+  - **Auto-save (#61):** `.onChange(of: session.history.count) { onAutosave() }` fires once per
+    ply — `history` (now `@Published`) grows by one per finished turn (human, AI, or forced
+    pass) — so the in-progress game is persisted after **every move**, not just on background.
+    `RootView`'s `persistAutosave` overwrites the single autosave slot (or clears it once the
+    game is over).
   - `WinOverlayView` is layered **last** (above Back/Save/debug) whenever `session.phase` is
     `.gameOver`.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
@@ -350,31 +356,41 @@ top-trailing overlay on the game screen.
 The app's top-level view: switches between the caramel **mode picker** and a live game, and
 owns all save/load wiring (#61) through a single `SaveStore.default()`.
 
-- **`RootView`** — `@State private var session: GameSession?` plus `@State private var
-  humanColor: EngineColor`. `nil` session → show `ModePickerView`; non-`nil` → show
-  `GameView(session:onBack:onNewGame:onSave:)`. `onBack` **auto-saves then** resets `session =
-  nil` (returns to the picker). `onNewGame` replaces the finished session with
-  `makeSession(humanColor: humanColor)` — a fresh `GameSession` with the same human color,
-  leaving the stale session to be deallocated. `onSave` writes a named manual save
-  (`store.writeManual(session.snapshot(name:))`). Holding the session in `@State` keeps the
-  reference stable across re-renders (`GameView` observes it). `makeSession(humanColor:)` builds
+- **`RootView`** — `@State private var session: GameSession?`, `@State private var
+  humanColor: EngineColor`, plus `@State private var autosaveName: String` (the current game's
+  stable display name — a timestamped `"Game · <date>"` default via `newAutosaveName()` for a
+  fresh game, or the resumed game's own name). `nil` session → show `ModePickerView`; non-`nil`
+  → show `GameView(session:onBack:onNewGame:onSave:onAutosave:)`. `onBack` **auto-saves then**
+  resets `session = nil` (returns to the picker). `onNewGame` mints a fresh `autosaveName` and
+  replaces the finished session with `makeSession(humanColor: humanColor)` — a fresh
+  `GameSession` with the same human color, leaving the stale session to be deallocated. `onSave`
+  writes a named manual save (`store.writeManual(session.snapshot(name:))`); `onAutosave` is
+  `persistAutosave`. Holding the session in `@State` keeps the reference stable across re-renders
+  (`GameView` observes it). `makeSession(humanColor:)` builds
   `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
   humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
   chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
   one die, higher starts, with a manual override — is a separate, deferred ticket.)*
 - **Save/load lifecycle (#61).**
-  - **Auto-save** (`persistAutosave`) fires on `scenePhase == .background`
+  - **Auto-save** (`persistAutosave`) fires after **every move** (`GameView`'s
+    `.onChange(of: session.history.count)`), as well as on `scenePhase == .background`
     (`@Environment(\.scenePhase)` + `.onChange`) and on Back. It writes the in-progress game to
-    the reserved autosave slot (`store.writeAutosave(snapshot(name: "Continue"))`), **clears**
-    the slot instead if `session.isTerminal` (finished games are never resumed), and no-ops on
-    the picker (`session == nil`) so a prior autosave survives. IO is synchronous so it completes
-    before the app suspends.
+    the single reserved autosave slot under the game's stable `autosaveName`
+    (`store.writeAutosave(session.snapshot(name:))`), overwriting it each time so only the
+    **last** in-progress game is kept. It **clears** the slot instead if `session.isTerminal`
+    (finished games are never resumed), and no-ops on the picker (`session == nil`) so a prior
+    autosave survives. IO is synchronous so it completes before the app suspends.
+  - **`newAutosaveName()`** mints the timestamped `"Game · <date>"` name (medium date + short
+    time, the same convention the manual-save dialog defaults to), generated once per game and
+    kept stable across that game's per-move autosaves so the slot reads as one coherent identity.
   - **Auto-resume** (`autoResume`, called from `init`) loads a non-terminal autosave and replays
     it via `GameSession.resume(from:agent:)` + `start()`, landing the cold launch back in the
     game (acceptance criterion 1); a terminal autosave is discarded so launch shows the picker.
     The `-uiTestGame` launch arg still takes priority (deterministic Black-to-move game).
   - **Resume from the list** (`resume(_:)`) loads the chosen `SaveMetadata`, derives `humanColor`
-    from `save.aiColor.opponent`, and switches into the replayed session.
+    from `save.aiColor.opponent`, carries `save.name` forward into `autosaveName` (so continued
+    play keeps the same identity), and switches into the replayed session. `autoResume` and
+    `onSelect` likewise seed `autosaveName` (the resumed name, or a fresh `newAutosaveName()`).
   - Human color is recovered from `save.aiColor` (the human is the AI's opponent); a save with no
     AI color defaults the human to White.
 - **`ModePickerView(store:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
@@ -385,10 +401,12 @@ owns all save/load wiring (#61) through a single `SaveStore.default()`.
 - **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
   scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
 - **`SavedGameRow(meta:onResume:onDelete:)`** (#61) — one row: an icon (autosave →
-  `arrow.clockwise.circle.fill`, else `doc.fill`), a title ("Continue last game" for the
-  autosave, else the save name), a subtitle (medium date + `N moves` from `meta.savedAt` /
-  `meta.plyCount`), and a trailing trash button. Tapping the body resumes; the trash button
-  deletes. Caramel-tinted card (white @ 0.35 fill, `frameBot` hairline).
+  `arrow.clockwise.circle.fill`, else `doc.fill`), the save's `meta.name` (every row, autosave
+  included, now carries its own timestamped name), a subtitle (medium date + `N moves` from
+  `meta.savedAt` / `meta.plyCount`), and a trailing trash button. The autosave row adds a small
+  uppercase **"Continue last game"** capsule badge **above** the name (marking the resumable
+  last game without replacing its identity). Tapping the body resumes; the trash button deletes.
+  Caramel-tinted card (white @ 0.35 fill, `frameBot` hairline).
 - **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
   gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from

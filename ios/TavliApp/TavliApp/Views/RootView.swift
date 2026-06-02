@@ -15,6 +15,10 @@ private typealias EngineColor = TavliEngine.Color
 struct RootView: View {
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
+    /// The current game's display name — a timestamped default ("Game · <date>",
+    /// the same convention as a manual save) for a fresh game, or the resumed
+    /// game's own name. Written into the auto-save slot on every move (#61).
+    @State private var autosaveName: String = ""
     @Environment(\.scenePhase) private var scenePhase
 
     private let store = SaveStore.default()
@@ -27,10 +31,12 @@ struct RootView: View {
             s.setManualDice(3, 5)
             _session = State(initialValue: s)
             _humanColor = State(initialValue: .black)
+            _autosaveName = State(initialValue: RootView.newAutosaveName())
         } else if let resumed = RootView.autoResume() {
             // Resume exactly where the last session left off (#61, criterion 1).
             _session = State(initialValue: resumed.session)
             _humanColor = State(initialValue: resumed.humanColor)
+            _autosaveName = State(initialValue: resumed.name)
         } else {
             _session = State(initialValue: nil)
         }
@@ -45,13 +51,18 @@ struct RootView: View {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil
                     },
-                    onNewGame: { self.session = Self.makeSession(humanColor: self.humanColor) },
-                    onSave: { name in try? store.writeManual(session.snapshot(name: name)) }
+                    onNewGame: {
+                        autosaveName = Self.newAutosaveName()
+                        self.session = Self.makeSession(humanColor: self.humanColor)
+                    },
+                    onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
+                    onAutosave: persistAutosave
                 )
             } else {
                 ModePickerView(store: store,
                                onSelect: { color in
                                    humanColor = color
+                                   autosaveName = Self.newAutosaveName()
                                    session = Self.makeSession(humanColor: color)
                                },
                                onResume: resume)
@@ -62,22 +73,29 @@ struct RootView: View {
         }
     }
 
-    /// Write the current game to the auto-save slot when backgrounding or leaving.
-    /// A finished game is cleared instead (completed games are never resumed); on
-    /// the picker (`session == nil`) the prior auto-save is left intact.
+    /// Write the current game to the single auto-save slot — on every move (#61),
+    /// and when backgrounding or leaving. Overwriting one reserved slot means only
+    /// the **last** in-progress game is ever kept. The game is stored under its
+    /// timestamped `autosaveName` (the "Continue last game" badge is added by the
+    /// picker row, not the name). A finished game is cleared instead (completed
+    /// games are never resumed); on the picker (`session == nil`) the prior
+    /// auto-save is left intact.
     private func persistAutosave() {
         guard let session else { return }
         if session.isTerminal {
             store.clearAutosave()
         } else {
-            try? store.writeAutosave(session.snapshot(name: "Continue"))
+            let name = autosaveName.isEmpty ? Self.newAutosaveName() : autosaveName
+            try? store.writeAutosave(session.snapshot(name: name))
         }
     }
 
-    /// Load a saved game (from the picker list) and switch into it.
+    /// Load a saved game (from the picker list) and switch into it, carrying its
+    /// name forward so the auto-save keeps the same identity.
     private func resume(_ meta: SaveMetadata) {
         guard let save = try? store.load(filename: meta.filename) else { return }
         humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
+        autosaveName = save.name
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
         s.start()
         session = s
@@ -85,7 +103,7 @@ struct RootView: View {
 
     /// The auto-save game to resume on launch, if one exists and is still in
     /// progress. A finished auto-save is discarded so launch lands on the picker.
-    private static func autoResume() -> (session: GameSession, humanColor: EngineColor)? {
+    private static func autoResume() -> (session: GameSession, humanColor: EngineColor, name: String)? {
         let store = SaveStore.default()
         guard let save = store.loadAutosave() else { return nil }
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
@@ -95,8 +113,22 @@ struct RootView: View {
         }
         s.start()
         let human = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
-        return (s, human)
+        return (s, human, save.name)
     }
+
+    /// A timestamped game name ("Game · <date>"), the same convention the manual
+    /// save dialog defaults to. Generated once per game and kept stable across that
+    /// game's per-move auto-saves.
+    private static func newAutosaveName() -> String {
+        "Game · " + autosaveNameFormatter.string(from: Date())
+    }
+
+    private static let autosaveNameFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 
     /// Build a human-vs-AI session. Black always opens for now (the proper
     /// opening-roll rule is a separate ticket); `start()` lets the AI move first
@@ -201,7 +233,20 @@ private struct SavedGameRow: View {
                         .font(.title3)
                         .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(meta.isAutosave ? "Continue last game" : meta.name)
+                        if meta.isAutosave {
+                            // The auto-save's own name follows the manual convention;
+                            // this badge sits on top of it to mark the last game (#61).
+                            Text("Continue last game")
+                                .font(.caption2.weight(.bold))
+                                .textCase(.uppercase)
+                                .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(CaramelPalette.frameText.opacity(0.12))
+                                .clipShape(Capsule())
+                                .padding(.bottom, 2)
+                        }
+                        Text(meta.name)
                             .font(.body.weight(.semibold))
                             .foregroundStyle(CaramelPalette.frameText)
                         Text(subtitle)

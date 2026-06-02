@@ -120,15 +120,17 @@ tests, no model/fixtures needed):
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
-  names never clobber). All IO is **synchronous** so the autosave completes before the app
-  suspends. `list()` returns `SaveMetadata` (filename, name, savedAt, plyCount, isAutosave)
+  names never clobber). The single autosave slot is overwritten on every move, so only the
+  **last** in-progress game is ever kept. All IO is **synchronous** so the autosave completes
+  before the app suspends. `list()` returns `SaveMetadata` (filename, name, savedAt, plyCount, isAutosave)
   newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
   **throws** `SaveStoreError.incompatibleSchema` on a version mismatch. `writeAutosave` /
   `loadAutosave` / `clearAutosave` manage the reserved slot; `writeManual` returns the generated
   filename. `SaveStore.default()` roots it at `Documents/SavedGames`.
 
-The app wiring (autosave on background, auto-resume on launch, the saved-games list, and the
-in-game manual save) lives in `RootView`/`GameView` — see `Views/CLAUDE.md`.
+The app wiring (autosave after every move and on background, auto-resume on launch, the
+saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
+`Views/CLAUDE.md`.
 
 ## SwiftUI views
 
@@ -183,10 +185,11 @@ through its published read-state + intents — no game logic lives in views.
   `GameSession(aiColor: humanColor.opponent)` (Black opens for now); Back returns to the picker.
   "Play Again" on the win overlay replaces the finished session with a fresh `GameSession` (same
   human color). Owns save/load via a `SaveStore.default()`: **auto-saves** the in-progress game
-  when the scene backgrounds or the player taps Back (`persistAutosave` — clears the slot instead
-  if the game is terminal, since finished games aren't resumed), **auto-resumes** a non-terminal
-  autosave on cold launch (`autoResume` in `init`), and lets the picker resume or delete any
-  saved game. See `Views/CLAUDE.md`.
+  after **every move** (plus on background and on Back) into the single overwritten autosave slot
+  under a stable timestamped name (`persistAutosave` — clears the slot instead if the game is
+  terminal, since finished games aren't resumed), **auto-resumes** a non-terminal autosave on cold
+  launch (`autoResume` in `init`), and lets the picker resume or delete any saved game. The picker
+  badges the autosave row "Continue last game". See `Views/CLAUDE.md`.
 
 `App.swift` is `@main` hosting `RootView()`. The app launches on the mode picker; choosing a side
 starts a fully playable human-vs-AI game. (The earlier T7 sign-off bootstrap that hosted a fixed

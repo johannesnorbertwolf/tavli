@@ -43,7 +43,8 @@ public final class GameSession: ObservableObject {
     /// half-moves actually applied (empty = a forced pass). This is the sole basis
     /// for save/resume: replaying these half-moves from the initial position
     /// reproduces the exact board, with no stored board state (see `GameSave`).
-    public private(set) var history: [PlyRecord] = []
+    /// Published so the app can auto-save after every move (#61).
+    @Published public private(set) var history: [PlyRecord] = []
 
     /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
     @Published public private(set) var winProbability: Double = 0.5

@@ -18,6 +18,8 @@ struct GameView: View {
     var onNewGame: () -> Void = {}
     /// Persist the current game under the given name (#61). Defaults to a no-op so `#Preview`s compile.
     var onSave: (String) -> Void = { _ in }
+    /// Auto-save the in-progress game after every move (#61). Defaults to a no-op so `#Preview`s compile.
+    var onAutosave: () -> Void = {}
 
     @State private var showingSaveDialog = false
     @State private var saveName = ""
@@ -102,6 +104,11 @@ struct GameView: View {
             } message: {
                 Text("Name this save so you can find it on the start screen.")
             }
+            // Auto-save after every move (#61): `history` grows by one per finished
+            // turn — human, AI, or forced pass — so this fires once per ply. The
+            // handler overwrites the single autosave slot (or clears it once the
+            // game is over), so only the last in-progress game is ever kept.
+            .onChange(of: session.history.count) { _, _ in onAutosave() }
         }
     }
 
