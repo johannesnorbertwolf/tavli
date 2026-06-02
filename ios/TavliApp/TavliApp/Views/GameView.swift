@@ -16,6 +16,11 @@ struct GameView: View {
     var onBack: () -> Void = {}
     /// Replace the finished session with a fresh one (same settings). Defaults to a no-op so `#Preview`s compile.
     var onNewGame: () -> Void = {}
+    /// Persist the current game under the given name (#61). Defaults to a no-op so `#Preview`s compile.
+    var onSave: (String) -> Void = { _ in }
+
+    @State private var showingSaveDialog = false
+    @State private var saveName = ""
 
     var body: some View {
         GeometryReader { proxy in
@@ -61,13 +66,19 @@ struct GameView: View {
                     .padding(.vertical, 12)
                 }
 
-                // Floating chrome: Back (top-leading) + debug toggle (top-trailing).
-                // The portrait `topBar` keeps its counters centered so these corners
-                // stay clear; in landscape the corners overlay the board / panel head.
-                BackButton(action: onBack)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                // Floating chrome: Back + Save (top-leading) + debug toggle
+                // (top-trailing). The portrait `topBar` keeps its counters centered so
+                // these corners stay clear; in landscape the corners overlay the board /
+                // panel head. Save hides once the game is over (finished games aren't saved).
+                HStack(spacing: 8) {
+                    BackButton(action: onBack)
+                    if !session.isTerminal {
+                        SaveButton(action: presentSaveDialog)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
                 DebugOverlayToggle(session: session)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.horizontal, 16)
@@ -77,8 +88,37 @@ struct GameView: View {
                     WinOverlayView(winner: winner, onNewGame: onNewGame)
                 }
             }
+            .alert("Save game", isPresented: $showingSaveDialog) {
+                TextField("Name", text: $saveName)
+                Button("Save") {
+                    let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave(trimmed.isEmpty ? Self.defaultSaveName() : trimmed)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Name this save so you can find it on the start screen.")
+            }
         }
     }
+
+    /// Seed the field with a timestamped default and open the naming dialog.
+    private func presentSaveDialog() {
+        saveName = Self.defaultSaveName()
+        showingSaveDialog = true
+    }
+
+    /// A timestamped fallback name (e.g. "Game · Jun 2, 3:04 PM") used when the
+    /// player leaves the field empty.
+    private static func defaultSaveName() -> String {
+        "Game · " + saveNameFormatter.string(from: Date())
+    }
+
+    private static let saveNameFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 
     // Landscape: turn indicator + counters on top, controls anchored at the bottom.
     // Top-padded so the turn indicator clears the corner Back/debug overlays.
@@ -125,6 +165,28 @@ private struct BackButton: View {
             .background(ChromeTheme.undoTint.opacity(0.22))
             .cornerRadius(10)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.undoTint.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(ChromeTheme.ink)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Caramel pill that opens the manual-save naming dialog (#61).
+private struct SaveButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
+            }
+            .font(.callout.bold())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(ChromeTheme.doneTint.opacity(0.22))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.doneTint.opacity(0.6), lineWidth: 1))
             .foregroundStyle(ChromeTheme.ink)
         }
         .buttonStyle(.plain)
