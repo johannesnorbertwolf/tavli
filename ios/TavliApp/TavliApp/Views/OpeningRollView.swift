@@ -8,8 +8,8 @@ private typealias EngineColor = TavliEngine.Color
 /// Ties auto-re-roll. The player may also force a manual choice. Calls `onStart`
 /// with the resolved starting player, or `onBack` to return to the mode picker.
 struct OpeningRollView: View {
-    let humanColor: EngineColor
-    let onStart: (EngineColor) -> Void
+    let humanColor: TavliEngine.Color
+    let onStart: (TavliEngine.Color) -> Void
     let onBack: () -> Void
 
     private enum RollState {
