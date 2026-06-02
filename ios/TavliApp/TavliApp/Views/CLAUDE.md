@@ -97,8 +97,17 @@ fit and the checkers register with the triangles.
   from `(cx−0.55r, cy−0.35r)` to `(cx+0.55r, cy−0.35r)` (control `(cx,
   cy−0.85r)`), opacity `0.55` white / `0.28` red. All design stroke widths scale
   by `geo.scale`; radius-relative offsets use the scaled `geo.checkerRadius`.
+- **`drawCheckerDisc`** (module-level free function) — the drawing kernel shared
+  by `CheckersView` and `DraggedCheckerView`. Takes a `lifted: Bool` flag; when
+  true it deepens the drop shadow (`radius 8·s`, `y 5·s`, opacity 0.40 vs 3·s /
+  2·s / 0.28 for flat) to simulate the checker being raised off the board.
+- **`DraggedCheckerView`** (#40) — a single-checker `Canvas` overlay (`.allowsHitTesting(false)`)
+  drawn at an arbitrary `location` in board coordinate space, using the lifted
+  shadow variant. Rendered above all board layers (including dice) during a drag
+  gesture, and again during the snap-back animation after a failed drop.
 - **`CheckerStyle`** maps `TavliEngine.Color → (fill, hi, ring, edge, text)` from
-  `CaramelPalette`; engine `.black` → red.
+  `CaramelPalette`; engine `.black` → red. `fileprivate` — used by `CheckersView`
+  and `DraggedCheckerView` (both in the same file).
 - Two `#Preview`s: the start position (over `BoardView`) and a constructed pinned
   point (`setPoint(13, [.black] + .white×6)` — a black checker pinned under a tall
   white owner stack, so the count label must land on the white checker, not the
@@ -154,31 +163,40 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   fill sits under them) → `CheckersView(stacks:)` → `SourceRingView` (above, so
   the ring haloes the selected stack), carrying the `.contentShape` + board
   `.gesture`; then **`BoardDiceView(session:)` as a sibling above it** (#46 — the
-  center-bar dice). All layers rebuild an identical `BoardGeometry` from the same
-  square fit, so they register exactly; the gesture geometry is built from the
-  same `GeometryReader` size. The container is `.aspectRatio(1, .fit)`.
+  center-bar dice); then **`DraggedCheckerView`** (floating checker during drag,
+  #40) and the snap-back overlay, both above the dice. All layers rebuild an
+  identical `BoardGeometry` from the same square fit, so they register exactly;
+  the gesture geometry is built from the same `GeometryReader` size. The
+  container is `.aspectRatio(1, .fit)`.
 - **Why the dice are a sibling, not inside the gesture stack** (#46): the dice
   own a tap-to-roll gesture and the board owns tap/drag. Nesting them would make
   the two contend; keeping `BoardDiceView` a sibling with
   `.allowsHitTesting(canRoll)` means it claims taps only while awaiting a roll
   (when the board has no selectable sources anyway) and passes them through
   otherwise, so the two never collide.
-- **Gesture** — a single `DragGesture(minimumDistance: 0)` whose intent dispatch
-  is resolved **entirely in `onEnded`**. This is deliberate: mutating session
-  state from `onChanged` (the earlier design's mid-drag `selectPoint`) republishes
-  and rebuilds the enclosing `GeometryReader`, which **cancels the in-flight
-  gesture so `onEnded` never fires and the drop is lost** — a real-device failure
-  (selection highlights, but the move never commits) that the simulator and
-  XCUITest's synthetic events do not reproduce. On release:
+- **Gesture** (#40) — a single `DragGesture(minimumDistance: 0)` with both
+  `.updating` and `onEnded`. Intent dispatch stays in `onEnded` because mutating
+  session from `onChanged` republishes and rebuilds the `GeometryReader`, cancelling
+  the gesture on real devices. `.updating($liveDrag)` tracks the source point and
+  current finger position via `@GestureState` — **read-only access to session**
+  (no publish), so the gesture is never cancelled mid-drag. On release:
   - **Drag** (travel > `dragThreshold` 10pt *and* the press started on a
     selectable source): `selectPoint(source)`, then `hitTest` the drop over
-    `validTargets` → `commitHalfMove`. A miss just leaves the source selected.
+    `validTargets` → `commitHalfMove`. A miss clears the selection and triggers
+    a **snap-back animation** (spring, 0.22s) of the floating checker back to its
+    stack position. A `@State snapBackTask` cancels any in-flight cleanup so
+    rapid failed drops don't clobber each other.
   - **Tap** (everything else, via `handleTap`): `hitTest` over **`0…25`** (slots
     0/25 included so bear-off targets are tappable); if a target is tapped with a
     source already selected → `commitHalfMove`, else `selectPoint(tapped)` (a
     non-selectable index clears the selection, since `selectPoint` ignores it).
-  - No floating ghost checker — the ring + target marks are the feedback, per the
-    Caramel design.
+- **Drag visuals** (#40): while `@GestureState liveDrag` is set, `displayStacks`
+  shows one fewer checker at the drag source; `highlightTargets` is computed
+  from `session.moveBuilder.validDestinations(for: sourcePoint)` (pure read, no
+  mutation); the ring shows around the remaining source checkers; and
+  `DraggedCheckerView` floats above all other layers at the finger's position.
+  On gesture end `@GestureState` auto-resets; the snap-back overlay takes over
+  for failed drops, animated from the release point back to the stack origin.
 - **Multi-hop targets need no view change.** On a Pasch (and when a single checker plays both
   dice of a non-Pasch roll), `validTargets` may include endpoints several hops away: a tap on a
   far endpoint commits multiple half-moves and a tap on an intermediate stop lets the same checker
@@ -230,28 +248,32 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   the mode picker, and `onNewGame: () -> Void = {}` — replaces the finished session with
   a fresh one; both default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
-  - **Landscape:** `HStack` with `PlayableBoardView(session:)` greedily filling the
-    height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`, `8pt` pad) and a fixed
-    260pt `sidePanel` on the trailing edge (turn indicator + the two borne-off counters
-    on top, controls anchored at the bottom; top-padded `44` so the indicator clears the
-    corner Back/debug overlays). **The board owns the leftover width via that frame, not
-    `Spacer`s** (#46): two flanking spacers and the equally-flexible aspect-fit board
-    split the width three ways, shrinking the board to a third of the height — the
-    spacers are gone. The only empty space is now the thin margin where a square board
-    can't cover the wide axis. (The board *frame* art is unchanged; only the surrounding
-    empty space shrank.)
-  - **Portrait:** `VStack(spacing: 12)` — a `topBar` (counters + turn indicator as a
-    **centered** group, leaving the top corners free), the board (`8pt` horizontal pad),
-    then the controls row, with the whole `VStack` centered via `.frame(maxHeight:.infinity)`
-    + `12pt` vertical pad. A square board can't fill a tall screen, so some vertical margin
-    is unavoidable; the point of #46 here is **how** that margin is distributed. The board
-    deliberately does **not** get `.frame(maxHeight:.infinity)` in portrait — that would
-    inflate the board's container and center the square inside it, floating the board with
-    dead gaps *between* it and the chrome ("a bunch of space top and bottom" of the board).
-    Instead the chrome **hugs** the board (`12pt` spacing) and the centered group pools the
-    leftover into one clean band at the very top/bottom (behind the floating Back/debug
-    corners). Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a
-    throwaway UI test and inspecting the screenshot attachment.
+  - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
+    **bound to the leading edge** (`.frame(maxWidth:.infinity, maxHeight:.infinity,
+    alignment: .leading)`, `8pt` pad) and a fixed 260pt `sidePanel` on the trailing edge
+    (turn indicator + the two borne-off counters on top, controls anchored at the bottom;
+    top-padded `44` so the indicator clears the corner Back/debug overlays). **The board
+    owns the leftover width via that frame, not `Spacer`s** (#46): two flanking spacers and
+    the equally-flexible aspect-fit board split the width three ways, shrinking the board to
+    a third of the height — the spacers are gone. `.leading` pins the square to the left so
+    the slack between board and panel sits on the right and the board never shifts as the
+    panel chrome changes. (The board *frame* art is unchanged; only the surrounding empty
+    space shrank.)
+  - **Portrait:** `VStack(spacing: 12)` — the `topBar` (counters + turn indicator as a
+    **centered** group, leaving the top corners free) pinned to the top, a flexible
+    `Spacer(minLength: 0)`, then the controls row and the board (`8pt` horizontal pad),
+    with the `VStack` filling the height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`
+    + `12pt` vertical pad). A square board can't fill a tall screen, so some vertical margin
+    is unavoidable; #46 controls **where** it goes. The board is **bound to the bottom edge**:
+    the chrome pins to the top, the `Spacer` pools the slack into the middle, and the board
+    sits at the bottom with the contextual controls hugging just above it. Anchoring the
+    board this way stops it from jumping — the earlier *centered* group re-centred on every
+    turn/phase change (the "Tap dice to roll" caption, the Undo/Done row), visibly shifting
+    the board. `.layoutPriority(1)` on the board lets it claim its full-width square first so
+    the `Spacer` (not the board) absorbs the slack; without it two equally-flexible children
+    (Spacer + aspect-fit board) split the height and the board shrinks below full width.
+    Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
+    test and inspecting the screenshot attachment.
   - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`), a
     top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), and a
     bottom-leading `HistoryButton` (#60, toggles the `showHistory` sheet), each pinned

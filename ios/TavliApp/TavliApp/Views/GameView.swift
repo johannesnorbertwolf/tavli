@@ -27,40 +27,44 @@ struct GameView: View {
                 SColor(hex: 0xece6dc).ignoresSafeArea()
 
                 if landscape {
-                    // Board greedily fills the height; the chrome column takes a
-                    // fixed strip on the trailing edge, so the only empty space is
-                    // a thin margin where a square board can't cover the wide axis.
-                    // The board MUST own the leftover width via `frame(maxWidth:)` —
-                    // flanking it with `Spacer`s makes the two spacers and the
-                    // equally-flexible aspect-fit board split the width three ways,
-                    // shrinking the board to a third of the height.
+                    // Board bound to the LEADING edge, filling the height; the chrome
+                    // column takes a fixed strip on the trailing edge. The board owns
+                    // the leftover width via `frame(maxWidth:)` (flanking it with
+                    // `Spacer`s makes the two spacers and the equally-flexible aspect-fit
+                    // board split the width three ways, shrinking it to a third) and the
+                    // `.leading` alignment pins the square to the left edge, so any slack
+                    // between the board and the panel sits on the right and the board
+                    // never shifts as the panel chrome changes.
                     HStack(spacing: 0) {
                         PlayableBoardView(session: session)
                             .padding(8)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         sidePanel
                             .frame(width: 260)
                             .padding(.vertical, 12)
                             .padding(.trailing, 12)
                     }
                 } else {
-                    // Board fills the width — a square can't fill a tall screen, so
-                    // some vertical margin is unavoidable. The chrome HUGS the board
-                    // top and bottom and the whole group centers, so the leftover
-                    // pools into one clean band at the very top/bottom (behind the
-                    // floating Back/debug corners) instead of gapping the board away
-                    // from its chrome. Do NOT give the board `frame(maxHeight:)` here:
-                    // that inflates its container and centers the square inside it,
-                    // floating the board with dead space directly above and below.
+                    // Board bound to the BOTTOM, the turn/counter chrome pinned to the
+                    // TOP, and the unavoidable slack (a square can't fill a tall screen)
+                    // pooled into the flexible `Spacer` between them. Anchoring the board
+                    // to the bottom edge keeps it from shifting as the chrome above it
+                    // grows or shrinks — the earlier centered group re-centred on every
+                    // turn/phase change (the "Tap dice to roll" caption, the Undo/Done
+                    // row), so the board visibly jumped. `layoutPriority(1)` lets the
+                    // board claim its full-width square first, so the `Spacer` (not the
+                    // board) absorbs the slack; the contextual controls hug it just above.
                     VStack(spacing: 12) {
                         topBar
                             .padding(.horizontal, 16)
-                        PlayableBoardView(session: session)
-                            .padding(.horizontal, 8)
+                        Spacer(minLength: 0)
                         ControlsView(session: session)
                             .padding(.horizontal, 16)
+                        PlayableBoardView(session: session)
+                            .padding(.horizontal, 8)
+                            .layoutPriority(1)
                     }
-                    .frame(maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
                 }
 
