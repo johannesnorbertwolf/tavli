@@ -104,11 +104,12 @@ struct OpeningRollView: View {
 
     private func openingDice(in size: CGSize) -> some View {
         let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
-        let dieSize = geo.diceSize * 1.3
-        let aiCenter = CGPoint(x: geo.barTop.x,
-                               y: geo.barTop.y + dieSize / 2 + 4 * geo.scale)
-        let humanCenter = CGPoint(x: geo.barBottom.x,
-                                  y: geo.barBottom.y - dieSize / 2 - 4 * geo.scale)
+        let dieSize = geo.diceSize
+        // Same horizontal step as the normal two-dice row; doubled vertically so
+        // the two dice sit just a bit further apart than they do side-by-side.
+        let step = dieSize + 12 * geo.scale
+        let aiCenter = CGPoint(x: geo.boardCenter.x, y: geo.boardCenter.y - step)
+        let humanCenter = CGPoint(x: geo.boardCenter.x, y: geo.boardCenter.y + step)
 
         return ZStack {
             // AI die — no highlight
