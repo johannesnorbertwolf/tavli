@@ -194,8 +194,11 @@ private struct BorneOffView: View {
     }
 }
 
-/// Contextual Undo/Done buttons that appear only when the move builder makes
-/// them valid. The dice no longer live here — they sit on the board's center bar
+/// Game controls. Undo is persistent — it backs out half-moves while a move is
+/// being composed, then steps back whole decisions (your move + the AI's reply,
+/// dice restored) between turns; it greys out when there's nothing to rewind
+/// (game start, AI thinking). Done appears only when the partial move is already
+/// legal. The dice no longer live here — they sit on the board's center bar
 /// (`BoardDiceView`, #46), which frees the side rails.
 private struct ControlsView: View {
     @ObservedObject var session: GameSession
@@ -203,19 +206,16 @@ private struct ControlsView: View {
     private var isHumanPicking: Bool {
         session.phase == .picking || session.phase == .moving
     }
-    private var canUndo: Bool {
-        isHumanPicking && !session.moveBuilder.built.isEmpty
-    }
     private var canFinish: Bool {
         isHumanPicking && session.moveBuilder.canFinishNow && !session.moveBuilder.built.isEmpty
     }
 
     var body: some View {
         HStack(spacing: 16) {
-            if canUndo {
-                Button("Undo") { session.undo() }
-                    .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
-            }
+            Button("Undo") { session.undo() }
+                .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
+                .disabled(!session.canUndo)
+                .opacity(session.canUndo ? 1 : 0.4)
             if canFinish {
                 Button("Done") { session.confirm() }
                     .buttonStyle(ControlButtonStyle(tint: ChromeTheme.doneTint))

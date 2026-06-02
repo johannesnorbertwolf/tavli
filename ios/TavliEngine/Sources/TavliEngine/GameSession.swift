@@ -49,6 +49,21 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
 
+    /// One committed ply, kept so the player can step back to a previous decision
+    /// (mirrors the CLI's `Snapshot` list). `move` is `nil` for a forced pass; the
+    /// recorded dice are restored on undo so the same position can be re-decided.
+    /// The half-moves reference the live board points, so undoing them reverses the
+    /// exact board mutation.
+    private struct PlyRecord {
+        let mover: Color
+        let move: Move?
+        let dice: (Int, Int)
+    }
+
+    /// Committed plies, oldest first. Drives decision-point undo. Not published —
+    /// every transition that changes undo-availability also reassigns `phase`.
+    private var history: [PlyRecord] = []
+
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
@@ -146,25 +161,32 @@ public final class GameSession: ObservableObject {
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
-            finishTurn()
+            finishTurn(playedMove: Move(moveBuilder.built), mover: game.currentPlayer)
         } else {
             refreshSources()
         }
     }
 
-    /// Undo the last committed half-move (reverses the board mutation too).
+    /// Undo one step. While a move is being composed this pops the last committed
+    /// half-move (the within-turn editing primitive); once nothing is built it steps
+    /// back to the previous decision point (the human's last move plus the AI's
+    /// response), restoring that ply's dice. Tap again to keep going back.
     public func undo() {
-        guard let last = moveBuilder.built.last else { return }
-        game.board.undoHalfMove(last)
-        moveBuilder.undo()
-        clearSelection()
-        refreshSources()
+        guard isUndoablePhase else { return }
+        if let last = moveBuilder.built.last {
+            game.board.undoHalfMove(last)
+            moveBuilder.undo()
+            clearSelection()
+            refreshSources()
+            return
+        }
+        undoLastDecision()
     }
 
     /// Finish the turn early when the partial sequence is already a legal move.
     public func confirm() {
         guard phase == .picking || phase == .moving, moveBuilder.canFinishNow else { return }
-        finishTurn()
+        finishTurn(playedMove: Move(moveBuilder.built), mover: game.currentPlayer)
     }
 
     /// Reset to a fresh game, current player rolling first.
@@ -177,6 +199,7 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
         winProbability = 0.5
+        history = []
         phase = .awaitingRoll
         maybeStartAITurn()
     }
@@ -193,7 +216,7 @@ public final class GameSession: ObservableObject {
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn()
+            finishTurn(playedMove: nil, mover: game.currentPlayer)
             return
         }
 
@@ -225,7 +248,15 @@ public final class GameSession: ObservableObject {
         validTargets = []
     }
 
-    private func finishTurn() {
+    /// Record the just-played ply (so it can be rewound), then advance the turn.
+    /// `mover` and the live dice are captured before `switchTurn`. A winning move is
+    /// still recorded for history completeness, though undo is blocked at `gameOver`.
+    private func finishTurn(playedMove: Move?, mover: Color) {
+        history.append(PlyRecord(
+            mover: mover,
+            move: playedMove,
+            dice: (game.dice.die1.value, game.dice.die2.value)
+        ))
         clearSelection()
         selectableSources = []
 
@@ -237,6 +268,71 @@ public final class GameSession: ObservableObject {
         game.switchTurn()
         phase = .awaitingRoll
         maybeStartAITurn()
+    }
+
+    // ── Decision-point undo ──────────────────────────────────────────────────
+
+    /// Undo is offered only while it's the human's move or between turns — never
+    /// mid-AI-think, mid-animation, or once the game is over.
+    private var isUndoablePhase: Bool {
+        switch phase {
+        case .awaitingRoll, .picking, .moving: return true
+        case .aiThinking, .animating, .gameOver: return false
+        }
+    }
+
+    /// True when an Undo control should be active: either a half-move is being
+    /// composed, or there's a prior decision to step back to.
+    public var canUndo: Bool {
+        guard isUndoablePhase else { return false }
+        return !moveBuilder.built.isEmpty || lastDecisionIndex() != nil
+    }
+
+    /// True when stepping back a whole decision is available (independent of any
+    /// in-progress half-move build).
+    public var canUndoLastDecision: Bool {
+        isUndoablePhase && lastDecisionIndex() != nil
+    }
+
+    /// Index of the ply to rewind to: the most recent real move (not a pass) made by
+    /// the side that gets to re-decide. With an AI that's the human; in a
+    /// human-vs-human session it's simply the last move played. Passes are skipped
+    /// because they were never a real choice — undo lands on the prior decision.
+    private func lastDecisionIndex() -> Int? {
+        let undoColor = aiColor?.opponent
+        var i = history.count - 1
+        while i >= 0 {
+            let record = history[i]
+            if record.move != nil, undoColor == nil || record.mover == undoColor {
+                return i
+            }
+            i -= 1
+        }
+        return nil
+    }
+
+    /// Step back to the previous decision point: pop every ply from the target
+    /// forward (reversing each on the board), restore that ply's player and dice, and
+    /// re-enter the human's turn so the same position can be re-decided. No-op when
+    /// there's nothing to rewind.
+    public func undoLastDecision() {
+        guard isUndoablePhase, let target = lastDecisionIndex() else { return }
+
+        // Discard any half-moves built this turn but not yet recorded.
+        for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+
+        let restoredColor = history[target].mover
+        let (d1, d2) = history[target].dice
+        while history.count > target {
+            let popped = history.removeLast()
+            if let move = popped.move { game.board.undo(move) }
+        }
+
+        game.setPlayer(restoredColor)
+        game.dice.set(d1, d2)
+        // The target was a real move, so the restored position has legal moves —
+        // `beginTurn` lands in `picking` rather than auto-passing.
+        beginTurn()
     }
 
     // ── AI turn ────────────────────────────────────────────────────────────────
@@ -258,7 +354,7 @@ public final class GameSession: ObservableObject {
 
         guard !legalMoves.isEmpty else {
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn()
+            finishTurn(playedMove: nil, mover: game.currentPlayer)
             return
         }
         moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
@@ -298,6 +394,6 @@ public final class GameSession: ObservableObject {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
-        finishTurn()
+        finishTurn(playedMove: move, mover: mover)
     }
 }

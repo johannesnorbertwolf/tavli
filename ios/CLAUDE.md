@@ -66,12 +66,28 @@ so the game flow is validated without a simulator.
   — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
   of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `confirm` / `newGame`. On roll it computes `legalMoves` via `PossibleMoves`; an empty
-  set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
-  board and auto-finishes when the move is complete or the only continuation is itself legal.
-  Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
+  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
+  applies the half-move to the board and auto-finishes when the move is complete or the only
+  continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
+  ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+- **Undo — two layers, one button (#59).** Every committed ply (human or AI move, or a forced
+  pass) is appended to a private `history` of `PlyRecord`s — `(mover, move?, dice)` — recorded by
+  `finishTurn` before it switches turn. The half-moves in a record reference the live board points,
+  so undoing a record reverses the exact board mutation; passes carry `move == nil`. `undo()` is
+  unified: while a move is being composed (`moveBuilder.built` non-empty) it pops the **last
+  half-move** (the within-turn editing primitive); once nothing is built it calls
+  `undoLastDecision()`, which steps back to the **previous decision point** — pops every ply from the
+  human's last real move forward (reversing each on the board), restores that ply's player + dice,
+  and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be re-decided.
+  This mirrors the CLI's `undo_to_my_decision` ([play/session.py](../play/session.py)): typically two
+  plies (your move + the AI's reply), skipping passes (never a real choice), and clamping at the
+  game start. The decide-side is `aiColor?.opponent` (the human); a human-vs-human session
+  (`aiColor == nil`) steps back the single last move. `canUndo` (composing **or** a prior decision
+  exists) gates the button; it's false during `aiThinking`/`animating`/`gameOver` and at game start
+  (e.g. the AI opened and the human hasn't moved). `newGame` clears `history`.
 
 - **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
   Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled

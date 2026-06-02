@@ -269,13 +269,17 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   read straight off the board on each session publish: white =
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
-- **`ControlsView`** — contextual buttons shown only while `phase == .picking ||
-  .moving`: **Undo** (`session.undo()`) when `moveBuilder.built` is non-empty;
-  **Done** (`session.confirm()`) when `moveBuilder.canFinishNow && !built.isEmpty`.
-  Styled by `ControlButtonStyle` (palette pill). The dice no longer live here —
-  they moved to the board's center bar (`BoardDiceView`, #46), which freed the side
-  rails. These buttons only fully exercise once a human composes a partial move;
-  until then they appear only in the scripted `#Preview`.
+- **`ControlsView`** — **Undo** is now persistent (#59): always rendered, calling
+  the unified `session.undo()`, and greyed (`.disabled` + `0.4` opacity) when
+  `session.canUndo` is false. So it backs out half-moves while a move is being
+  composed, then steps back whole decisions (your move + the AI's reply, with the
+  ply's dice restored) between turns, and greys out when there's nothing to rewind —
+  at game start (the AI opened, no human move yet) or during AI thinking. **Done**
+  (`session.confirm()`) is still contextual: shown only when `moveBuilder.canFinishNow
+  && !built.isEmpty`. Both styled by `ControlButtonStyle` (palette pill). The dice no
+  longer live here — they moved to the board's center bar (`BoardDiceView`, #46),
+  which freed the side rails. The decision-undo logic lives entirely in `GameSession`
+  (see `ios/CLAUDE.md`); the view only reads `session.canUndo` and calls `undo()`.
 - **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
   to replace the finished session with a fresh one — see `RootView.swift`).

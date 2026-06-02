@@ -29,6 +29,11 @@ private func makeBoard(_ occupancy: [Int: [Color]]) -> GameBoard {
     return b
 }
 
+/// A by-value snapshot of every point's stack — exact-restore signature for undo tests.
+private func signature(_ board: GameBoard) -> [[Color]] {
+    board.points.map(\.pieces)
+}
+
 /// Commit a half-move through the builder while mutating the board in step, exactly
 /// as `GameSession` does — the builder reads occupancy, so the board must advance
 /// with each commit.
@@ -406,5 +411,124 @@ final class GameSessionTests: XCTestCase {
         }
         XCTAssertTrue(s.game.isOver())
         XCTAssertEqual(s.game.getWinner(), winner)
+    }
+}
+
+// ── Decision-point undo (#59) ──────────────────────────────────────────────────
+
+@MainActor
+final class GameSessionUndoTests: XCTestCase {
+    /// Replay the first surviving legal move through the intents, finishing the
+    /// human's turn (and triggering the AI's auto-reply when a side is the AI).
+    private func playFirstMove(_ s: GameSession) {
+        guard let chosen = s.moveBuilder.activeMoves.first else { return }
+        while s.phase == .picking || s.phase == .moving {
+            let idx = s.moveBuilder.built.count
+            guard idx < chosen.halfMoves.count else { break }
+            let h = chosen.halfMoves[idx]
+            s.selectPoint(h.from.position)
+            s.commitHalfMove(from: h.from.position, to: h.to.position)
+        }
+    }
+
+    /// One human decision + the AI's reply rewinds back to the human's pre-move
+    /// position with the original dice restored. (No model → the AI plays a random
+    /// legal move synchronously; undo reverses whatever it did, so the assertion on
+    /// the restored position holds regardless of the AI's choice.)
+    func testUndoStepsBackHumanDecisionRestoringBoardAndDice() {
+        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        s.start()
+        XCTAssertEqual(s.currentPlayer, .black)
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertFalse(s.canUndo, "nothing to rewind before the first move")
+
+        let start = signature(s.game.board)
+        s.setManualDice(3, 5)
+        XCTAssertEqual(s.phase, .picking)
+        playFirstMove(s)
+
+        // The AI (Black's opponent) has already replied — it's the human's turn again.
+        XCTAssertEqual(s.currentPlayer, .black)
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertTrue(s.canUndo)
+        XCTAssertTrue(s.canUndoLastDecision)
+
+        s.undo()
+        XCTAssertEqual(signature(s.game.board), start, "board restored to before the human move")
+        XCTAssertEqual(s.currentPlayer, .black)
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertEqual(s.game.dice.die1.value, 3, "the ply's dice are restored")
+        XCTAssertEqual(s.game.dice.die2.value, 5)
+        XCTAssertFalse(s.legalMoves.isEmpty)
+    }
+
+    /// When the AI opens and the human hasn't moved, there is no decision to rewind —
+    /// undo is disabled and a no-op.
+    func testUndoDisabledWhenAIOpenedAndHumanHasNotMoved() {
+        let s = GameSession(startingPlayer: .black, aiColor: .black)  // AI = Black, opens
+        s.start()
+        XCTAssertEqual(s.currentPlayer, .white)                       // human = White, to move
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertFalse(s.canUndo)
+        XCTAssertFalse(s.canUndoLastDecision)
+
+        let sig = signature(s.game.board)
+        s.undo()                                                      // no-op
+        XCTAssertEqual(signature(s.game.board), sig)
+        XCTAssertEqual(s.currentPlayer, .white)
+        XCTAssertEqual(s.phase, .awaitingRoll)
+    }
+
+    /// Two human decisions, then two sequential undos, walk all the way back to the
+    /// opening position; once there, undo is disabled again.
+    func testMultipleSequentialUndos() {
+        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        s.start()
+        let start = signature(s.game.board)
+
+        s.setManualDice(3, 5)
+        playFirstMove(s)
+        XCTAssertTrue(s.canUndoLastDecision)
+        let afterFirst = signature(s.game.board)                      // decision 1 + AI reply
+
+        s.setManualDice(1, 2)                                         // Black at 24 always has 24→23/24→22
+        playFirstMove(s)
+        XCTAssertTrue(s.canUndo, "second decision should be rewindable")
+
+        s.undo()                                                      // back to decision 2's start
+        XCTAssertEqual(signature(s.game.board), afterFirst)
+        XCTAssertEqual(s.currentPlayer, .black)
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertEqual(s.game.dice.die1.value, 1)
+        XCTAssertEqual(s.game.dice.die2.value, 2)
+
+        s.undo()                                                      // back to the opening
+        XCTAssertEqual(signature(s.game.board), start)
+        XCTAssertEqual(s.game.dice.die1.value, 3)
+        XCTAssertEqual(s.game.dice.die2.value, 5)
+        XCTAssertFalse(s.canUndo, "nothing left to rewind at the opening")
+    }
+
+    /// A move still under composition is undone one hop at a time (the unified undo's
+    /// within-turn branch); the turn never finishes, so the decision-point branch is
+    /// not reached.
+    func testUndoUnwindsInProgressBuildBeforeSteppingBack() {
+        let s = GameSession(startingPlayer: .white)                   // human-vs-human
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])                              // lone checker walks the Pasch ray
+        b.setPoint(24, pieces: [.black])                            // keep both colors on the board
+        s.setManualDice(2, 2)                                        // 1→3→5→7→9
+
+        let start = signature(b)
+        s.selectPoint(1)
+        s.commitHalfMove(from: 1, to: 5)                            // two of four hops — turn unfinished
+        XCTAssertEqual(s.moveBuilder.built.count, 2)
+        XCTAssertEqual(s.phase, .picking)
+
+        while !s.moveBuilder.built.isEmpty { s.undo() }             // peel each hop
+        XCTAssertEqual(signature(b), start, "in-progress build fully unwound")
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertEqual(s.currentPlayer, .white, "turn never finished")
     }
 }
