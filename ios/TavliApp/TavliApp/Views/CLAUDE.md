@@ -226,9 +226,10 @@ published read-state and calls its intents — no game logic lives here. (T9 fir
 this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the assembled
 screen is fully playable, and added the Back button + hosted debug toggle.)
 
-- **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
+- **`GameView`** (`@ObservedObject session`, plus `stats: HumanGameStats = .empty` — the
+  human's record shown in the win overlay (#64), `onBack: () -> Void = {}` — returns to
   the mode picker, and `onNewGame: () -> Void = {}` — replaces the finished session with
-  a fresh one; both default to no-ops so `#Preview`s compile). A `GeometryReader`
+  a fresh one; the non-session args default so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
   - **Landscape:** `HStack` with `PlayableBoardView(session:)` greedily filling the
     height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`, `8pt` pad) and a fixed
@@ -276,9 +277,12 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   they moved to the board's center bar (`BoardDiceView`, #46), which freed the side
   rails. These buttons only fully exercise once a human composes a partial move;
   until then they appear only in the scripted `#Preview`.
-- **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
+- **`WinOverlayView(winner:stats:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", the
+  `StatsPanelView(stats:)` (so the human's record is **auto-shown after every game**, #64), and a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
-  to replace the finished session with a fresh one — see `RootView.swift`).
+  to replace the finished session with a fresh one — see `RootView.swift`). The just-finished
+  game is already counted: `session.onGameOver` records into `RootView`'s store, whose
+  `@Published` change re-renders `RootView` → passes fresh `stats` down before the overlay paints.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
@@ -318,25 +322,55 @@ top-trailing overlay on the game screen.
 
 The app's top-level view: switches between the caramel **mode picker** and a live game.
 
-- **`RootView`** — `@State private var session: GameSession?` plus `@State private var
-  humanColor: EngineColor`. `nil` session → show `ModePickerView`; non-`nil` → show
-  `GameView(session:onBack:onNewGame:)`. `onBack` resets `session = nil` (returns to the
-  picker). `onNewGame` replaces the finished session with `makeSession(humanColor:
-  humanColor)` — a fresh `GameSession` with the same human color, leaving the stale
-  session to be deallocated. Holding the session in `@State` keeps the reference stable
-  across re-renders (`GameView` observes it). `makeSession(humanColor:)` builds
-  `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
+- **`RootView`** — `@StateObject private var statsStore = HumanStatsStore()` (the human
+  W/L history, #64), `@State private var session: GameSession?` plus `@State private var
+  humanColor: EngineColor`. `nil` session → show `ModePickerView(stats:onSelect:)`;
+  non-`nil` → show `GameView(session:stats:onBack:onNewGame:)`. `onBack` resets `session =
+  nil` (returns to the picker). `onNewGame` and picking a color both go through
+  `startSession(humanColor:)`, which builds a fresh session via `makeSession` and wires
+  `session.onGameOver = { winner in store.record(humanWon: winner == humanColor) }` — so
+  every completed game is recorded once (the closure captures the store + color by value,
+  no `self`). Holding the session in `@State` keeps the reference stable across re-renders
+  (`GameView` observes it); observing `statsStore` re-renders `RootView` when a game is
+  recorded, so the win overlay / picker see fresh `stats`. `makeSession(humanColor:)`
+  builds `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
   humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
-  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
-  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
-- **`ModePickerView(onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
-  "Tavli" wordmark in `CaramelPalette.frameText`, and two caramel `ModeButton`s: "Play vs
-  AI / You play White" → `.white`, "Play vs AI / You play Black" → `.black`. The design
+  chose White the AI (Black) moves first. The `-uiTestGame` bootstrap uses `makeSession`
+  **without** the `onGameOver` hook, so UI-test runs don't write to the stats store. *(The
+  real opening-roll rule — each side rolls one die, higher starts, with a manual override —
+  is a separate, deferred ticket.)*
+- **`ModePickerView(stats:onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
+  "Tavli" wordmark in `CaramelPalette.frameText`, two caramel `ModeButton`s ("Play vs AI /
+  You play White" → `.white`, "Play vs AI / You play Black" → `.black`), and a third "My
+  Record" button (subtitle = the current `Ws – Ls`, or "No games yet") that presents the
+  `StatsPanelView(stats:)` in a `.sheet` (#64 — stats accessible from the picker). The design
   reference's "Watch AI vs AI" mode is **deferred** (out of scope).
 - **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
   gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
   `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
+
+## StatsPanelView.swift (#64 — human W/L panel)
+
+The iPad analogue of the CLI's post-game summary box. A **pure** view of a
+`HumanGameStats` (from `TavliEngine`) — no persistence or game logic; the store lives in
+`RootView`. Hosted in two places: inside `WinOverlayView` (auto-shown after every game) and
+from the mode picker's "My Record" sheet.
+
+- **`StatsPanelView(stats:)`** — a parchment card (`#f3ecdf` fill, `frameBot` border) with a
+  Cormorant Garamond "Human vs AI" header. When `stats.total == 0` it shows a "No games yet"
+  empty state; otherwise three sections:
+  1. **Overall** — `{wins}W – {losses}L (NN%)` over a thin win-rate `Capsule` bar
+     (`width = proxy.width * stats.winRate`).
+  2. **Sparkline** — a `Last 20` / `All N` label over a row of dots for `stats.recent`
+     (oldest→newest): filled **green** (`#6a8a4a`) for a win, **brick-red** (`#b0563f`) for
+     a loss.
+  3. **Streak** — `"{n} wins/losses in a row ↑/↓"`, tinted to the streak color.
+- Reuses `CaramelPalette` + `Color(hex:)` (same target) via a local `SColor` typealias (so a
+  bare `Color` stays unambiguous against `TavliEngine.Color`); a small private `Palette`
+  enum holds the panel-local colors. Carries `accessibilityIdentifier("statsPanel")`.
+- `#Preview`s: a mixed record over the light picker background, and the empty state over the
+  dark win-overlay scrim (the card reads on both).
 
 ## App.swift
 

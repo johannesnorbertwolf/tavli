@@ -85,6 +85,35 @@ so the game flow is validated without a simulator.
   updates only from a real model score and stays at its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
 
+- **Game-over hook (#64).** `GameSession.onGameOver: (@MainActor (Color) -> Void)?` fires
+  **exactly once**, inside `finishTurn` the moment the session enters `.gameOver`, with the
+  winning color. It's the seam the app uses to record the human's win/loss; the engine itself
+  stays unaware of stats persistence. It fires once per game because no intent re-enters
+  `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
+  game (a new session, or `newGame`) re-arms it.
+
+## Human game stats (#64)
+
+`HumanGameStats.swift` is the iPad analogue of the CLI's post-game summary box / `human-stats`
+command (`main.py`). Pooled results only — no per-opponent / per-model breakdown (out of scope).
+SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
+(`HumanGameStatsTests`, `HumanStatsStoreTests`).
+
+- **`HumanGameRecord`** — `Codable` `{ date, humanWon }`. One completed game.
+- **`HumanGameStats(records:)`** — a **pure** summary mirroring `_print_human_record`:
+  `total` / `wins` / `losses`, `winRate` (∈ [0, 1], 0 when empty), `recent` (up to the last 20
+  outcomes, **oldest→newest**, for the sparkline), and the current streak (`streakCount` +
+  `streakIsWin`, counting back from the most recent game; `0`/`false` when empty). `.empty` is
+  the no-games value.
+- **`HumanStatsStorage`** — persistence seam (`load`/`save`). Default `UserDefaultsStatsStorage`
+  stores a JSON array under one `UserDefaults` key (the iPad app is offline + sandboxed, so it
+  can't share the CLI's `training_runs/human_game_history.log` — this is the on-device
+  equivalent that survives restarts). Tests inject an in-memory backing.
+- **`HumanStatsStore`** (`@MainActor`, `ObservableObject`) — loads on init, `record(humanWon:)`
+  appends + persists immediately and republishes so SwiftUI panels re-derive `stats`. `RootView`
+  owns one (`@StateObject`) and wires `session.onGameOver` to `store.record(humanWon: winner ==
+  humanColor)`.
+
 ## SwiftUI views
 
 `TavliApp/TavliApp/Views/` holds the rendering layer. Views are thin and bind to `GameSession`

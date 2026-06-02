@@ -10,6 +10,7 @@ private typealias EngineColor = TavliEngine.Color
 /// across re-renders; `GameView` observes it. Picking a color builds a fresh
 /// human-vs-AI session; Back tears it down and returns to the picker.
 struct RootView: View {
+    @StateObject private var statsStore = HumanStatsStore()
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
 
@@ -28,15 +29,27 @@ struct RootView: View {
 
     var body: some View {
         if let session {
-            GameView(session: session, onBack: { self.session = nil }) {
-                self.session = Self.makeSession(humanColor: self.humanColor)
+            GameView(session: session, stats: statsStore.stats, onBack: { self.session = nil }) {
+                self.session = self.startSession(humanColor: self.humanColor)
             }
         } else {
-            ModePickerView { color in
+            ModePickerView(stats: statsStore.stats) { color in
                 humanColor = color
-                session = Self.makeSession(humanColor: color)
+                session = self.startSession(humanColor: color)
             }
         }
+    }
+
+    /// Build a tracked human-vs-AI session: construct it (`makeSession`) and wire
+    /// its game-over callback to record the human's win/loss in `statsStore`.
+    private func startSession(humanColor: EngineColor) -> GameSession {
+        let session = Self.makeSession(humanColor: humanColor)
+        let store = statsStore
+        let human = humanColor
+        session.onGameOver = { winner in
+            store.record(humanWon: winner == human)
+        }
+        return session
     }
 
     /// Build a human-vs-AI session. Black always opens for now (the proper
@@ -57,7 +70,10 @@ struct RootView: View {
 /// Caramel start screen: "Tavli" wordmark over two "Play vs AI" choices. The
 /// AI-vs-AI watch mode from the design reference is deferred.
 private struct ModePickerView: View {
+    let stats: HumanGameStats
     let onSelect: (EngineColor) -> Void
+
+    @State private var showStats = false
 
     var body: some View {
         ZStack {
@@ -74,10 +90,26 @@ private struct ModePickerView: View {
                     ModeButton(title: "Play vs AI", subtitle: "You play Black") {
                         onSelect(.black)
                     }
+                    ModeButton(title: "My Record", subtitle: recordSubtitle) {
+                        showStats = true
+                    }
                 }
             }
             .padding(40)
         }
+        .sheet(isPresented: $showStats) {
+            ZStack {
+                SColor(hex: 0xece6dc).ignoresSafeArea()
+                StatsPanelView(stats: stats)
+                    .padding(40)
+            }
+        }
+    }
+
+    private var recordSubtitle: String {
+        stats.total == 0
+            ? "No games yet"
+            : "\(stats.wins)W – \(stats.losses)L"
     }
 }
 

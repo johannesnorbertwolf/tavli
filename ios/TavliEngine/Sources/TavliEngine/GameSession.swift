@@ -49,6 +49,11 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
 
+    /// Fired exactly once, when the session first enters `.gameOver`, with the
+    /// winning color. The app layer uses this to record the human's win/loss
+    /// (issue #64); the engine itself stays unaware of stats persistence.
+    public var onGameOver: (@MainActor (Color) -> Void)?
+
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
@@ -231,6 +236,7 @@ public final class GameSession: ObservableObject {
 
         if game.isOver(), let winner = game.getWinner() {
             phase = .gameOver(winner: winner)
+            onGameOver?(winner)
             return
         }
 

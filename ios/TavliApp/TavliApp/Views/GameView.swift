@@ -12,6 +12,10 @@ private typealias SColor = SwiftUI.Color
 struct GameView: View {
     @ObservedObject var session: GameSession
 
+    /// The human's record, shown in the win overlay after each game (#64).
+    /// Defaults to empty so `#Preview`s compile.
+    var stats: HumanGameStats = .empty
+
     /// Return to the mode picker. Defaults to a no-op so `#Preview`s compile.
     var onBack: () -> Void = {}
     /// Replace the finished session with a fresh one (same settings). Defaults to a no-op so `#Preview`s compile.
@@ -74,7 +78,7 @@ struct GameView: View {
                     .padding(.top, 12)
 
                 if case .gameOver(let winner) = session.phase {
-                    WinOverlayView(winner: winner, onNewGame: onNewGame)
+                    WinOverlayView(winner: winner, stats: stats, onNewGame: onNewGame)
                 }
             }
         }
@@ -244,6 +248,7 @@ private struct ControlButtonStyle: ButtonStyle {
 /// Dimmed scrim announcing the winner with a Play Again button.
 private struct WinOverlayView: View {
     let winner: TavliEngine.Color
+    let stats: HumanGameStats
     let onNewGame: () -> Void
 
     var body: some View {
@@ -253,6 +258,7 @@ private struct WinOverlayView: View {
                 Text("\(ChromeTheme.displayName(winner)) wins!")
                     .font(.system(size: 48, weight: .bold, design: .serif))
                     .foregroundStyle(.white)
+                StatsPanelView(stats: stats)
                 Button("Play Again", action: onNewGame)
                     .font(.title3.bold())
                     .padding(.horizontal, 32)
