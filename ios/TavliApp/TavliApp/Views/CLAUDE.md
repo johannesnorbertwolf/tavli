@@ -341,22 +341,45 @@ top-trailing overlay on the game screen.
 Pre-game screen that resolves the starting player before creating a `GameSession`. Shown
 between mode picker and game (and again after "Play Again"), so every game picks its own
 starter. Calls `onStart(EngineColor)` with the winner; `onBack` returns to the mode picker.
+The board is the main visual; chrome mirrors `GameView`'s layout and text style exactly.
 
+- **Layout** — responsive, matching `GameView`:
+  - *Landscape*: board fills the height (`maxWidth:.infinity, alignment:.leading`, 8pt pad),
+    chrome side panel (260pt, 12pt trailing + vertical pad; top-padded 44pt to clear the Back
+    button corner).
+  - *Portrait*: `VStack` — status block at top, `Spacer`, manual-row just above the board,
+    board at bottom with `.layoutPriority(1)` (same pattern as `GameView`'s `ControlsView`).
+  - Floating Back button in top-leading corner, styled identically to `GameView.BackButton`
+    (amber tint `.opacity(0.22)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText`
+    foreground).
 - **`OpeningRollView`** — `humanColor`, `onStart`, `onBack` injected. State machine:
-  - `.idle` — empty dice, "Roll" button.
-  - `.rolling` — brief 0.42s tumble animation (same pattern as `BoardDiceView`); disabled button.
-  - `.tied(h, a)` — shows the tied values, "Tie (X vs Y) — rolling again…" status; auto
-    re-rolls after 1 second. The user may also tap "Roll Again" to re-roll immediately; the
-    `if case .tied = rollState` guard in the scheduled closure prevents a double fire if the
-    user taps before the timer.
-  - `.resolved(humanDie, aiDie, winner)` — shows final dice and "You / AI go first!"; "Start
-    Game" button calls `onStart(winner)`.
-  - Two manual-override buttons ("You start" / "AI starts") bypass the roll entirely.
-  - Two `dieColumn` sub-views each show a `DieFace(value:, size: 80)` (value 0 = empty face,
-    no pips — the "not rolled yet" indicator) + a numeric label below. The whole dice `HStack`
-    uses the same `rotationEffect`/`scaleEffect` tumble as `DiceView`.
-- **`ORButton` / `ORButtonStyle`** — local caramel pill matching `ModeButtonStyle`; reads
-  `@Environment(\.isEnabled)` to dim at 0.6 opacity when disabled.
+  - `.idle` — empty dice (`DieFace(value: 0)` = no pips), halo pulsing, "Tap the board to roll".
+  - `.rolling` — 0.42s tumble animation (4× 0.09s easeInOut, same as `BoardDiceView`); halo hidden.
+  - `.tied(h, a)` — shows tied values, "Tie (X vs Y) — rolling again…"; halo reappears; auto
+    re-rolls after 1 second. The `if case .tied = rollState` guard prevents double fire if the
+    auto-timer and a board tap race.
+  - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; "Start Game" button
+    (green tint) replaces the manual-override row. Tapping the board is a no-op.
+- **Board overlay** — `BoardView()` + a `GeometryReader` overlay calling `openingDice(in:)`,
+  `.aspectRatio(1,.fit)`, `.contentShape(Rectangle())`, `.onTapGesture { startRoll() }`.
+  `openingDice` builds a `BoardGeometry`, sizes dice at `geo.diceSize * 1.3`, and places:
+  - *AI die*: centered on `(barTop.x, barTop.y + dieSize/2 + 4·scale)` — just below the top
+    frame line, on the opponent's side.
+  - *Human die*: centered on `(barBottom.x, barBottom.y - dieSize/2 - 4·scale)` — just above
+    the bottom frame line, on the player's side. Wrapped in a `ZStack` with `HaloRing`.
+  Both dice use `DieFace(value:, size:)` (value 0 = empty face = "not yet rolled"). Each die
+  gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
+- **`HaloRing`** — private `View` with its own `@State private var opacity: Double = 1.0`.
+  Renders a `CaramelPalette.hl` rounded-rect stroke (`lineWidth 3`) + amber glow shadow
+  (`radius 8`). `onAppear` starts a `.repeatForever(autoreverses: true)` animation to
+  `opacity = 0.3` (pulse period 0.9s). Since the view's own `@State` owns the opacity, each
+  time `HaloRing` appears (halo shown) the animation restarts cleanly from 1.0.
+- **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
+  exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
+- **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
+  resolved; switches to a "Start Game" (green tint) once resolved.
+- **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
+  `.opacity(0.22/0.45)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText` foreground.
 
 ## RootView.swift (T10 — root navigation + mode picker)
 

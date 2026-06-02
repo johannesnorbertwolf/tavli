@@ -1,12 +1,14 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
 private typealias EngineColor = TavliEngine.Color
 
-/// Pre-game opening roll ceremony. Each side rolls one die; higher goes first.
-/// Ties auto-re-roll. The player may also force a manual choice. Calls `onStart`
-/// with the resolved starting player, or `onBack` to return to the mode picker.
+/// Opening roll ceremony shown between mode picker and game (#33). The board is
+/// live; two dice straddle the center bar vertically (AI near the top, human
+/// near the bottom). Tap anywhere on the board to roll. Higher die goes first;
+/// ties auto-re-roll. A manual override is always available in the chrome.
 struct OpeningRollView: View {
     let humanColor: TavliEngine.Color
     let onStart: (TavliEngine.Color) -> Void
@@ -24,141 +26,186 @@ struct OpeningRollView: View {
     @State private var spin: Double = 0
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+        GeometryReader { screen in
+            ZStack {
+                SColor(hex: 0xece6dc).ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer()
-
-                VStack(spacing: 8) {
-                    Text("Opening Roll")
-                        .font(.custom("Cormorant Garamond", size: 72))
-                        .foregroundStyle(CaramelPalette.frameText)
-                    Text("Higher die goes first")
-                        .font(.callout)
-                        .foregroundStyle(CaramelPalette.frameText.opacity(0.65))
+                if screen.size.width >= screen.size.height {
+                    landscapeLayout
+                } else {
+                    portraitLayout
                 }
 
-                Spacer().frame(height: 48)
-
-                HStack(spacing: 56) {
-                    dieColumn(label: "You", value: humanDieValue)
-                    dieColumn(label: "AI", value: aiDieValue)
+                // Floating Back button — same pill style as GameView.
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(.callout.bold())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(SColor(hex: 0xa87a3e).opacity(0.22))
+                    .cornerRadius(10)
+                    .overlay(RoundedRectangle(cornerRadius: 10)
+                        .stroke(SColor(hex: 0xa87a3e).opacity(0.6), lineWidth: 1))
+                    .foregroundStyle(CaramelPalette.frameText)
                 }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+            }
+        }
+    }
+
+    // MARK: - Layouts
+
+    private var landscapeLayout: some View {
+        HStack(spacing: 0) {
+            boardArea
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            sidePanel
+                .frame(width: 260)
+                .padding(.vertical, 12)
+                .padding(.trailing, 12)
+        }
+    }
+
+    private var portraitLayout: some View {
+        VStack(spacing: 12) {
+            statusBlock
+                .padding(.horizontal, 16)
+            Spacer(minLength: 0)
+            manualRow
+                .padding(.horizontal, 16)
+            boardArea
+                .padding(.horizontal, 8)
+                .layoutPriority(1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Board
+
+    private var boardArea: some View {
+        ZStack {
+            BoardView()
+            GeometryReader { proxy in
+                openingDice(in: proxy.size)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .contentShape(Rectangle())
+        .onTapGesture { startRoll() }
+    }
+
+    private func openingDice(in size: CGSize) -> some View {
+        let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
+        let dieSize = geo.diceSize * 1.3
+        let aiCenter = CGPoint(x: geo.barTop.x,
+                               y: geo.barTop.y + dieSize / 2 + 4 * geo.scale)
+        let humanCenter = CGPoint(x: geo.barBottom.x,
+                                  y: geo.barBottom.y - dieSize / 2 - 4 * geo.scale)
+
+        return ZStack {
+            // AI die — no halo
+            DieFace(value: aiDieValue, size: dieSize)
                 .rotationEffect(.degrees(tumbling ? spin : 0))
                 .scaleEffect(tumbling ? 0.9 : 1.0)
+                .position(aiCenter)
 
-                Spacer().frame(height: 32)
-
-                statusText
-                    .frame(height: 44)
-
-                Spacer().frame(height: 32)
-
-                primaryButton
-
-                Spacer().frame(height: 32)
-
-                VStack(spacing: 12) {
-                    Text("Or choose manually:")
-                        .font(.callout)
-                        .foregroundStyle(CaramelPalette.frameText.opacity(0.55))
-                    HStack(spacing: 16) {
-                        ORButton("You start") { onStart(humanColor) }
-                        ORButton("AI starts") { onStart(humanColor.opponent) }
-                    }
+            // Human die — gold halo ring pulses while awaiting roll
+            ZStack {
+                if showHalo {
+                    HaloRing(dieSize: dieSize)
                 }
-
-                Spacer()
+                DieFace(value: humanDieValue, size: dieSize)
+                    .rotationEffect(.degrees(tumbling ? spin : 0))
+                    .scaleEffect(tumbling ? 0.9 : 1.0)
             }
-            .padding(.horizontal, 40)
-
-            Button(action: onBack) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                    Text("Back")
-                }
-                .font(.callout.bold())
-                .foregroundStyle(CaramelPalette.frameText)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(
-                    LinearGradient(colors: [CaramelPalette.frameTop, CaramelPalette.frameMid],
-                                   startPoint: .top, endPoint: .bottom)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(CaramelPalette.frameBot, lineWidth: 1.5))
-            }
-            .padding(20)
+            .position(humanCenter)
         }
     }
 
-    // MARK: - Subviews
+    // MARK: - Chrome
 
-    private func dieColumn(label: String, value: Int) -> some View {
-        VStack(spacing: 12) {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.75))
-            DieFace(value: value, size: 80)
-            Text(value > 0 ? "\(value)" : "—")
-                .font(.title3.bold())
-                .foregroundStyle(CaramelPalette.frameText.opacity(value > 0 ? 1.0 : 0.4))
-                .frame(height: 28)
+    private var sidePanel: some View {
+        VStack(spacing: 24) {
+            statusBlock
+            Spacer(minLength: 0)
+            manualRow
+        }
+        .padding(.top, 44)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var statusBlock: some View {
+        VStack(spacing: 4) {
+            Text("Opening Roll")
+                .font(.headline)
+                .foregroundStyle(CaramelPalette.frameText)
+            Text(statusCaption)
+                .font(.caption)
+                .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private var statusCaption: String {
+        switch rollState {
+        case .idle:                     return "Tap the board to roll"
+        case .rolling:                  return "Rolling…"
+        case .tied(let h, let a):       return "Tie (\(h) vs \(a)) — rolling again…"
+        case .resolved(_, _, let w):    return w == humanColor ? "You go first!" : "AI goes first!"
         }
     }
 
     @ViewBuilder
-    private var statusText: some View {
-        switch rollState {
-        case .idle:
-            Text("Roll to decide who goes first")
-                .font(.callout)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.65))
-        case .rolling:
-            Text("Rolling…")
-                .font(.callout)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.65))
-        case .tied(let h, let a):
-            Text("Tie (\(h) vs \(a)) — rolling again…")
-                .font(.callout)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.65))
-        case .resolved(_, _, let winner):
-            Text(winner == humanColor ? "You go first!" : "AI goes first!")
-                .font(.title2.bold())
-                .foregroundStyle(CaramelPalette.frameText)
+    private var manualRow: some View {
+        if case .resolved(_, _, let winner) = rollState {
+            Button("Start Game") { onStart(winner) }
+                .buttonStyle(ORButton(tint: SColor(hex: 0x6a8a4a)))
+                .frame(maxWidth: .infinity)
+        } else {
+            VStack(spacing: 8) {
+                Text("Or choose manually:")
+                    .font(.caption)
+                    .foregroundStyle(CaramelPalette.frameText.opacity(0.5))
+                HStack(spacing: 12) {
+                    Button("You start") { onStart(humanColor) }
+                        .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
+                    Button("AI starts") { onStart(humanColor.opponent) }
+                        .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
+                }
+            }
         }
     }
 
-    @ViewBuilder
-    private var primaryButton: some View {
-        switch rollState {
-        case .idle:
-            ORButton("Roll") { startRoll() }
-        case .rolling:
-            ORButton("Rolling…", enabled: false) { }
-        case .tied:
-            ORButton("Roll Again") { startRoll() }
-        case .resolved(_, _, let winner):
-            ORButton("Start Game") { onStart(winner) }
-        }
-    }
-
-    // MARK: - Computed helpers
-
-    private var humanDieValue: Int {
-        switch rollState {
-        case .idle, .rolling: return 0
-        case .tied(let h, _): return h
-        case .resolved(let h, _, _): return h
-        }
-    }
+    // MARK: - State helpers
 
     private var aiDieValue: Int {
         switch rollState {
-        case .idle, .rolling: return 0
-        case .tied(_, let a): return a
-        case .resolved(_, let a, _): return a
+        case .idle, .rolling:           return 0
+        case .tied(_, let a):           return a
+        case .resolved(_, let a, _):    return a
+        }
+    }
+
+    private var humanDieValue: Int {
+        switch rollState {
+        case .idle, .rolling:           return 0
+        case .tied(let h, _):           return h
+        case .resolved(let h, _, _):    return h
+        }
+    }
+
+    private var showHalo: Bool {
+        switch rollState {
+        case .idle, .tied:              return true
+        case .rolling, .resolved:       return false
         }
     }
 
@@ -166,6 +213,7 @@ struct OpeningRollView: View {
 
     private func startRoll() {
         guard !tumbling else { return }
+        if case .resolved = rollState { return }
         rollState = .rolling
         withAnimation(.easeInOut(duration: 0.09).repeatCount(4, autoreverses: false)) {
             spin += 360
@@ -177,7 +225,6 @@ struct OpeningRollView: View {
             let a = Int.random(in: 1...6)
             if h == a {
                 rollState = .tied(h, a)
-                // Auto re-roll unless the user already intervened (state changed)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     if case .tied = rollState { startRoll() }
                 }
@@ -189,55 +236,53 @@ struct OpeningRollView: View {
     }
 }
 
-// MARK: - Button
+// MARK: - Pulsing halo ring
 
-private struct ORButton: View {
-    let title: String
-    var enabled: Bool = true
-    let action: () -> Void
-
-    init(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
-        self.title = title
-        self.enabled = enabled
-        self.action = action
-    }
+/// A self-contained pulsing amber ring that encircles the human die. Owns its
+/// own `@State` so the opacity animation restarts cleanly every time the view
+/// appears.
+private struct HaloRing: View {
+    let dieSize: CGFloat
+    @State private var opacity: Double = 1.0
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.title3.bold())
-                .frame(maxWidth: 240)
-                .padding(.horizontal, 40)
-                .padding(.vertical, 16)
-                .foregroundStyle(CaramelPalette.frameText)
-        }
-        .buttonStyle(ORButtonStyle())
-        .disabled(!enabled)
+        RoundedRectangle(cornerRadius: dieSize * 0.107 + 3, style: .continuous)
+            .stroke(CaramelPalette.hl, lineWidth: 3)
+            .frame(width: dieSize + 10, height: dieSize + 10)
+            .shadow(color: CaramelPalette.hl.opacity(0.55), radius: 8, x: 0, y: 0)
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    opacity = 0.3
+                }
+            }
     }
 }
 
-private struct ORButtonStyle: ButtonStyle {
+// MARK: - Button style matching GameView chrome
+
+private struct ORButton: ButtonStyle {
+    let tint: SColor
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(
-                LinearGradient(colors: [CaramelPalette.frameTop, CaramelPalette.frameMid],
-                               startPoint: .top, endPoint: .bottom)
-            )
-            .cornerRadius(16)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(CaramelPalette.frameBot, lineWidth: 1.5))
-            .brightness(configuration.isPressed ? -0.05 : 0)
-            .opacity(enabled ? 1.0 : 0.6)
+            .font(.callout.bold())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(tint.opacity(configuration.isPressed ? 0.45 : 0.22))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(CaramelPalette.frameText)
     }
-
-    @Environment(\.isEnabled) private var enabled
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
 #Preview("Opening Roll — idle") {
     OpeningRollView(humanColor: .white, onStart: { _ in }, onBack: { })
 }
 
-#Preview("Opening Roll — human Black") {
+#Preview("Opening Roll — landscape") {
     OpeningRollView(humanColor: .black, onStart: { _ in }, onBack: { })
+        .previewInterfaceOrientation(.landscapeLeft)
 }
