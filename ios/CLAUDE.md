@@ -73,17 +73,58 @@ so the game flow is validated without a simulator.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
 
-- **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
-  Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled
-  `PlakotoValue.mlmodelc` (returns `nil` if absent → random fallback). Call `start()` once after
-  construction so the AI moves first if it owns the starting player. When `finishTurn` (or `start`/
-  `newGame`) lands on the AI's turn, `takeAITurn` rolls, computes legal moves (empty = forced pass),
-  then: with no model it applies a random legal move synchronously; with a model it enters
-  `aiThinking` and runs `agent.getBestMove` on a detached task **off the main actor**, hopping back
-  via `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure
-  falls back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
+- **AI integration (T6 + multi-ply search, #58).** `GameSession` optionally drives one side with
+  the Core ML `Agent`. Construct it with `agent:` + `aiColor:` (+ optional `searchConfig:`);
+  `GameSession.makeAgent()` loads the app-bundled `PlakotoValue.mlmodelc` (returns `nil` if absent →
+  random fallback). Call `start()` once after construction so the AI moves first if it owns the
+  starting player. When `finishTurn` (or `start`/`newGame`) lands on the AI's turn, `takeAITurn`
+  rolls, computes legal moves (empty = forced pass), then: with no model it applies a random legal
+  move synchronously; with a model it enters `aiThinking` and runs the **multi-ply expectimax
+  search** (`agent.getBestMove`) on a detached task **off the main actor**, hopping back via
+  `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure falls
+  back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
   updates only from a real model score and stays at its `0.5` default under the random fallback.
-  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
+  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
+  `searchConfig: SearchConfig(maxDepth: 1)` so full-game tests stay fast — the search itself is
+  covered by `AgentSearchTests`).
+
+  **Board-copy isolation.** The search must not race the live `game.board`: the main actor keeps
+  reading/scoring it (UI render, debug overlay) while the search applies/undoes thousands of times,
+  and sharing one board would interleave the unbalanced pop/push and corrupt the checker counts. So
+  `takeAITurn` snapshots `game.board.captureStacks()` + the dice on the main actor, and the detached
+  task rebuilds an **isolated `GameBoard` copy** (`restoreStacks`) to search. Move generation is
+  deterministic, so the copy's move list matches `liveMoves` index-for-index; the search returns the
+  chosen **index**, which the main actor maps back to the live `Move` before applying. An
+  out-of-range/`nil` index (Core ML failure) falls back to a random live move.
+
+- **`SearchConfig`** mirrors the CLI's `config/config.yml` search section so on-device play matches
+  `./run.sh play`: `timeBudget`↔`play_time_budget_s` (20s safety ceiling), `beamThreshold`↔
+  `beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil), `relativeCutoff`↔
+  `search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` (5), `maxDepth`↔`search_max_depth`
+  (2). `.standard` is the default; `SearchConfig(maxDepth: 1)` forces pure 1-ply.
+
+- **`Agent` search (ported from `ai/agent.py`, #58).** Three layers on top of the parity-validated
+  1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
+  restores the board on any exit):
+  - `pruneBranches(scores:beamThreshold:relativeCutoff:maxBranch:)` — beam helper mirroring
+    `_prune_branches`: keep `score >= best*(1-relativeCutoff)` when a relative cutoff is set, else
+    `score >= best - beamThreshold`; sort best-first (ties by original index, matching Python's
+    stable sort); cap to `maxBranch`; always keep ≥1.
+  - `evaluateMovesNply(…depth:…deadline:)` — recursive expectimax (`_evaluate_moves_nply`). `depth ≤ 1`
+    delegates to `evaluateMoves`. Deeper: for each candidate, iterate all 21 weighted dice outcomes
+    (`diceOutcomes`); the chance nodes are **never** pruned (distribution stays exact); a pass-position
+    (no opponent moves) is scored from our own perspective; otherwise opponent replies are 1-ply
+    pre-screened, pruned via `pruneBranches`, recursed at `depth-1`, and folded in as
+    `weight * (1 - oppDeep.max())`. Each apply is paired with a `defer`-undo so the board is restored
+    even when a `SearchTimeout` unwinds from a deeper frame.
+  - `getBestMove(…timeBudget:…maxDepth:)` — iterative-deepening beam expectimax under a wall-clock
+    `DispatchTime` deadline. Single move → fast path (depth 1, index 0). Otherwise depth 1 scores all
+    root moves, then it deepens while the deadline holds and `depth ≤ maxDepth`, re-scoring only the
+    pruned root candidates (keeping prior-depth scores for the rest). A `SearchTimeout` mid-depth
+    discards that depth's partial result and returns the last fully completed depth's best. Returns
+    `(move, score, index, depth)`. Validated by `AgentSearchTests`: `pruneBranches` unit cases, an
+    independent in-test 2-ply reference vs unpruned `evaluateMovesNply` (float-exact), and the
+    time-budget path (legal move, depth ≥ 2, budget respected, checkers conserved).
 
 ## SwiftUI views
 
@@ -150,9 +191,10 @@ ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
 │   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
-│   │                            MoveBuilder, GameSession
-│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
-│                                MoveBuilderTests, GameSessionTests, GameSessionAITests
+│   │                            SearchConfig, MoveBuilder, GameSession
+│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
+│                                FixtureSupport, MoveBuilderTests, GameSessionTests,
+│                                GameSessionAITests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,

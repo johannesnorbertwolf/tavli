@@ -33,6 +33,9 @@ public final class GameSession: ObservableObject {
     /// Which side the AI plays, if any. `nil` means a human-vs-human session.
     public let aiColor: Color?
 
+    /// Knobs for the AI's iterative-deepening search (defaults match the CLI).
+    public let searchConfig: SearchConfig
+
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
 
@@ -52,11 +55,13 @@ public final class GameSession: ObservableObject {
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
-                aiColor: Color? = nil) {
+                aiColor: Color? = nil,
+                searchConfig: SearchConfig = .standard) {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
         self.aiColor = aiColor
+        self.searchConfig = searchConfig
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
@@ -271,23 +276,51 @@ public final class GameSession: ObservableObject {
         }
 
         phase = .aiThinking
-        let moves = legalMoves
+        let liveMoves = legalMoves
         let color = game.currentPlayer
-        // Scoring apply/undoes on the shared `game.board`, so it must stay on the
-        // board's own actor (main) — never a background task. The UI render and the
-        // debug overlay's own scoring also touch this board; a concurrent analysis
-        // pass would interleave the unbalanced pop/push and corrupt the checker
-        // counts (and crash on a torn `pieces` read). Each `evaluateMoves` has no
-        // internal `await`, so on the main actor it runs atomically and always
-        // restores the board. The unstructured Task + yield lets the human's move
-        // and the "AI thinking…" state paint before we block on inference.
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await Task.yield()
+        let search = searchConfig
+        // Run the multi-ply search OFF the main actor so the UI stays responsive
+        // while the AI thinks. It scores an *isolated copy* of the board (rebuilt
+        // from a stack snapshot) rather than `game.board`: the main actor keeps
+        // reading/scoring the live board (UI render, debug overlay), and the search
+        // applies/undoes thousands of times — sharing one board across the two would
+        // interleave the unbalanced pop/push and corrupt the checker counts. Move
+        // generation is deterministic, so the copy's move list matches `liveMoves`
+        // index-for-index; the search returns the chosen index, which we map back to
+        // the live move on the main actor.
+        let config = game.board.config
+        let stacks = game.board.captureStacks()
+        let d1 = game.dice.die1.value
+        let d2 = game.dice.die2.value
+        Task.detached { [weak self] in
+            let copyBoard = GameBoard(config: config)
+            copyBoard.restoreStacks(stacks)
+            let dice = Dice(numberOfSides: config.dieSides)
+            dice.set(d1, d2)
+            let copyMoves = PossibleMoves(board: copyBoard, color: color, dice: dice).findMoves()
+
             // try? — a Core ML failure yields nil and a random fallback.
-            let result = try? agent.getBestMove(self.game.board, moves, color: color)
-            let chosen = result?.move ?? moves.randomElement()!
-            self.applyAIMove(chosen, score: result?.score)
+            let result = try? agent.getBestMove(
+                copyBoard, copyMoves, color: color,
+                timeBudget: search.timeBudget,
+                beamThreshold: search.beamThreshold,
+                relativeCutoff: search.relativeCutoff,
+                maxBranch: search.maxBranch,
+                maxDepth: search.maxDepth
+            )
+            let chosenIndex = result?.index
+            let chosenScore = result?.score
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let chosen: Move
+                if let chosenIndex, chosenIndex < liveMoves.count {
+                    chosen = liveMoves[chosenIndex]
+                } else {
+                    chosen = liveMoves.randomElement()!
+                }
+                self.applyAIMove(chosen, score: chosenScore)
+            }
         }
     }
 
