@@ -111,22 +111,17 @@ struct OpeningRollView: View {
                                   y: geo.barBottom.y - dieSize / 2 - 4 * geo.scale)
 
         return ZStack {
-            // AI die — no halo
+            // AI die — no highlight
             DieFace(value: aiDieValue, size: dieSize)
                 .rotationEffect(.degrees(tumbling ? spin : 0))
                 .scaleEffect(tumbling ? 0.9 : 1.0)
                 .position(aiCenter)
 
-            // Human die — gold halo ring pulses while awaiting roll
-            ZStack {
-                if showHalo {
-                    HaloRing(dieSize: dieSize)
-                }
-                DieFace(value: humanDieValue, size: dieSize)
-                    .rotationEffect(.degrees(tumbling ? spin : 0))
-                    .scaleEffect(tumbling ? 0.9 : 1.0)
-            }
-            .position(humanCenter)
+            // Human die — same gold ring as the game dice use during awaitingRoll
+            DieFace(value: humanDieValue, isHighlighted: showHalo, size: dieSize)
+                .rotationEffect(.degrees(tumbling ? spin : 0))
+                .scaleEffect(tumbling ? 0.9 : 1.0)
+                .position(humanCenter)
         }
     }
 
@@ -233,29 +228,6 @@ struct OpeningRollView: View {
                                       winner: h > a ? humanColor : humanColor.opponent)
             }
         }
-    }
-}
-
-// MARK: - Pulsing halo ring
-
-/// A self-contained pulsing amber ring that encircles the human die. Owns its
-/// own `@State` so the opacity animation restarts cleanly every time the view
-/// appears.
-private struct HaloRing: View {
-    let dieSize: CGFloat
-    @State private var opacity: Double = 1.0
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: dieSize * 0.107 + 3, style: .continuous)
-            .stroke(CaramelPalette.hl, lineWidth: 3)
-            .frame(width: dieSize + 10, height: dieSize + 10)
-            .shadow(color: CaramelPalette.hl.opacity(0.55), radius: 8, x: 0, y: 0)
-            .opacity(opacity)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    opacity = 0.3
-                }
-            }
     }
 }
 

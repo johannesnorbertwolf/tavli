@@ -366,14 +366,11 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
   - *AI die*: centered on `(barTop.x, barTop.y + dieSize/2 + 4·scale)` — just below the top
     frame line, on the opponent's side.
   - *Human die*: centered on `(barBottom.x, barBottom.y - dieSize/2 - 4·scale)` — just above
-    the bottom frame line, on the player's side. Wrapped in a `ZStack` with `HaloRing`.
+    the bottom frame line, on the player's side. Rendered with `isHighlighted: showHalo`.
   Both dice use `DieFace(value:, size:)` (value 0 = empty face = "not yet rolled"). Each die
   gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
-- **`HaloRing`** — private `View` with its own `@State private var opacity: Double = 1.0`.
-  Renders a `CaramelPalette.hl` rounded-rect stroke (`lineWidth 3`) + amber glow shadow
-  (`radius 8`). `onAppear` starts a `.repeatForever(autoreverses: true)` animation to
-  `opacity = 0.3` (pulse period 0.9s). Since the view's own `@State` owns the opacity, each
-  time `HaloRing` appears (halo shown) the animation restarts cleanly from 1.0.
+  The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
+  game dice show during `awaitingRoll`) rather than a bespoke overlay.
 - **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
   exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
 - **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
