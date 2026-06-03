@@ -358,15 +358,18 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
   - `.tied(h, a)` — shows tied values, "Tie (X vs Y) — rolling again…"; halo reappears; auto
     re-rolls after 1 second. The `if case .tied = rollState` guard prevents double fire if the
     auto-timer and a board tap race.
-  - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; "Start Game" button
-    (green tint) replaces the manual-override row. Tapping the board is a no-op.
+  - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; manual-override row
+    hidden. Auto-starts the game via `startGame(winner)` after a delay (1.5 s human win, 0.5 s
+    AI win). Tapping the board is a no-op.
+- **Auto-start** — `startGame(_ winner:)` guards with `@State private var started: Bool` so
+  neither the auto-timer nor the manual-override buttons can call `onStart` twice.
 - **Board overlay** — `BoardView()` + a `GeometryReader` overlay calling `openingDice(in:)`,
   `.aspectRatio(1,.fit)`, `.contentShape(Rectangle())`, `.onTapGesture { startRoll() }`.
-  `openingDice` builds a `BoardGeometry`, sizes dice at `geo.diceSize * 1.3`, and places:
-  - *AI die*: centered on `(barTop.x, barTop.y + dieSize/2 + 4·scale)` — just below the top
-    frame line, on the opponent's side.
-  - *Human die*: centered on `(barBottom.x, barBottom.y - dieSize/2 - 4·scale)` — just above
-    the bottom frame line, on the player's side. Rendered with `isHighlighted: showHalo`.
+  `openingDice` builds a `BoardGeometry`, sizes dice at `geo.diceSize` (identical to game dice),
+  and places:
+  - *AI die*: `(boardCenter.x, boardCenter.y − step)` where `step = dieSize + 12·scale`
+    (the same spacing used between normal horizontal game dice).
+  - *Human die*: `(boardCenter.x, boardCenter.y + step)`. Rendered with `isHighlighted: showHalo`.
   Both dice use `DieFace(value:, size:)` (value 0 = empty face = "not yet rolled"). Each die
   gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
   The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
@@ -374,7 +377,7 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
 - **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
   exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
 - **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
-  resolved; switches to a "Start Game" (green tint) once resolved.
+  resolved; hidden (`EmptyView`) once resolved (game is auto-starting).
 - **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
   `.opacity(0.22/0.45)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText` foreground.
 

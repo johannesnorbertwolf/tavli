@@ -8,7 +8,9 @@ private typealias EngineColor = TavliEngine.Color
 /// Opening roll ceremony shown between mode picker and game (#33). The board is
 /// live; two dice straddle the center bar vertically (AI near the top, human
 /// near the bottom). Tap anywhere on the board to roll. Higher die goes first;
-/// ties auto-re-roll. A manual override is always available in the chrome.
+/// ties auto-re-roll. On resolution the game starts automatically: 1.5 s for a
+/// human win (so the result is readable), 0.5 s for an AI win. A manual
+/// override is always available in the chrome before the roll resolves.
 struct OpeningRollView: View {
     let humanColor: TavliEngine.Color
     let onStart: (TavliEngine.Color) -> Void
@@ -24,6 +26,7 @@ struct OpeningRollView: View {
     @State private var rollState: RollState = .idle
     @State private var tumbling = false
     @State private var spin: Double = 0
+    @State private var started = false
 
     var body: some View {
         GeometryReader { screen in
@@ -161,19 +164,17 @@ struct OpeningRollView: View {
 
     @ViewBuilder
     private var manualRow: some View {
-        if case .resolved(_, _, let winner) = rollState {
-            Button("Start Game") { onStart(winner) }
-                .buttonStyle(ORButton(tint: SColor(hex: 0x6a8a4a)))
-                .frame(maxWidth: .infinity)
+        if case .resolved = rollState {
+            EmptyView()
         } else {
             VStack(spacing: 8) {
                 Text("Or choose manually:")
                     .font(.caption)
                     .foregroundStyle(CaramelPalette.frameText.opacity(0.5))
                 HStack(spacing: 12) {
-                    Button("You start") { onStart(humanColor) }
+                    Button("You start") { startGame(humanColor) }
                         .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
-                    Button("AI starts") { onStart(humanColor.opponent) }
+                    Button("AI starts") { startGame(humanColor.opponent) }
                         .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
                 }
             }
@@ -207,6 +208,12 @@ struct OpeningRollView: View {
 
     // MARK: - Roll logic
 
+    private func startGame(_ winner: EngineColor) {
+        guard !started else { return }
+        started = true
+        onStart(winner)
+    }
+
     private func startRoll() {
         guard !tumbling else { return }
         if case .resolved = rollState { return }
@@ -225,8 +232,14 @@ struct OpeningRollView: View {
                     if case .tied = rollState { startRoll() }
                 }
             } else {
-                rollState = .resolved(humanDie: h, aiDie: a,
-                                      winner: h > a ? humanColor : humanColor.opponent)
+                let winner: EngineColor = h > a ? humanColor : humanColor.opponent
+                rollState = .resolved(humanDie: h, aiDie: a, winner: winner)
+                // Human win: linger 1.5 s so the result is readable.
+                // AI win: 0.5 s, then the AI rolls and moves automatically.
+                let delay: Double = winner == humanColor ? 1.5 : 0.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    startGame(winner)
+                }
             }
         }
     }
