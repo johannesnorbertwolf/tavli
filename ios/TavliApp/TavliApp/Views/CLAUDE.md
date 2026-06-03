@@ -351,26 +351,69 @@ top-trailing overlay on the game screen.
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
 
+## OpeningRollView.swift (#33 — opening roll ceremony)
+
+Pre-game screen that resolves the starting player before creating a `GameSession`. Shown
+between mode picker and game (and again after "Play Again"), so every game picks its own
+starter. Calls `onStart(EngineColor)` with the winner; `onBack` returns to the mode picker.
+The board is the main visual; chrome mirrors `GameView`'s layout and text style exactly.
+
+- **Layout** — responsive, matching `GameView`:
+  - *Landscape*: board fills the height (`maxWidth:.infinity, alignment:.leading`, 8pt pad),
+    chrome side panel (260pt, 12pt trailing + vertical pad; top-padded 44pt to clear the Back
+    button corner).
+  - *Portrait*: `VStack` — status block at top, `Spacer`, manual-row just above the board,
+    board at bottom with `.layoutPriority(1)` (same pattern as `GameView`'s `ControlsView`).
+  - Floating Back button in top-leading corner, styled identically to `GameView.BackButton`
+    (amber tint `.opacity(0.22)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText`
+    foreground).
+- **`OpeningRollView`** — `humanColor`, `onStart`, `onBack` injected. State machine:
+  - `.idle` — empty dice (`DieFace(value: 0)` = no pips), halo pulsing, "Tap the board to roll".
+  - `.rolling` — 0.42s tumble animation (4× 0.09s easeInOut, same as `BoardDiceView`); halo hidden.
+  - `.tied(h, a)` — shows tied values, "Tie (X vs Y) — rolling again…"; halo reappears; auto
+    re-rolls after 1 second. The `if case .tied = rollState` guard prevents double fire if the
+    auto-timer and a board tap race.
+  - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; manual-override row
+    hidden. Auto-starts the game via `startGame(winner)` after 1 s. Tapping the board is a no-op.
+- **Auto-start** — `startGame(_ winner:)` guards with `@State private var started: Bool` so
+  neither the auto-timer nor the manual-override buttons can call `onStart` twice.
+- **Board overlay** — `BoardView()` + a `GeometryReader` overlay calling `openingDice(in:)`,
+  `.aspectRatio(1,.fit)`, `.contentShape(Rectangle())`, `.onTapGesture { startRoll() }`.
+  `openingDice` builds a `BoardGeometry`, sizes dice at `geo.diceSize` (identical to game dice),
+  and places:
+  - *AI die*: `(boardCenter.x, boardCenter.y − step)` where `step = dieSize + 12·scale`
+    (the same spacing used between normal horizontal game dice).
+  - *Human die*: `(boardCenter.x, boardCenter.y + step)`. Rendered with `isHighlighted: showHalo`.
+  Both dice use `DieFace(value:, size:)` (value 0 = empty face = "not yet rolled"). Each die
+  gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
+  The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
+  game dice show during `awaitingRoll`) rather than a bespoke overlay.
+- **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
+  exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
+- **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
+  resolved; hidden (`EmptyView`) once resolved (game is auto-starting).
+- **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
+  `.opacity(0.22/0.45)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText` foreground.
+
 ## RootView.swift (T10 — root navigation + mode picker; #61 save/load)
 
-The app's top-level view: switches between the caramel **mode picker** and a live game, and
-owns all save/load wiring (#61) through a single `SaveStore.default()`.
+The app's top-level view: switches between the caramel **mode picker**, the opening roll,
+and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
 
-- **`RootView`** — `@State private var session: GameSession?`, `@State private var
-  humanColor: EngineColor`, plus `@State private var autosaveName: String` (the current game's
-  stable display name — a timestamped `"Game · <date>"` default via `newAutosaveName()` for a
-  fresh game, or the resumed game's own name). `nil` session → show `ModePickerView`; non-`nil`
-  → show `GameView(session:onBack:onNewGame:onSave:onAutosave:)`. `onBack` **auto-saves then**
-  resets `session = nil` (returns to the picker). `onNewGame` mints a fresh `autosaveName` and
-  replaces the finished session with `makeSession(humanColor: humanColor)` — a fresh
-  `GameSession` with the same human color, leaving the stale session to be deallocated. `onSave`
-  writes a named manual save (`store.writeManual(session.snapshot(name:))`); `onAutosave` is
-  `persistAutosave`. Holding the session in `@State` keeps the reference stable across re-renders
-  (`GameView` observes it). `makeSession(humanColor:)` builds
-  `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
-  humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
-  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
-  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
+- **`RootView`** — `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,
+  `pendingHumanColor: EngineColor?`, `autosaveName: String` (the current game's stable display
+  name — a timestamped `"Game · <date>"` default via `newAutosaveName()` for a fresh game, or the
+  resumed game's own name). Body is a three-way branch inside `Group { }.onChange(of: scenePhase)`:
+  - `session != nil` → `GameView(session:onBack:onNewGame:onSave:onAutosave:)`. `onBack`
+    auto-saves then resets `session = nil`. `onNewGame` (Play Again) sets `session = nil` and
+    `pendingHumanColor = humanColor`, routing through the opening roll. `onSave` writes a named
+    manual save; `onAutosave` is `persistAutosave`.
+  - `pendingHumanColor != nil` → `OpeningRollView`. On resolution mints a fresh `autosaveName`,
+    stores `humanColor`, clears `pendingHumanColor`, and creates the session.
+  - else → `ModePickerView`. Tapping a color sets `pendingHumanColor`.
+  `makeSession(humanColor:startingPlayer:)` builds `GameSession(startingPlayer:, aiColor:
+  humanColor.opponent)` and calls `start()`. The UI-test hook bypasses the opening roll and
+  passes `startingPlayer: .black` explicitly.
 - **Save/load lifecycle (#61).**
   - **Auto-save** (`persistAutosave`) fires after **every move** (`GameView`'s
     `.onChange(of: session.history.count)`), as well as on `scenePhase == .background`
@@ -389,14 +432,14 @@ owns all save/load wiring (#61) through a single `SaveStore.default()`.
     The `-uiTestGame` launch arg still takes priority (deterministic Black-to-move game).
   - **Resume from the list** (`resume(_:)`) loads the chosen `SaveMetadata`, derives `humanColor`
     from `save.aiColor.opponent`, carries `save.name` forward into `autosaveName` (so continued
-    play keeps the same identity), and switches into the replayed session. `autoResume` and
-    `onSelect` likewise seed `autosaveName` (the resumed name, or a fresh `newAutosaveName()`).
+    play keeps the same identity), and switches into the replayed session.
   - Human color is recovered from `save.aiColor` (the human is the AI's opponent); a save with no
     AI color defaults the human to White.
 - **`ModePickerView(store:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
   Garamond "Tavli" wordmark, two caramel `ModeButton`s ("Play vs AI / You play White|Black"),
   and (#61) a **`SavedGamesList`** below them when any saves exist. Loads `store.list()` in
-  `@State saves` on `onAppear` (`reload`); `delete` removes a save and reloads. The design
+  `@State saves` on `onAppear` (`reload`); `delete` removes a save and reloads. `onSelect` sets
+  `pendingHumanColor` (routes through the opening roll). The design
   reference's "Watch AI vs AI" mode is **deferred** (out of scope).
 - **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
   scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
