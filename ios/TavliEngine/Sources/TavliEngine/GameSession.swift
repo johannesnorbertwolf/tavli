@@ -32,12 +32,22 @@ public final class GameSession: ObservableObject {
     public let agent: Agent?
     /// Which side the AI plays, if any. `nil` means a human-vs-human session.
     public let aiColor: Color?
+    /// The side that moved first this game. Retained (the live `game.player`
+    /// alternates) so a save can record the turn order for exact replay.
+    public private(set) var startingPlayer: Color
 
     /// Knobs for the AI's iterative-deepening search (defaults match the CLI).
     public let searchConfig: SearchConfig
 
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
+
+    /// One entry per finished turn, in play order, recording the dice and the
+    /// half-moves actually applied (empty = a forced pass). This is the sole basis
+    /// for save/resume: replaying these half-moves from the initial position
+    /// reproduces the exact board, with no stored board state (see `GameSave`).
+    /// Published so the app can auto-save after every move (#61).
+    @Published public private(set) var history: [PlyRecord] = []
 
     /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
     @Published public private(set) var winProbability: Double = 0.5
@@ -62,10 +72,18 @@ public final class GameSession: ObservableObject {
         self.agent = agent
         self.aiColor = aiColor
         self.searchConfig = searchConfig
+        self.startingPlayer = startingPlayer
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
     public var currentPlayer: Color { game.currentPlayer }
+
+    /// Whether the game has ended (someone won). Saves are only meaningful for
+    /// non-terminal games — the app clears the auto-save once this is true.
+    public var isTerminal: Bool {
+        if case .gameOver = phase { return true }
+        return false
+    }
 
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
     /// Returns `nil` when the model is absent so callers can fall back to random play.
@@ -151,6 +169,7 @@ public final class GameSession: ObservableObject {
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
+            recordPly(moveBuilder.built)
             finishTurn()
         } else {
             refreshSources()
@@ -169,6 +188,7 @@ public final class GameSession: ObservableObject {
     /// Finish the turn early when the partial sequence is already a legal move.
     public func confirm() {
         guard phase == .picking || phase == .moving, moveBuilder.canFinishNow else { return }
+        recordPly(moveBuilder.built)
         finishTurn()
     }
 
@@ -177,6 +197,8 @@ public final class GameSession: ObservableObject {
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
+        self.startingPlayer = startingPlayer
+        history = []
         legalMoves = []
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
@@ -198,6 +220,7 @@ public final class GameSession: ObservableObject {
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
+            recordPly([])
             finishTurn()
             return
         }
@@ -263,6 +286,7 @@ public final class GameSession: ObservableObject {
 
         guard !legalMoves.isEmpty else {
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
+            recordPly([])
             finishTurn()
             return
         }
@@ -327,10 +351,81 @@ public final class GameSession: ObservableObject {
     private func applyAIMove(_ move: Move, score: Float?) {
         let mover = game.currentPlayer
         game.board.apply(move)
+        recordPly(move.halfMoves)
         if let score {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
         finishTurn()
+    }
+
+    // ── History ──────────────────────────────────────────────────────────────
+
+    /// Append a finished turn to `history`. Captures the current dice and the
+    /// applied half-moves as `[from, to]` index pairs (empty = a forced pass).
+    /// Must be called before `finishTurn` switches the turn, while the dice still
+    /// hold this ply's values.
+    private func recordPly(_ halfMoves: [HalfMove]) {
+        history.append(PlyRecord(
+            die1: game.dice.die1.value,
+            die2: game.dice.die2.value,
+            halfMoves: halfMoves.map { [$0.from.position, $0.to.position] }
+        ))
+    }
+
+    // ── Resume from a save ────────────────────────────────────────────────────
+
+    /// Rebuild a session from a save by replaying its history from the initial
+    /// position. The returned session sits at the resumed player's `awaitingRoll`
+    /// (or `gameOver` if the recorded game already ended). Call `start()` afterward
+    /// — exactly as for a new game — so the AI takes its turn if it owns the move.
+    public static func resume(from save: GameSave,
+                              config: GameConfig = .standard,
+                              agent: Agent? = nil) -> GameSession {
+        let starting = Color(rawValue: save.startingPlayer) ?? .black
+        let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
+        let session = GameSession(startingPlayer: starting,
+                                  config: config,
+                                  agent: agent,
+                                  aiColor: aiColor)
+        session.replay(save.history)
+        return session
+    }
+
+    /// Apply each recorded half-move directly to the board, alternating the mover
+    /// every ply (a pass still passes the turn). Mirrors `applyHalfMove`
+    /// (`from.pop()` / `to.push(mover)`) without re-deriving legal moves, so the
+    /// reconstruction is exact and independent of the bundled model.
+    private func replay(_ plies: [PlyRecord]) {
+        let board = game.board
+        let upper = board.boardSize + 1
+        var mover = startingPlayer
+        history = []
+
+        for ply in plies {
+            for pair in ply.halfMoves where pair.count == 2 {
+                let from = pair[0], to = pair[1]
+                guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
+                board.points[from].pop()
+                board.points[to].push(mover)
+            }
+            history.append(ply)
+            if game.isOver() { break }
+            mover = mover.opponent
+            game.setPlayer(mover)
+        }
+
+        game.dice.set(1, 1)
+        legalMoves = []
+        moveBuilder = MoveBuilder(legalMoves: [], board: board)
+        clearSelection()
+        selectableSources = []
+
+        if game.isOver(), let winner = game.getWinner() {
+            phase = .gameOver(winner: winner)
+        } else {
+            phase = .awaitingRoll
+            refreshEvaluation()
+        }
     }
 }
