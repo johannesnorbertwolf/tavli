@@ -52,13 +52,6 @@ public final class GameSession: ObservableObject {
     /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
     @Published public private(set) var winProbability: Double = 0.5
 
-    /// Depth the AI's iterative-deepening search actually reached on its last move
-    /// (the search probes up to `searchConfig.maxDepth` but falls back to a shallower
-    /// completed depth if the time budget runs out). `0` before the AI has moved or
-    /// when it played a random fallback. Surfaced in the debug overlay so play can
-    /// confirm whether 4-ply was reached or it settled for 3.
-    @Published public private(set) var lastSearchDepth: Int = 0
-
     /// Source point currently selected (a checker the player is about to move).
     @Published public private(set) var selectedPoint: Int? = nil
     /// Destinations for the selected source.
@@ -211,7 +204,6 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
         winProbability = 0.5
-        lastSearchDepth = 0
         phase = .awaitingRoll
         maybeStartAITurn()
     }
@@ -303,7 +295,7 @@ public final class GameSession: ObservableObject {
 
         guard let agent else {
             // No model available — fall back to a random legal move.
-            applyAIMove(legalMoves.randomElement()!, score: nil, depth: nil)
+            applyAIMove(legalMoves.randomElement()!, score: nil)
             return
         }
 
@@ -342,7 +334,6 @@ public final class GameSession: ObservableObject {
             )
             let chosenIndex = result?.index
             let chosenScore = result?.score
-            let chosenDepth = result?.depth
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
@@ -352,12 +343,12 @@ public final class GameSession: ObservableObject {
                 } else {
                     chosen = liveMoves.randomElement()!
                 }
-                self.applyAIMove(chosen, score: chosenScore, depth: chosenDepth)
+                self.applyAIMove(chosen, score: chosenScore)
             }
         }
     }
 
-    private func applyAIMove(_ move: Move, score: Float?, depth: Int?) {
+    private func applyAIMove(_ move: Move, score: Float?) {
         let mover = game.currentPlayer
         game.board.apply(move)
         recordPly(move.halfMoves)
@@ -365,7 +356,6 @@ public final class GameSession: ObservableObject {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
-        if let depth { lastSearchDepth = depth }
         finishTurn()
     }
 

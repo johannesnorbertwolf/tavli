@@ -334,7 +334,7 @@ top-trailing overlay on the game screen.
 - **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
   button with `@State isOn = false` (off by default): tinted yellow when on, dim white
   when off. When on it reveals `DebugOverlay` below it with a 0.15s opacity transition.
-- **`DebugOverlay`** — a ~200pt translucent-black panel with four rows:
+- **`DebugOverlay`** — a ~200pt translucent-black panel with three rows:
   1. **Win-probability meter** — a yellow `Capsule` fill over a black track, width =
      `geo.size.width * session.winProbability` (always WHITE's view), plus the numeric `%`.
   2. **Top moves** — the top-3 candidate moves. `agent.evaluateMoves(board, legalMoves,
@@ -346,11 +346,7 @@ top-trailing overlay on the game screen.
      !legalMoves.isEmpty`) so a full move is never applied onto a partially-built sequence;
      shows `—` otherwise. `evaluateMoves` apply/undoes on the shared board on the main actor
      (the same actor that owns the board), leaving it unchanged.
-  3. **AI search** — `reached \(session.lastSearchDepth)-ply (max \(session.searchConfig.maxDepth ?? 0))`,
-     the depth the iterative-deepening search actually reached on the AI's last move vs. the
-     configured ceiling (4 = probed 4-ply; 3 = the 20s budget ran out and it kept the completed
-     3-ply result; 0 = no AI move yet / random fallback). Pure published-state read, no Core ML.
-  4. **Status line** — `session.currentPlayer` + the two dice values.
+  3. **Status line** — `session.currentPlayer` + the two dice values.
 
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
