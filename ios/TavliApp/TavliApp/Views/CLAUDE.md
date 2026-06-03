@@ -359,8 +359,7 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
     re-rolls after 1 second. The `if case .tied = rollState` guard prevents double fire if the
     auto-timer and a board tap race.
   - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; manual-override row
-    hidden. Auto-starts the game via `startGame(winner)` after a delay (1.5 s human win, 0.5 s
-    AI win). Tapping the board is a no-op.
+    hidden. Auto-starts the game via `startGame(winner)` after 1 s. Tapping the board is a no-op.
 - **Auto-start** — `startGame(_ winner:)` guards with `@State private var started: Bool` so
   neither the auto-timer nor the manual-override buttons can call `onStart` twice.
 - **Board overlay** — `BoardView()` + a `GeometryReader` overlay calling `openingDice(in:)`,

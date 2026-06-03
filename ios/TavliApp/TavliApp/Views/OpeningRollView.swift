@@ -8,8 +8,8 @@ private typealias EngineColor = TavliEngine.Color
 /// Opening roll ceremony shown between mode picker and game (#33). The board is
 /// live; two dice straddle the center bar vertically (AI near the top, human
 /// near the bottom). Tap anywhere on the board to roll. Higher die goes first;
-/// ties auto-re-roll. On resolution the game starts automatically: 1.5 s for a
-/// human win (so the result is readable), 0.5 s for an AI win. A manual
+/// ties auto-re-roll. On resolution the game starts automatically after 1 s.
+/// A manual
 /// override is always available in the chrome before the roll resolves.
 struct OpeningRollView: View {
     let humanColor: TavliEngine.Color
@@ -234,9 +234,7 @@ struct OpeningRollView: View {
             } else {
                 let winner: EngineColor = h > a ? humanColor : humanColor.opponent
                 rollState = .resolved(humanDie: h, aiDie: a, winner: winner)
-                // Human win: linger 1.5 s so the result is readable.
-                // AI win: 0.5 s, then the AI rolls and moves automatically.
-                let delay: Double = winner == humanColor ? 1.5 : 0.5
+                let delay: Double = 1.0
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                     startGame(winner)
                 }
