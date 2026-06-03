@@ -159,6 +159,71 @@ final class AgentSearchTests: XCTestCase {
         XCTAssertEqual(checkersAfter, checkersBefore, "search left the board mutated")
     }
 
+    // MARK: - terminal (win) handling during lookahead
+
+    /// A win reached *inside* the lookahead must short-circuit to 1.0, not get
+    /// scored as just another afterstate. Setup: a lone Black checker sits on its
+    /// starting point (24, catchable); White on 23 pins it with a `1` for an
+    /// immediate win, while White on 5 is far enough to absorb both dice without
+    /// pinning (a genuine non-winning option). The search must score every winning
+    /// line exactly 1.0 via its `hasWon` short-circuit, take one of them, and leave
+    /// the board byte-identical (apply/undo balanced through the recursion).
+    func testSearchShortCircuitsOnWinDuringLookahead() throws {
+        let config = gameConfig(Self.fixtures.config)
+
+        var points = [[String]](repeating: [], count: config.boardSize + 2) // 0...25
+        points[24] = ["B"]   // lone Black on its start — catchable, pinnable by White
+        points[23] = ["W"]   // pins 24 with a die of 1
+        points[5]  = ["W"]   // far from 24 — can play both dice without pinning
+        points[10] = ["B"]
+        points[11] = ["B"]
+        points[12] = ["B"]   // give Black legal replies on the non-winning branch
+        let board = makeBoard(points, config: config)
+
+        let dice = Dice(numberOfSides: config.dieSides)
+        dice.set(1, 2)
+        let moves = PossibleMoves(board: board, color: .white, dice: dice).findMoves()
+        XCTAssertGreaterThanOrEqual(moves.count, 2, "need both a winning and a non-winning option")
+
+        // Ground truth: which generated moves actually win (pin point 24)? Computed
+        // with the exact condition `evaluateMovesNply` uses (apply → hasWon).
+        var winningIndices: Set<Int> = []
+        for (i, m) in moves.enumerated() {
+            let snapshot = board.captureStacks()
+            board.apply(m)
+            if board.hasWon(.white) { winningIndices.insert(i) }
+            board.restoreStacks(snapshot)
+        }
+        XCTAssertFalse(winningIndices.isEmpty, "fixture should expose at least one winning move")
+        XCTAssertLessThan(winningIndices.count, moves.count, "fixture should also expose a non-winning move")
+
+        let before = board.captureStacks()
+        let scores = try Self.agent.evaluateMovesNply(
+            board, moves, color: .white, depth: 3,
+            beamThreshold: 0.08, relativeCutoff: 0.08, maxBranch: 5, deadline: nil
+        )
+        XCTAssertEqual(scores.count, moves.count)
+        for i in moves.indices {
+            if winningIndices.contains(i) {
+                XCTAssertEqual(scores[i], 1.0, accuracy: 1e-6,
+                               "winning line \(i) must short-circuit to exactly 1.0")
+            } else {
+                XCTAssertLessThan(scores[i], 1.0,
+                                  "non-winning line \(i) must not be scored as a win")
+            }
+        }
+
+        // The full iterative-deepening search must pick the immediate win.
+        let result = try XCTUnwrap(try Self.agent.getBestMove(
+            board, moves, color: .white, timeBudget: 10,
+            relativeCutoff: 0.08, maxBranch: 5, maxDepth: 3
+        ))
+        XCTAssertTrue(winningIndices.contains(result.index), "search passed up an immediate win")
+        XCTAssertEqual(result.score, 1.0, accuracy: 1e-6)
+
+        XCTAssertEqual(board.captureStacks(), before, "search left the board mutated")
+    }
+
     /// A single legal move skips the search entirely (depth 1, index 0).
     func testTimeBudgetSearchSingleMoveFastPath() throws {
         let config = gameConfig(Self.fixtures.config)

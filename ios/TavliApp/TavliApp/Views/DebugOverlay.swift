@@ -80,6 +80,19 @@ struct DebugOverlay: View {
 
             Divider().background(Color.white.opacity(0.2))
 
+            // What the iterative-deepening search actually reached on the AI's last
+            // move (vs. the configured ceiling). 4 = probed 4-ply; 3 = budget ran out
+            // and it fell back to the completed 3-ply result; 0 = no AI move yet.
+            HStack {
+                Text("AI search")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                Text("reached \(session.lastSearchDepth)-ply (max \(session.searchConfig.maxDepth ?? 0))")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.cyan.opacity(0.9))
+            }
+
             Text("Turn: \(session.currentPlayer.rawValue)  Dice: \(session.game.dice.die1.value),\(session.game.dice.die2.value)")
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.6))

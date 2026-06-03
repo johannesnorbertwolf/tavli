@@ -84,7 +84,11 @@ so the game flow is validated without a simulator.
   `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure falls
   back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
   updates only from a real model score and stays at its `0.5` default under the random fallback.
-  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
+  `lastSearchDepth` (published, read-only) records the depth the iterative-deepening search actually
+  *reached* on the AI's last move: `getBestMove` returns it, `applyAIMove` stores it, `newGame` resets
+  it to `0`, and the random fallback passes `depth: nil` (leaving it `0`). The debug overlay surfaces
+  it as `reached N-ply (max M)` so play can confirm whether 4-ply landed or the 20s budget forced a
+  3-ply fallback. Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
   `searchConfig: SearchConfig(maxDepth: 1)` so full-game tests stay fast — the search itself is
   covered by `AgentSearchTests`).
 
@@ -100,8 +104,13 @@ so the game flow is validated without a simulator.
 - **`SearchConfig`** mirrors the CLI's `config/config.yml` search section so on-device play matches
   `./run.sh play`: `timeBudget`↔`play_time_budget_s` (20s safety ceiling), `beamThreshold`↔
   `beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil), `relativeCutoff`↔
-  `search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` (5), `maxDepth`↔`search_max_depth`
-  (2). `.standard` is the default; `SearchConfig(maxDepth: 1)` forces pure 1-ply.
+  `search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` (5). The pruning knobs match the
+  CLI exactly. **`maxDepth` intentionally differs**: the CLI caps at `search_max_depth: 2`, but the
+  default `.standard` config sets `maxDepth: 4` so on-device play reliably completes depth 3 (3-ply)
+  and then *probes* depth 4 with whatever of the 20s `timeBudget` remains, falling back to the
+  depth-3 result if 4 times out (the search reports the depth it actually reached — see
+  `lastSearchDepth` below). `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by the headless
+  game tests to stay fast).
 
 - **`Agent` search (ported from `ai/agent.py`, #58).** Three layers on top of the parity-validated
   1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
@@ -123,8 +132,12 @@ so the game flow is validated without a simulator.
     pruned root candidates (keeping prior-depth scores for the rest). A `SearchTimeout` mid-depth
     discards that depth's partial result and returns the last fully completed depth's best. Returns
     `(move, score, index, depth)`. Validated by `AgentSearchTests`: `pruneBranches` unit cases, an
-    independent in-test 2-ply reference vs unpruned `evaluateMovesNply` (float-exact), and the
-    time-budget path (legal move, depth ≥ 2, budget respected, checkers conserved).
+    independent in-test 2-ply reference vs unpruned `evaluateMovesNply` (float-exact), the
+    time-budget path (legal move, depth ≥ 2, budget respected, checkers conserved), and a
+    **terminal-during-lookahead** case (a position where some lines pin Black's start point for an
+    immediate win and others don't): every winning line must score exactly 1.0 via the `hasWon`
+    short-circuit, non-winning lines strictly < 1.0, the search must pick a winning index, and the
+    board must end byte-identical.
 
 ## Save & load (#61, replay-based)
 
@@ -218,8 +231,10 @@ through its published read-state + intents — no game logic lives in views.
   padded tight so the board fills the display (#46), bound to a `GameSession`. See `Views/CLAUDE.md`.
 - **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
   plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
-  meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. Hosted by
-  `GameView` (T10) as a top-trailing overlay. See `Views/CLAUDE.md`.
+  meter + top-3 candidate moves via `agent.evaluateMoves`, plus an **AI-search row** showing
+  `reached N-ply (max M)` from `session.lastSearchDepth` / `session.searchConfig.maxDepth` (so play
+  can see whether the iterative-deepening search hit 4-ply or fell back to 3). Never mutates
+  gameplay. Hosted by `GameView` (T10) as a top-trailing overlay. See `Views/CLAUDE.md`.
 - **`RootView.swift`** (T10 + #61 save/load) — app root: switches between the caramel mode picker
   (`ModePickerView`: "Tavli" wordmark + two "Play vs AI — You play White/Black" buttons **plus a
   saved-games list**) and a live `GameView`. Picking a color builds a human-vs-AI
