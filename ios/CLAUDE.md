@@ -73,24 +73,23 @@ so the game flow is validated without a simulator.
   ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
-- **Undo — two layers, one button (#59).** Every committed ply (human or AI move, or a forced
+- **Undo — two intents, two surfaces (#59).** Every committed ply (human or AI move, or a forced
   pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
   `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
-  `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`. `undo()` is
-  unified: while a move is being composed (`moveBuilder.built` non-empty) it pops the **last
-  half-move** (the within-turn editing primitive); once nothing is built it calls
-  `undoLastDecision()`, which steps back to the **previous decision point** — pops every ply from the
-  human's last real move forward (reversing each on the board), restores that ply's player + dice,
-  and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be re-decided.
-  Both `undoHistory` and `record.plies` are trimmed to the same target index so they stay in sync.
-  This mirrors the CLI's `undo_to_my_decision` ([play/session.py](../play/session.py)): typically two
-  plies (your move + the AI's reply), skipping passes (never a real choice), and clamping at the
-  game start. The decide-side is `aiColor?.opponent` (the human); a human-vs-human session
-  (`aiColor == nil`) steps back the single last move. `canUndo` (composing **or** a prior decision
-  exists) gates the button; it's false during `aiThinking`/`animating`/`gameOver` and at game start
-  (e.g. the AI opened and the human hasn't moved). `newGame` clears `undoHistory`. After
-  `replay` (loading a save), `undoHistory` is empty — `Move` objects can't be reconstructed from
-  saved indices, so decision-point undo is unavailable until the first new move is played.
+  `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
+  - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
+    half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
+    true only while `moveBuilder.built` is non-empty. Wired to the persistent **Undo** button in
+    `ControlsView`.
+  - `undoLastDecision()` — **decision-point rewind** (debug pane only): pops every ply from the
+    human's last real move forward (reversing each on the board), restores that ply's player +
+    dice, and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be
+    re-decided. Both `undoHistory` and `record.plies` are trimmed to the same target index so they
+    stay in sync. Mirrors the CLI's `undo_to_my_decision`: typically two plies (your move + the
+    AI's reply), skipping passes, clamped at game start. The decide-side is `aiColor?.opponent`;
+    a human-vs-human session steps back the single last move. `canUndoLastDecision` gates the
+    **"↩ Undo decision"** button in `DebugOverlay`. After `replay` (loading a save),
+    `undoHistory` is empty and `canUndoLastDecision` is false until the first new move.
 
 - **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
   Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled

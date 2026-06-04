@@ -306,17 +306,14 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   read straight off the board on each session publish: white =
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
-- **`ControlsView`** — **Undo** is now persistent (#59): always rendered, calling
-  the unified `session.undo()`, and greyed (`.disabled` + `0.4` opacity) when
-  `session.canUndo` is false. So it backs out half-moves while a move is being
-  composed, then steps back whole decisions (your move + the AI's reply, with the
-  ply's dice restored) between turns, and greys out when there's nothing to rewind —
-  at game start (the AI opened, no human move yet) or during AI thinking. **Done**
-  (`session.confirm()`) is still contextual: shown only when `moveBuilder.canFinishNow
-  && !built.isEmpty`. Both styled by `ControlButtonStyle` (palette pill). The dice no
-  longer live here — they moved to the board's center bar (`BoardDiceView`, #46),
-  which freed the side rails. The decision-undo logic lives entirely in `GameSession`
-  (see `ios/CLAUDE.md`); the view only reads `session.canUndo` and calls `undo()`.
+- **`ControlsView`** — **Undo** is persistent (#59): always rendered, calling
+  `session.undo()`, greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is
+  false. It peels the last committed half-move within the current turn only; it
+  greys out when nothing has been built yet (between turns, AI thinking, game over).
+  **Done** (`session.confirm()`) is still contextual: shown only when
+  `moveBuilder.canFinishNow && !built.isEmpty`. Both styled by `ControlButtonStyle`
+  (palette pill). The dice no longer live here — they moved to the board's center bar
+  (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
 - **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
   to replace the finished session with a fresh one — see `RootView.swift`).
@@ -338,7 +335,7 @@ top-trailing overlay on the game screen.
 - **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
   button with `@State isOn = false` (off by default): tinted yellow when on, dim white
   when off. When on it reveals `DebugOverlay` below it with a 0.15s opacity transition.
-- **`DebugOverlay`** — a ~200pt translucent-black panel with three rows:
+- **`DebugOverlay`** — a ~200pt translucent-black panel with four rows:
   1. **Win-probability meter** — a yellow `Capsule` fill over a black track, width =
      `geo.size.width * session.winProbability` (always WHITE's view), plus the numeric `%`.
   2. **Top moves** — the top-3 candidate moves. `agent.evaluateMoves(board, legalMoves,
@@ -351,6 +348,9 @@ top-trailing overlay on the game screen.
      shows `—` otherwise. `evaluateMoves` apply/undoes on the shared board on the main actor
      (the same actor that owns the board), leaving it unchanged.
   3. **Status line** — `session.currentPlayer` + the two dice values.
+  4. **"↩ Undo decision"** — calls `session.undoLastDecision()`; yellow when
+     `session.canUndoLastDecision`, dim otherwise. This is the only surface for
+     decision-level undo (stepped back from `ControlsView` which now only peels half-moves).
 
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.

@@ -267,12 +267,10 @@ private struct BorneOffView: View {
     }
 }
 
-/// Game controls. Undo is persistent — it backs out half-moves while a move is
-/// being composed, then steps back whole decisions (your move + the AI's reply,
-/// dice restored) between turns; it greys out when there's nothing to rewind
-/// (game start, AI thinking). Done appears only when the partial move is already
-/// legal. The dice no longer live here — they sit on the board's center bar
-/// (`BoardDiceView`, #46), which frees the side rails.
+/// Game controls. Undo peels back the last committed half-move within the current
+/// turn; it greys out when nothing has been built yet. Done appears only when the
+/// partial move is already legal. The dice no longer live here — they sit on the
+/// board's center bar (`BoardDiceView`, #46), which frees the side rails.
 private struct ControlsView: View {
     @ObservedObject var session: GameSession
 

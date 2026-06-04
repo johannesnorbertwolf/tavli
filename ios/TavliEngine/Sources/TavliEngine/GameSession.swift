@@ -185,20 +185,15 @@ public final class GameSession: ObservableObject {
         }
     }
 
-    /// Undo one step. While a move is being composed this pops the last committed
-    /// half-move (the within-turn editing primitive); once nothing is built it steps
-    /// back to the previous decision point (the human's last move plus the AI's
-    /// response), restoring that ply's dice. Tap again to keep going back.
+    /// Undo the last committed half-move within the current turn (the within-turn
+    /// editing primitive). No-op when nothing has been built yet this turn.
+    /// For stepping back a whole decision see `undoLastDecision()`.
     public func undo() {
-        guard isUndoablePhase else { return }
-        if let last = moveBuilder.built.last {
-            game.board.undoHalfMove(last)
-            moveBuilder.undo()
-            clearSelection()
-            refreshSources()
-            return
-        }
-        undoLastDecision()
+        guard isUndoablePhase, let last = moveBuilder.built.last else { return }
+        game.board.undoHalfMove(last)
+        moveBuilder.undo()
+        clearSelection()
+        refreshSources()
     }
 
     /// Finish the turn early when the partial sequence is already a legal move.
@@ -295,11 +290,9 @@ public final class GameSession: ObservableObject {
         }
     }
 
-    /// True when an Undo control should be active: either a half-move is being
-    /// composed, or there's a prior decision to step back to.
+    /// True when a half-move can be peeled back (something has been built this turn).
     public var canUndo: Bool {
-        guard isUndoablePhase else { return false }
-        return !moveBuilder.built.isEmpty || lastDecisionIndex() != nil
+        isUndoablePhase && !moveBuilder.built.isEmpty
     }
 
     /// True when stepping back a whole decision is available (independent of any
