@@ -311,12 +311,17 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   covers the in-chrome `HistoryButton`.
 - **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
   button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
-  one `HistoryRow` per `session.history` ply, auto-scrolling to the newest on appear and on
-  `history.count` change. Empty history shows "No moves yet". Bound via `@ObservedObject`, so a
-  freshly committed ply appears immediately. `#ece6dc` background.
-  - **`HistoryRow(ply:)`** — a row showing the ply `index`, a `ChromeTheme.checkerColor(mover)`
-    disc, the dice (`d=<d1> <d2>`), and the move text (hops as `from→to`, joined by `, `; or
-    a dimmed "(pass)"). Monospaced so the columns align.
+  one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
+  Empty history shows "No moves yet". Bound via `@ObservedObject`, so a freshly committed ply
+  appears immediately. `#ece6dc` background. `PlyRecord` is the persistence format (no `index` /
+  `mover` fields), so the view derives the 1-based index from `enumerated()` offset and the mover
+  from `session.startingPlayer` alternating every ply (`index % 2 == 1 → startingPlayer`, else
+  `startingPlayer.opponent`). `ForEach` uses `id: \.offset`; `scrollToLast` targets
+  `session.history.count - 1`.
+  - **`HistoryRow(index:mover:ply:)`** — a row showing the 1-based `index`, a
+    `ChromeTheme.checkerColor(mover)` disc, the dice (`d=<d1> <d2>`), and the move text
+    (`ply.halfMoves` formatted as `from→to` pairs joined by `, `; or a dimmed "(pass)" when
+    `halfMoves` is empty). Monospaced so the columns align.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),

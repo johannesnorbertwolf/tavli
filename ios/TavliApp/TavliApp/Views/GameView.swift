@@ -319,6 +319,9 @@ private struct WinOverlayView: View {
 /// `h`/`history` command: one row per ply with its number, mover, dice, and the
 /// half-moves played (or "pass"). Binds to the session so a freshly committed
 /// move appears immediately, and auto-scrolls to the newest ply.
+///
+/// `PlyRecord` (the persistence format) stores only dice + half-moves; the 1-based
+/// index and mover are derived here from array position and `session.startingPlayer`.
 private struct HistoryView: View {
     @ObservedObject var session: GameSession
     @Environment(\.dismiss) private var dismiss
@@ -337,8 +340,13 @@ private struct HistoryView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(session.history) { ply in
-                                HistoryRow(ply: ply).id(ply.index)
+                            ForEach(Array(session.history.enumerated()), id: \.offset) { offset, ply in
+                                let index = offset + 1
+                                let mover = index % 2 == 1
+                                    ? session.startingPlayer
+                                    : session.startingPlayer.opponent
+                                HistoryRow(index: index, mover: mover, ply: ply)
+                                    .id(offset)
                                 Divider().opacity(0.4)
                             }
                         }
@@ -369,23 +377,27 @@ private struct HistoryView: View {
     }
 
     private func scrollToLast(_ proxy: ScrollViewProxy) {
-        guard let last = session.history.last else { return }
-        withAnimation { proxy.scrollTo(last.index, anchor: .bottom) }
+        guard !session.history.isEmpty else { return }
+        withAnimation { proxy.scrollTo(session.history.count - 1, anchor: .bottom) }
     }
 }
 
-/// One ply row: number, a mover-colored disc, the dice, and the move text.
+/// One ply row: 1-based number, a mover-colored disc, the dice, and the move text.
+/// The caller derives `index` and `mover` from array position + `startingPlayer`
+/// (neither is stored in `PlyRecord`, which is the persistence format).
 private struct HistoryRow: View {
+    let index: Int
+    let mover: TavliEngine.Color
     let ply: PlyRecord
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("\(ply.index).")
+            Text("\(index).")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(ChromeTheme.ink.opacity(0.5))
                 .frame(width: 34, alignment: .trailing)
             Circle()
-                .fill(ChromeTheme.checkerColor(ply.mover))
+                .fill(ChromeTheme.checkerColor(mover))
                 .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
                 .frame(width: 18, height: 18)
             Text("d=\(ply.die1) \(ply.die2)")
@@ -394,15 +406,18 @@ private struct HistoryRow: View {
                 .frame(width: 64, alignment: .leading)
             Text(moveText)
                 .font(.callout.monospaced())
-                .foregroundStyle(ply.wasPass ? ChromeTheme.ink.opacity(0.5) : ChromeTheme.ink)
+                .foregroundStyle(ply.halfMoves.isEmpty ? ChromeTheme.ink.opacity(0.5) : ChromeTheme.ink)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 8)
     }
 
     private var moveText: String {
-        guard !ply.wasPass else { return "(pass)" }
-        return ply.hops.map { "\($0.from)→\($0.to)" }.joined(separator: ", ")
+        guard !ply.halfMoves.isEmpty else { return "(pass)" }
+        return ply.halfMoves.map { pair in
+            guard pair.count == 2 else { return "?" }
+            return "\(pair[0])→\(pair[1])"
+        }.joined(separator: ", ")
     }
 }
 
