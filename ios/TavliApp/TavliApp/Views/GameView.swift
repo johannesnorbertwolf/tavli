@@ -75,19 +75,10 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
-                DebugOverlayToggle(session: session)
+                DebugOverlayToggle(session: session, onHistory: { showHistory = true })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
-
-                // History opener (#60): pinned bottom-leading so it stays reachable
-                // during the human's turn and while the AI is thinking. After the
-                // game the win overlay covers it, so that overlay carries its own
-                // History button.
-                HistoryButton(action: { showHistory = true })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
 
                 if case .gameOver(let winner) = session.phase {
                     WinOverlayView(winner: winner, onNewGame: onNewGame,
@@ -138,28 +129,6 @@ private struct BackButton: View {
             HStack(spacing: 4) {
                 Image(systemName: "chevron.left")
                 Text("Back")
-            }
-            .font(.callout.bold())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(ChromeTheme.undoTint.opacity(0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.undoTint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(ChromeTheme.ink)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-/// Caramel pill that opens the move-history sheet (#60). Mirrors `BackButton`'s styling.
-private struct HistoryButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: "clock.arrow.circlepath")
-                Text("History")
             }
             .font(.callout.bold())
             .padding(.horizontal, 14)
