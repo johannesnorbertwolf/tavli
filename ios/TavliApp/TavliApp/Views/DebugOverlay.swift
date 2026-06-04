@@ -83,6 +83,13 @@ struct DebugOverlay: View {
             Text("Turn: \(session.currentPlayer.rawValue)  Dice: \(session.game.dice.die1.value),\(session.game.dice.die2.value)")
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.6))
+
+            Divider().background(Color.white.opacity(0.2))
+
+            Button("↩ Undo decision") { session.undoLastDecision() }
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(session.canUndoLastDecision ? .yellow : .white.opacity(0.3))
+                .disabled(!session.canUndoLastDecision)
         }
         .padding(10)
         .frame(width: 200, alignment: .leading)
