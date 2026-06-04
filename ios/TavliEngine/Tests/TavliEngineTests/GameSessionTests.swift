@@ -372,6 +372,49 @@ final class GameSessionTests: XCTestCase {
         XCTAssertEqual(b.points[9].count, 1)
     }
 
+    /// A committed move appends one ply with the dice and played half-moves.
+    /// `PlyRecord` is the persistence format (no `index`/`mover`); those are
+    /// derived by the view layer from array position and `session.startingPlayer`.
+    func testHistoryRecordsCommittedMove() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])
+        b.setPoint(24, pieces: [.black])
+
+        // White plays the merged single checker 1→9 (dice 3·5) as two hops.
+        s.setManualDice(3, 5)
+        s.commitHalfMove(from: 1, to: 4)
+        s.commitHalfMove(from: 4, to: 9)
+
+        XCTAssertEqual(s.history.count, 1)
+        let ply = s.history[0]
+        XCTAssertEqual(ply.die1, 3)
+        XCTAssertEqual(ply.die2, 5)
+        XCTAssertEqual(ply.halfMoves, [[1, 4], [4, 9]])
+        // Mover and index are derived from startingPlayer + array position in the view.
+        XCTAssertEqual(s.startingPlayer, .white)   // ply 0 (index 1) → startingPlayer = White
+    }
+
+    /// A forced pass records an empty `halfMoves` array; `newGame` clears the log.
+    func testHistoryRecordsForcedPassAndNewGameResets() {
+        let s = GameSession(startingPlayer: .white)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(5, pieces: [.white])
+        b.setPoint(6, pieces: [.black, .black])     // blocks die=1
+        b.setPoint(7, pieces: [.black, .black])     // blocks die=2
+
+        s.setManualDice(1, 2)
+        XCTAssertEqual(s.history.count, 1)
+        XCTAssertTrue(s.history[0].halfMoves.isEmpty)   // pass = empty halfMoves
+        XCTAssertEqual(s.history[0].die1, 1)
+        XCTAssertEqual(s.history[0].die2, 2)
+
+        s.newGame(startingPlayer: .black)
+        XCTAssertTrue(s.history.isEmpty)
+    }
+
     /// Drives a complete game to a win using only session intents.
     func testScriptedFullGameReachesWin() {
         let s = GameSession(startingPlayer: .black)
@@ -450,10 +493,10 @@ final class GameSessionUndoTests: XCTestCase {
         // The AI (Black's opponent) has already replied — it's the human's turn again.
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertEqual(s.phase, .awaitingRoll)
-        XCTAssertTrue(s.canUndo)
+        XCTAssertFalse(s.canUndo, "no half-moves in progress between turns")
         XCTAssertTrue(s.canUndoLastDecision)
 
-        s.undo()
+        s.undoLastDecision()
         XCTAssertEqual(signature(s.game.board), start, "board restored to before the human move")
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertEqual(s.phase, .picking)
@@ -493,20 +536,20 @@ final class GameSessionUndoTests: XCTestCase {
 
         s.setManualDice(1, 2)                                         // Black at 24 always has 24→23/24→22
         playFirstMove(s)
-        XCTAssertTrue(s.canUndo, "second decision should be rewindable")
+        XCTAssertTrue(s.canUndoLastDecision, "second decision should be rewindable")
 
-        s.undo()                                                      // back to decision 2's start
+        s.undoLastDecision()                                          // back to decision 2's start
         XCTAssertEqual(signature(s.game.board), afterFirst)
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertEqual(s.phase, .picking)
         XCTAssertEqual(s.game.dice.die1.value, 1)
         XCTAssertEqual(s.game.dice.die2.value, 2)
 
-        s.undo()                                                      // back to the opening
+        s.undoLastDecision()                                          // back to the opening
         XCTAssertEqual(signature(s.game.board), start)
         XCTAssertEqual(s.game.dice.die1.value, 3)
         XCTAssertEqual(s.game.dice.die2.value, 5)
-        XCTAssertFalse(s.canUndo, "nothing left to rewind at the opening")
+        XCTAssertFalse(s.canUndoLastDecision, "nothing left to rewind at the opening")
     }
 
     /// A move still under composition is undone one hop at a time (the unified undo's

@@ -26,7 +26,6 @@ public struct GameRecord: Equatable {
         self.outcome = outcome
     }
 }
-
 public struct PlyRecord: Codable, Equatable {
     public let die1: Int
     public let die2: Int

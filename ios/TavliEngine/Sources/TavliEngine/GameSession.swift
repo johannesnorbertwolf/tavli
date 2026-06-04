@@ -182,6 +182,7 @@ public final class GameSession: ObservableObject {
             game.board.applyHalfMove(hm)
             complete = moveBuilder.commit(halfMove: hm)
         }
+        let played = moveBuilder.built
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
@@ -272,6 +273,8 @@ public final class GameSession: ObservableObject {
         validTargets = []
     }
 
+    /// Advance the turn (or end the game). Call `recordPly` first so the mover
+    /// and dice are captured before `switchTurn` hands the turn to the opponent.
     private func finishTurn() {
         clearSelection()
         selectableSources = []

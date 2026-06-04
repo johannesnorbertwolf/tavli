@@ -24,6 +24,9 @@ struct GameView: View {
     @State private var showingSaveDialog = false
     @State private var saveName = ""
 
+    /// Drives the move-history sheet (#60).
+    @State private var showHistory = false
+
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
@@ -85,14 +88,18 @@ struct GameView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
-                DebugOverlayToggle(session: session)
+                DebugOverlayToggle(session: session, onHistory: { showHistory = true })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
                 if case .gameOver(let winner) = session.phase {
-                    WinOverlayView(winner: winner, onNewGame: onNewGame)
+                    WinOverlayView(winner: winner, onNewGame: onNewGame,
+                                   onHistory: { showHistory = true })
                 }
+            }
+            .sheet(isPresented: $showHistory) {
+                HistoryView(session: session)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
                 TextField("Name", text: $saveName)
@@ -312,10 +319,12 @@ private struct ControlButtonStyle: ButtonStyle {
     }
 }
 
-/// Dimmed scrim announcing the winner with a Play Again button.
+/// Dimmed scrim announcing the winner with a Play Again button (plus a History
+/// opener, since the scrim covers the in-chrome `HistoryButton`).
 private struct WinOverlayView: View {
     let winner: TavliEngine.Color
     let onNewGame: () -> Void
+    let onHistory: () -> Void
 
     var body: some View {
         ZStack {
@@ -333,8 +342,118 @@ private struct WinOverlayView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.3), lineWidth: 1))
                     .foregroundStyle(.white)
                     .buttonStyle(.plain)
+                Button("History", action: onHistory)
+                    .font(.body.bold())
+                    .foregroundStyle(.white.opacity(0.85))
+                    .buttonStyle(.plain)
             }
         }
+    }
+}
+
+/// Scrollable ply-by-ply move log (#60), presented as a sheet. Mirrors the CLI
+/// `h`/`history` command: one row per ply with its number, mover, dice, and the
+/// half-moves played (or "pass"). Binds to the session so a freshly committed
+/// move appears immediately, and auto-scrolls to the newest ply.
+///
+/// `PlyRecord` (the persistence format) stores only dice + half-moves; the 1-based
+/// index and mover are derived here from array position and `session.startingPlayer`.
+private struct HistoryView: View {
+    @ObservedObject var session: GameSession
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            if session.history.isEmpty {
+                Spacer()
+                Text("No moves yet")
+                    .font(.callout)
+                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                Spacer()
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(session.history.enumerated()), id: \.offset) { offset, ply in
+                                let index = offset + 1
+                                let mover = index % 2 == 1
+                                    ? session.startingPlayer
+                                    : session.startingPlayer.opponent
+                                HistoryRow(index: index, mover: mover, ply: ply)
+                                    .id(offset)
+                                Divider().opacity(0.4)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                    }
+                    .onAppear { scrollToLast(proxy) }
+                    .onChange(of: session.history.count) { _, _ in scrollToLast(proxy) }
+                }
+            }
+        }
+        .background(SColor(hex: 0xece6dc))
+    }
+
+    private var header: some View {
+        HStack {
+            Text("Move history")
+                .font(.title3.bold())
+                .foregroundStyle(ChromeTheme.ink)
+            Spacer()
+            Button("Done") { dismiss() }
+                .font(.callout.bold())
+                .foregroundStyle(ChromeTheme.ink)
+                .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+
+    private func scrollToLast(_ proxy: ScrollViewProxy) {
+        guard !session.history.isEmpty else { return }
+        withAnimation { proxy.scrollTo(session.history.count - 1, anchor: .bottom) }
+    }
+}
+
+/// One ply row: 1-based number, a mover-colored disc, the dice, and the move text.
+/// The caller derives `index` and `mover` from array position + `startingPlayer`
+/// (neither is stored in `PlyRecord`, which is the persistence format).
+private struct HistoryRow: View {
+    let index: Int
+    let mover: TavliEngine.Color
+    let ply: PlyRecord
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(index).")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(ChromeTheme.ink.opacity(0.5))
+                .frame(width: 34, alignment: .trailing)
+            Circle()
+                .fill(ChromeTheme.checkerColor(mover))
+                .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
+                .frame(width: 18, height: 18)
+            Text("d=\(ply.die1) \(ply.die2)")
+                .font(.callout.monospaced())
+                .foregroundStyle(ChromeTheme.ink.opacity(0.75))
+                .frame(width: 64, alignment: .leading)
+            Text(moveText)
+                .font(.callout.monospaced())
+                .foregroundStyle(ply.halfMoves.isEmpty ? ChromeTheme.ink.opacity(0.5) : ChromeTheme.ink)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var moveText: String {
+        guard !ply.halfMoves.isEmpty else { return "(pass)" }
+        return ply.halfMoves.map { pair in
+            guard pair.count == 2 else { return "?" }
+            return "\(pair[0])→\(pair[1])"
+        }.joined(separator: ", ")
     }
 }
 
@@ -375,4 +494,17 @@ private enum ChromeTheme {
     }
     return GameView(session: session)
         .previewInterfaceOrientation(.landscapeLeft)
+}
+
+#Preview("History") {
+    let session = GameSession(startingPlayer: .white)
+    // Script a couple of plies so the log has content.
+    session.setManualDice(3, 5)
+    if let src = session.selectableSources.sorted().first {
+        session.selectPoint(src)
+        if let dst = session.validTargets.sorted().first {
+            session.commitHalfMove(from: src, to: dst)
+        }
+    }
+    return HistoryView(session: session)
 }

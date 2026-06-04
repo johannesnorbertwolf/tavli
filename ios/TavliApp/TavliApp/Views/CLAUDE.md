@@ -277,19 +277,22 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
     test and inspecting the screenshot attachment.
   - Floating chrome in the `ZStack`: a top-leading `HStack { BackButton; SaveButton }` and a
-    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), each pinned
-    via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` is hidden once
+    top-trailing `DebugOverlayToggle(session:, onHistory:)` (see `DebugOverlay.swift`), each
+    pinned via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` is hidden once
     `session.isTerminal` (finished games aren't saved, #61).
+  - **Move-history sheet (#60):** `DebugOverlayToggle` is passed `onHistory: { showHistory = true }`,
+    which threads through to `DebugOverlay`'s "Move history" button. The `.sheet(isPresented: $showHistory)`
+    is attached to the `ZStack`; `WinOverlayView` also carries its own History button so the log
+    stays reachable after the game when the scrim covers the debug pane.
   - **Manual save (#61):** tapping Save runs `presentSaveDialog` — seeds `saveName` with a
     timestamped default (`"Game · <date>"`) and flips `showingSaveDialog`. A `.alert("Save
     game", isPresented:)` hosts a `TextField` + "Save"/"Cancel"; "Save" trims the field and
     calls `onSave(name)` (falling back to the timestamp default if left empty). `RootView`
     provides `onSave` to write a named manual save via the `SaveStore`.
   - **Auto-save (#61):** `.onChange(of: session.history.count) { onAutosave() }` fires once per
-    ply — `history` (now `@Published`) grows by one per finished turn (human, AI, or forced
-    pass) — so the in-progress game is persisted after **every move**, not just on background.
-    `RootView`'s `persistAutosave` overwrites the single autosave slot (or clears it once the
-    game is over).
+    ply — `history` grows by one per finished turn (human, AI, or forced pass) — so the
+    in-progress game is persisted after **every move**, not just on background. `RootView`'s
+    `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
   - `WinOverlayView` is layered **last** (above Back/Save/debug) whenever `session.phase` is
     `.gameOver`.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
@@ -314,16 +317,32 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   `moveBuilder.canFinishNow && !built.isEmpty`. Both styled by `ControlButtonStyle`
   (palette pill). The dice no longer live here — they moved to the board's center bar
   (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
-- **`WinOverlayView(winner:onNewGame:)`** — dimmed scrim, serif "`<Name>` wins!", and a
+- **`WinOverlayView(winner:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!", a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
-  to replace the finished session with a fresh one — see `RootView.swift`).
+  to replace the finished session with a fresh one — see `RootView.swift`), and a secondary
+  "History" button (`onHistory`) so the log stays reachable after the game, when the scrim
+  covers the in-chrome `HistoryButton`.
+- **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
+  button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
+  one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
+  Empty history shows "No moves yet". Bound via `@ObservedObject`, so a freshly committed ply
+  appears immediately. `#ece6dc` background. `PlyRecord` is the persistence format (no `index` /
+  `mover` fields), so the view derives the 1-based index from `enumerated()` offset and the mover
+  from `session.startingPlayer` alternating every ply (`index % 2 == 1 → startingPlayer`, else
+  `startingPlayer.opponent`). `ForEach` uses `id: \.offset`; `scrollToLast` targets
+  `session.history.count - 1`.
+  - **`HistoryRow(index:mover:ply:)`** — a row showing the 1-based `index`, a
+    `ChromeTheme.checkerColor(mover)` disc, the dice (`d=<d1> <d2>`), and the move text
+    (`ply.halfMoves` formatted as `from→to` pairs joined by `, `; or a dimmed "(pass)" when
+    `halfMoves` is empty). Monospaced so the columns align.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
   plus `ink`/button tints. Reuses `Color(hex:)` from `BoardView.swift`.
-- **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, and `"Undo/Done"`
+- **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, `"Undo/Done"`
   which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
-  contextual buttons without T7.
+  contextual buttons without T7, and `"History"` which scripts a ply and shows
+  `HistoryView` directly.
 
 ## DebugOverlay.swift (T11 — debug eval overlay)
 
@@ -348,7 +367,10 @@ top-trailing overlay on the game screen.
      shows `—` otherwise. `evaluateMoves` apply/undoes on the shared board on the main actor
      (the same actor that owns the board), leaving it unchanged.
   3. **Status line** — `session.currentPlayer` + the two dice values.
-  4. **"↩ Undo decision"** — calls `session.undoLastDecision()`; yellow when
+  4. **"Move history"** (#60) — a clock-icon button calling the `onHistory` closure
+     (injected via `DebugOverlayToggle(session:onHistory:)` from `GameView`); opens the
+     move-log sheet. Replaces the former standalone bottom-leading `HistoryButton`.
+  5. **"↩ Undo decision"** — calls `session.undoLastDecision()`; yellow when
      `session.canUndoLastDecision`, dim otherwise. This is the only surface for
      decision-level undo (stepped back from `ControlsView` which now only peels half-moves).
 
