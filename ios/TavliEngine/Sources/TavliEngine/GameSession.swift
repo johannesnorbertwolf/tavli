@@ -74,6 +74,11 @@ public final class GameSession: ObservableObject {
     /// every transition that changes undo-availability also reassigns `phase`.
     private var undoHistory: [UndoRecord] = []
 
+    /// Dice values saved during `undoLastDecision` for the plies being rewound, in
+    /// chronological play order. `rollDice()` pops from the front before generating
+    /// fresh random dice, so re-playing the same position produces identical rolls.
+    private var diceReplays: [(Int, Int)] = []
+
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
@@ -130,14 +135,16 @@ public final class GameSession: ObservableObject {
     /// Roll the dice for the current turn and compute legal moves.
     public func roll() {
         guard phase == .awaitingRoll else { return }
-        game.dice.roll()
+        rollDice()
         beginTurn()
     }
 
     /// Set the dice to specific values (manual/debug/scripted play), then compute
-    /// legal moves. Same effect as `roll` but deterministic.
+    /// legal moves. Same effect as `roll` but deterministic. Clears the replay
+    /// queue — a manual override supersedes any saved future dice.
     public func setManualDice(_ d1: Int, _ d2: Int) {
         guard phase == .awaitingRoll else { return }
+        diceReplays.removeAll()
         game.dice.set(d1, d2)
         beginTurn()
     }
@@ -215,6 +222,7 @@ public final class GameSession: ObservableObject {
         selectableSources = []
         winProbability = 0.5
         undoHistory = []
+        diceReplays = []
         phase = .awaitingRoll
         maybeStartAITurn()
     }
@@ -330,6 +338,17 @@ public final class GameSession: ObservableObject {
 
         let restoredColor = undoHistory[target].mover
         let (d1, d2) = undoHistory[target].dice
+
+        // Collect dice for the plies being removed so re-plays reproduce the same
+        // rolls. Start from target+1 (target's dice are restored directly below);
+        // append the current in-progress roll last if already rolled this turn.
+        var toReplay: [(Int, Int)] = []
+        for i in (target + 1)..<undoHistory.count { toReplay.append(undoHistory[i].dice) }
+        if phase == .picking || phase == .moving {
+            toReplay.append((game.dice.die1.value, game.dice.die2.value))
+        }
+        diceReplays = toReplay + diceReplays
+
         while undoHistory.count > target {
             let popped = undoHistory.removeLast()
             if let move = popped.move { game.board.undo(move) }
@@ -354,7 +373,7 @@ public final class GameSession: ObservableObject {
     /// Roll for the AI, then either play a random move (no model) or compute the
     /// best move off the main actor and apply it back on the main actor.
     private func takeAITurn() {
-        game.dice.roll()
+        rollDice()
         legalMoves = PossibleMoves(
             board: game.board,
             color: game.currentPlayer,
@@ -408,6 +427,20 @@ public final class GameSession: ObservableObject {
         finishTurn()
     }
 
+    // ── Dice rolling ─────────────────────────────────────────────────────────
+
+    /// Set the dice for the next ply. Pops a saved roll from `diceReplays` when
+    /// one is queued (so re-plays after `undoLastDecision` reproduce the original
+    /// dice); falls back to a fresh random roll when the queue is empty.
+    private func rollDice() {
+        if diceReplays.isEmpty {
+            game.dice.roll()
+        } else {
+            let (d1, d2) = diceReplays.removeFirst()
+            game.dice.set(d1, d2)
+        }
+    }
+
     // ── History recording ─────────────────────────────────────────────────────
 
     /// Append a finished turn to both `record.plies` (for replay/save) and
@@ -457,6 +490,7 @@ public final class GameSession: ObservableObject {
         var mover = startingPlayer
         record.plies = []
         undoHistory = []
+        diceReplays = []
 
         for ply in plies {
             for pair in ply.halfMoves where pair.count == 2 {
