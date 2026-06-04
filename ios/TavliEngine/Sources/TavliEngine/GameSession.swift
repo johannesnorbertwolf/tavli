@@ -30,21 +30,23 @@ public final class GameSession: ObservableObject {
     /// The Core ML move selector. `nil` means no model is available — AI turns
     /// then fall back to a random legal move.
     public let agent: Agent?
+
+    /// The single canonical record of this game (turn order, AI side, plies played,
+    /// and the outcome once decided). The sole basis for save/resume: replaying its
+    /// plies from the initial position reproduces the exact board, with no stored
+    /// board state (see `GameSave`). Published so the app can auto-save after every
+    /// move (#61) and so history-consuming features observe it.
+    @Published public private(set) var record: GameRecord
+
     /// Which side the AI plays, if any. `nil` means a human-vs-human session.
-    public let aiColor: Color?
-    /// The side that moved first this game. Retained (the live `game.player`
-    /// alternates) so a save can record the turn order for exact replay.
-    public private(set) var startingPlayer: Color
+    public var aiColor: Color? { record.aiColor }
+    /// The side that moved first this game (the live `game.player` alternates).
+    public var startingPlayer: Color { record.startingPlayer }
+    /// One entry per finished turn, in play order (empty `halfMoves` = a forced pass).
+    public var history: [PlyRecord] { record.plies }
 
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
-
-    /// One entry per finished turn, in play order, recording the dice and the
-    /// half-moves actually applied (empty = a forced pass). This is the sole basis
-    /// for save/resume: replaying these half-moves from the initial position
-    /// reproduces the exact board, with no stored board state (see `GameSave`).
-    /// Published so the app can auto-save after every move (#61).
-    @Published public private(set) var history: [PlyRecord] = []
 
     /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
     @Published public private(set) var winProbability: Double = 0.5
@@ -66,8 +68,7 @@ public final class GameSession: ObservableObject {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
-        self.aiColor = aiColor
-        self.startingPlayer = startingPlayer
+        self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor)
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
@@ -192,8 +193,7 @@ public final class GameSession: ObservableObject {
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
-        self.startingPlayer = startingPlayer
-        history = []
+        record = GameRecord(startingPlayer: startingPlayer, aiColor: record.aiColor)
         legalMoves = []
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
@@ -253,6 +253,7 @@ public final class GameSession: ObservableObject {
         selectableSources = []
 
         if game.isOver(), let winner = game.getWinner() {
+            record.outcome = winner
             phase = .gameOver(winner: winner)
             return
         }
@@ -333,7 +334,7 @@ public final class GameSession: ObservableObject {
     /// Must be called before `finishTurn` switches the turn, while the dice still
     /// hold this ply's values.
     private func recordPly(_ halfMoves: [HalfMove]) {
-        history.append(PlyRecord(
+        record.plies.append(PlyRecord(
             die1: game.dice.die1.value,
             die2: game.dice.die2.value,
             halfMoves: halfMoves.map { [$0.from.position, $0.to.position] }
@@ -367,7 +368,7 @@ public final class GameSession: ObservableObject {
         let board = game.board
         let upper = board.boardSize + 1
         var mover = startingPlayer
-        history = []
+        record.plies = []
 
         for ply in plies {
             for pair in ply.halfMoves where pair.count == 2 {
@@ -376,7 +377,7 @@ public final class GameSession: ObservableObject {
                 board.points[from].pop()
                 board.points[to].push(mover)
             }
-            history.append(ply)
+            record.plies.append(ply)
             if game.isOver() { break }
             mover = mover.opponent
             game.setPlayer(mover)
@@ -389,6 +390,7 @@ public final class GameSession: ObservableObject {
         selectableSources = []
 
         if game.isOver(), let winner = game.getWinner() {
+            record.outcome = winner
             phase = .gameOver(winner: winner)
         } else {
             phase = .awaitingRoll

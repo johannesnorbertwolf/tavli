@@ -94,15 +94,24 @@ vN reloads identically under vN+1 (acceptance criterion 3), because replay never
 model. Three engine files, all SwiftUI-free and covered by `GameSavePersistenceTests` (11
 tests, no model/fixtures needed):
 
-- **History recording — `GameSession`.** `history: [PlyRecord]` (public read-only) gains one
+- **Canonical record — `GameRecord` (#71).** One value type `{ startingPlayer, aiColor,
+  plies: [PlyRecord], outcome }` is the single source of truth for a game, in-progress and
+  completed. `GameSession` holds one `@Published private(set) var record`; `history`,
+  `startingPlayer` and `aiColor` are **computed passthroughs** over it (so every call site and
+  the `onChange(of: session.history.count)` autosave keep working — mutating `record` still
+  fires `objectWillChange`). `outcome` is the winner, set whenever a turn ends the game
+  (`finishTurn`/`replay`), else `nil`; it lives in memory only — the on-disk format does not
+  carry it yet (only in-progress games are persisted). This is the shared foundation the undo
+  (#59), history-log (#60), review/drill (#62/#63) and stats (#64) features build on.
+- **History recording — `GameSession`.** `history: [PlyRecord]` (the record's `plies`) gains one
   entry per **finished turn**, recorded at all five turn-end points (`recordPly` captures the
   current dice + the played half-moves as `[[from, to]]`): the two human finish paths
   (`commitHalfMove` auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two
   forced-pass paths (human `beginTurn`, AI `takeAITurn`) which record an **empty** half-move
   list. Saves are therefore only ever taken at clean turn boundaries — there is no
-  partial/pending move state to serialize (a deliberate simplification). `startingPlayer` is
-  also published (read-only) and `newGame` resets both it and `history`. `isTerminal` is the
-  public "game over?" predicate the app uses to decide whether a save is worth keeping.
+  partial/pending move state to serialize (a deliberate simplification). `newGame` resets the
+  whole `record` (preserving `aiColor`). `isTerminal` is the public "game over?" predicate the
+  app uses to decide whether a save is worth keeping.
 - **Resume — `GameSession.resume(from:config:agent:)` + private `replay(_:)`.** Builds a fresh
   session at `save.startingPlayer`/`aiColor`, then `replay` applies each recorded pair directly
   to the board (`board.points[from].pop()` / `board.points[to].push(mover)`, mirroring
@@ -113,10 +122,14 @@ tests, no model/fixtures needed):
   color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
   reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
   for a new game) so the AI moves if it owns the turn.
-- **`GameSave.swift`** — the Codable wire format. `PlyRecord { die1, die2, halfMoves: [[Int]] }`
-  and `GameSave { schemaVersion, name, savedAt, startingPlayer, aiColor?, history }`
-  (`currentSchemaVersion = 1`). `GameSession.snapshot(name:savedAt:)` (extension) packages the
-  live session into a `GameSave`. Colors serialize as their `rawValue` (`"white"`/`"black"`).
+- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
+  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
+  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
+  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
+  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
+  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
+  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
+  `rawValue` (`"W"`/`"B"`).
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
