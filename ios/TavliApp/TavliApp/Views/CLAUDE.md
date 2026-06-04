@@ -245,8 +245,10 @@ this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the a
 screen is fully playable, and added the Back button + hosted debug toggle.)
 
 - **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
-  the mode picker, and `onNewGame: () -> Void = {}` — replaces the finished session with
-  a fresh one; both default to no-ops so `#Preview`s compile). A `GeometryReader`
+  the mode picker, `onNewGame: () -> Void = {}` — replaces the finished session with
+  a fresh one, `onSave: (String) -> Void = { _ in }` (#61) — persists the game under the
+  given name, and `onAutosave: () -> Void = {}` (#61) — writes the single autosave slot; all
+  default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
   - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
     **bound to the leading edge** (`.frame(maxWidth:.infinity, maxHeight:.infinity,
@@ -274,20 +276,30 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     (Spacer + aspect-fit board) split the height and the board shrinks below full width.
     Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
     test and inspecting the screenshot attachment.
-  - Floating chrome in the `ZStack`: a top-leading `BackButton` (calls `onBack`), a
-    top-trailing `DebugOverlayToggle(session:)` (see `DebugOverlay.swift`), and a
-    bottom-leading `HistoryButton` (#60, toggles the `showHistory` sheet), each pinned
-    via `.frame(maxWidth/Height: .infinity, alignment:)`.
-  - `WinOverlayView` is layered **last** (above Back/debug/History) whenever `session.phase`
-    is `.gameOver`. Since the scrim covers the in-chrome `HistoryButton`, the overlay carries
-    its own History button.
-  - The move-history sheet (#60) is attached to the `ZStack` via
-    `.sheet(isPresented: $showHistory) { HistoryView(session:) }`.
+  - Floating chrome in the `ZStack`: a top-leading `HStack { BackButton; SaveButton }` and a
+    top-trailing `DebugOverlayToggle(session:, onHistory:)` (see `DebugOverlay.swift`), each
+    pinned via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` is hidden once
+    `session.isTerminal` (finished games aren't saved, #61).
+  - **Move-history sheet (#60):** `DebugOverlayToggle` is passed `onHistory: { showHistory = true }`,
+    which threads through to `DebugOverlay`'s "Move history" button. The `.sheet(isPresented: $showHistory)`
+    is attached to the `ZStack`; `WinOverlayView` also carries its own History button so the log
+    stays reachable after the game when the scrim covers the debug pane.
+  - **Manual save (#61):** tapping Save runs `presentSaveDialog` — seeds `saveName` with a
+    timestamped default (`"Game · <date>"`) and flips `showingSaveDialog`. A `.alert("Save
+    game", isPresented:)` hosts a `TextField` + "Save"/"Cancel"; "Save" trims the field and
+    calls `onSave(name)` (falling back to the timestamp default if left empty). `RootView`
+    provides `onSave` to write a named manual save via the `SaveStore`.
+  - **Auto-save (#61):** `.onChange(of: session.history.count) { onAutosave() }` fires once per
+    ply — `history` grows by one per finished turn (human, AI, or forced pass) — so the
+    in-progress game is persisted after **every move**, not just on background. `RootView`'s
+    `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
+  - `WinOverlayView` is layered **last** (above Back/Save/debug) whenever `session.phase` is
+    `.gameOver`.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
 - **`BackButton`** — a caramel pill (chevron + "Back") tinted from `ChromeTheme`,
   calling the injected `onBack`.
-- **`HistoryButton`** (#60) — a caramel pill (clock icon + "History") mirroring
-  `BackButton`'s style; sets `showHistory = true` to present the move-log sheet.
+- **`SaveButton`** (#61) — a caramel pill (download glyph + "Save") tinted from
+  `ChromeTheme.doneTint`, calling the injected open-dialog action.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
@@ -297,13 +309,14 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   read straight off the board on each session publish: white =
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
-- **`ControlsView`** — contextual buttons shown only while `phase == .picking ||
-  .moving`: **Undo** (`session.undo()`) when `moveBuilder.built` is non-empty;
-  **Done** (`session.confirm()`) when `moveBuilder.canFinishNow && !built.isEmpty`.
-  Styled by `ControlButtonStyle` (palette pill). The dice no longer live here —
-  they moved to the board's center bar (`BoardDiceView`, #46), which freed the side
-  rails. These buttons only fully exercise once a human composes a partial move;
-  until then they appear only in the scripted `#Preview`.
+- **`ControlsView`** — **Undo** is persistent (#59): always rendered, calling
+  `session.undo()`, greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is
+  false. It peels the last committed half-move within the current turn only; it
+  greys out when nothing has been built yet (between turns, AI thinking, game over).
+  **Done** (`session.confirm()`) is still contextual: shown only when
+  `moveBuilder.canFinishNow && !built.isEmpty`. Both styled by `ControlButtonStyle`
+  (palette pill). The dice no longer live here — they moved to the board's center bar
+  (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
 - **`WinOverlayView(winner:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!", a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
   to replace the finished session with a fresh one — see `RootView.swift`), and a secondary
@@ -341,7 +354,7 @@ top-trailing overlay on the game screen.
 - **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
   button with `@State isOn = false` (off by default): tinted yellow when on, dim white
   when off. When on it reveals `DebugOverlay` below it with a 0.15s opacity transition.
-- **`DebugOverlay`** — a ~200pt translucent-black panel with three rows:
+- **`DebugOverlay`** — a ~200pt translucent-black panel with four rows:
   1. **Win-probability meter** — a yellow `Capsule` fill over a black track, width =
      `geo.size.width * session.winProbability` (always WHITE's view), plus the numeric `%`.
   2. **Top moves** — the top-3 candidate moves. `agent.evaluateMoves(board, legalMoves,
@@ -354,29 +367,115 @@ top-trailing overlay on the game screen.
      shows `—` otherwise. `evaluateMoves` apply/undoes on the shared board on the main actor
      (the same actor that owns the board), leaving it unchanged.
   3. **Status line** — `session.currentPlayer` + the two dice values.
+  4. **"Move history"** (#60) — a clock-icon button calling the `onHistory` closure
+     (injected via `DebugOverlayToggle(session:onHistory:)` from `GameView`); opens the
+     move-log sheet. Replaces the former standalone bottom-leading `HistoryButton`.
+  5. **"↩ Undo decision"** — calls `session.undoLastDecision()`; yellow when
+     `session.canUndoLastDecision`, dim otherwise. This is the only surface for
+     decision-level undo (stepped back from `ControlsView` which now only peels half-moves).
 
   Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
   not need `Color(hex:)` or `ChromeTheme`.
 
-## RootView.swift (T10 — root navigation + mode picker)
+## OpeningRollView.swift (#33 — opening roll ceremony)
 
-The app's top-level view: switches between the caramel **mode picker** and a live game.
+Pre-game screen that resolves the starting player before creating a `GameSession`. Shown
+between mode picker and game (and again after "Play Again"), so every game picks its own
+starter. Calls `onStart(EngineColor)` with the winner; `onBack` returns to the mode picker.
+The board is the main visual; chrome mirrors `GameView`'s layout and text style exactly.
 
-- **`RootView`** — `@State private var session: GameSession?` plus `@State private var
-  humanColor: EngineColor`. `nil` session → show `ModePickerView`; non-`nil` → show
-  `GameView(session:onBack:onNewGame:)`. `onBack` resets `session = nil` (returns to the
-  picker). `onNewGame` replaces the finished session with `makeSession(humanColor:
-  humanColor)` — a fresh `GameSession` with the same human color, leaving the stale
-  session to be deallocated. Holding the session in `@State` keeps the reference stable
-  across re-renders (`GameView` observes it). `makeSession(humanColor:)` builds
-  `GameSession(startingPlayer: .black, agent: GameSession.makeAgent(), aiColor:
-  humanColor.opponent)` and calls `start()` — so Black always opens, and when the human
-  chose White the AI (Black) moves first. *(The real opening-roll rule — each side rolls
-  one die, higher starts, with a manual override — is a separate, deferred ticket.)*
-- **`ModePickerView(onSelect:)`** — `#ece6dc` background, a large Cormorant Garamond
-  "Tavli" wordmark in `CaramelPalette.frameText`, and two caramel `ModeButton`s: "Play vs
-  AI / You play White" → `.white`, "Play vs AI / You play Black" → `.black`. The design
+- **Layout** — responsive, matching `GameView`:
+  - *Landscape*: board fills the height (`maxWidth:.infinity, alignment:.leading`, 8pt pad),
+    chrome side panel (260pt, 12pt trailing + vertical pad; top-padded 44pt to clear the Back
+    button corner).
+  - *Portrait*: `VStack` — status block at top, `Spacer`, manual-row just above the board,
+    board at bottom with `.layoutPriority(1)` (same pattern as `GameView`'s `ControlsView`).
+  - Floating Back button in top-leading corner, styled identically to `GameView.BackButton`
+    (amber tint `.opacity(0.22)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText`
+    foreground).
+- **`OpeningRollView`** — `humanColor`, `onStart`, `onBack` injected. State machine:
+  - `.idle` — empty dice (`DieFace(value: 0)` = no pips), halo pulsing, "Tap the board to roll".
+  - `.rolling` — 0.42s tumble animation (4× 0.09s easeInOut, same as `BoardDiceView`); halo hidden.
+  - `.tied(h, a)` — shows tied values, "Tie (X vs Y) — rolling again…"; halo reappears; auto
+    re-rolls after 1 second. The `if case .tied = rollState` guard prevents double fire if the
+    auto-timer and a board tap race.
+  - `.resolved(humanDie, aiDie, winner)` — "You / AI go first!" caption; manual-override row
+    hidden. Auto-starts the game via `startGame(winner)` after 1 s. Tapping the board is a no-op.
+- **Auto-start** — `startGame(_ winner:)` guards with `@State private var started: Bool` so
+  neither the auto-timer nor the manual-override buttons can call `onStart` twice.
+- **Board overlay** — `BoardView()` + a `GeometryReader` overlay calling `openingDice(in:)`,
+  `.aspectRatio(1,.fit)`, `.contentShape(Rectangle())`, `.onTapGesture { startRoll() }`.
+  `openingDice` builds a `BoardGeometry`, sizes dice at `geo.diceSize` (identical to game dice),
+  and places:
+  - *AI die*: `(boardCenter.x, boardCenter.y − step)` where `step = dieSize + 12·scale`
+    (the same spacing used between normal horizontal game dice).
+  - *Human die*: `(boardCenter.x, boardCenter.y + step)`. Rendered with `isHighlighted: showHalo`.
+  Both dice use `DieFace(value:, size:)` (value 0 = empty face = "not yet rolled"). Each die
+  gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
+  The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
+  game dice show during `awaitingRoll`) rather than a bespoke overlay.
+- **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
+  exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
+- **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
+  resolved; hidden (`EmptyView`) once resolved (game is auto-starting).
+- **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
+  `.opacity(0.22/0.45)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText` foreground.
+
+## RootView.swift (T10 — root navigation + mode picker; #61 save/load)
+
+The app's top-level view: switches between the caramel **mode picker**, the opening roll,
+and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
+
+- **`RootView`** — `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,
+  `pendingHumanColor: EngineColor?`, `autosaveName: String` (the current game's stable display
+  name — a timestamped `"Game · <date>"` default via `newAutosaveName()` for a fresh game, or the
+  resumed game's own name). Body is a three-way branch inside `Group { }.onChange(of: scenePhase)`:
+  - `session != nil` → `GameView(session:onBack:onNewGame:onSave:onAutosave:)`. `onBack`
+    auto-saves then resets `session = nil`. `onNewGame` (Play Again) sets `session = nil` and
+    `pendingHumanColor = humanColor`, routing through the opening roll. `onSave` writes a named
+    manual save; `onAutosave` is `persistAutosave`.
+  - `pendingHumanColor != nil` → `OpeningRollView`. On resolution mints a fresh `autosaveName`,
+    stores `humanColor`, clears `pendingHumanColor`, and creates the session.
+  - else → `ModePickerView`. Tapping a color sets `pendingHumanColor`.
+  `makeSession(humanColor:startingPlayer:)` builds `GameSession(startingPlayer:, aiColor:
+  humanColor.opponent)` and calls `start()`. The UI-test hook bypasses the opening roll and
+  passes `startingPlayer: .black` explicitly.
+- **Save/load lifecycle (#61).**
+  - **Auto-save** (`persistAutosave`) fires after **every move** (`GameView`'s
+    `.onChange(of: session.history.count)`), as well as on `scenePhase == .background`
+    (`@Environment(\.scenePhase)` + `.onChange`) and on Back. It writes the in-progress game to
+    the single reserved autosave slot under the game's stable `autosaveName`
+    (`store.writeAutosave(session.snapshot(name:))`), overwriting it each time so only the
+    **last** in-progress game is kept. It **clears** the slot instead if `session.isTerminal`
+    (finished games are never resumed), and no-ops on the picker (`session == nil`) so a prior
+    autosave survives. IO is synchronous so it completes before the app suspends.
+  - **`newAutosaveName()`** mints the timestamped `"Game · <date>"` name (medium date + short
+    time, the same convention the manual-save dialog defaults to), generated once per game and
+    kept stable across that game's per-move autosaves so the slot reads as one coherent identity.
+  - **Auto-resume** (`autoResume`, called from `init`) loads a non-terminal autosave and replays
+    it via `GameSession.resume(from:agent:)` + `start()`, landing the cold launch back in the
+    game (acceptance criterion 1); a terminal autosave is discarded so launch shows the picker.
+    The `-uiTestGame` launch arg still takes priority (deterministic Black-to-move game).
+  - **Resume from the list** (`resume(_:)`) loads the chosen `SaveMetadata`, derives `humanColor`
+    from `save.aiColor.opponent`, carries `save.name` forward into `autosaveName` (so continued
+    play keeps the same identity), and switches into the replayed session.
+  - Human color is recovered from `save.aiColor` (the human is the AI's opponent); a save with no
+    AI color defaults the human to White.
+- **`ModePickerView(store:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
+  Garamond "Tavli" wordmark, two caramel `ModeButton`s ("Play vs AI / You play White|Black"),
+  and (#61) a **`SavedGamesList`** below them when any saves exist. Loads `store.list()` in
+  `@State saves` on `onAppear` (`reload`); `delete` removes a save and reloads. `onSelect` sets
+  `pendingHumanColor` (routes through the opening roll). The design
   reference's "Watch AI vs AI" mode is **deferred** (out of scope).
+- **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
+  scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
+- **`SavedGameRow(meta:onResume:onDelete:)`** (#61) — one row: an icon (autosave →
+  `arrow.clockwise.circle.fill`, else `doc.fill`), the save's `meta.name` (every row, autosave
+  included, now carries its own timestamped name), a subtitle (medium date + `N moves` from
+  `meta.savedAt` / `meta.plyCount`), and a trailing trash button. The autosave row adds a small
+  uppercase **"Continue last game"** capsule badge **above** the name (marking the resumable
+  last game without replacing its identity). Tapping the body resumes; the trash button deletes.
+  Caramel-tinted card (white @ 0.35 fill, `frameBot` hairline).
 - **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
   gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from

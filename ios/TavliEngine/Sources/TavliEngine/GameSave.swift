@@ -4,6 +4,28 @@ import Foundation
 /// board-index pairs. An empty `halfMoves` is a forced pass. Replaying these pairs
 /// in order from the initial position reproduces the exact board — no board state
 /// is stored (the same replay-based approach as the Python CLI saves).
+/// The canonical in-memory record of a game: who moved first, which side (if any)
+/// the AI plays, the ordered plies, and the outcome once decided. This is the single
+/// source of truth a live `GameSession` holds and every history-consuming feature
+/// reads. Reconstruction is always by replaying `plies` from the initial position —
+/// no board state is stored (see `GameSession.resume`).
+public struct GameRecord: Equatable {
+    public var startingPlayer: Color
+    public var aiColor: Color?
+    public var plies: [PlyRecord]
+    /// The winner once the game is over, else `nil` while it is in progress.
+    public var outcome: Color?
+
+    public init(startingPlayer: Color,
+                aiColor: Color? = nil,
+                plies: [PlyRecord] = [],
+                outcome: Color? = nil) {
+        self.startingPlayer = startingPlayer
+        self.aiColor = aiColor
+        self.plies = plies
+        self.outcome = outcome
+    }
+}
 public struct PlyRecord: Codable, Equatable {
     public let die1: Int
     public let die2: Int
@@ -50,15 +72,32 @@ public struct GameSave: Codable, Equatable {
     }
 }
 
+public extension GameSave {
+    /// Build a save from a `GameRecord`. The on-disk format stays flat strings, so
+    /// the wire format is unchanged. `outcome` is not persisted: only in-progress
+    /// games are saved today (terminal games clear the autosave).
+    init(record: GameRecord, name: String, savedAt: Date = Date()) {
+        self.init(name: name,
+                  savedAt: savedAt,
+                  startingPlayer: record.startingPlayer.rawValue,
+                  aiColor: record.aiColor?.rawValue,
+                  history: record.plies)
+    }
+
+    /// The save reinterpreted as a `GameRecord`. `outcome` is `nil` — the on-disk
+    /// format does not carry it (only in-progress games are persisted today).
+    var record: GameRecord {
+        GameRecord(
+            startingPlayer: Color(rawValue: startingPlayer) ?? .black,
+            aiColor: aiColor.flatMap { Color(rawValue: $0) },
+            plies: history
+        )
+    }
+}
+
 public extension GameSession {
     /// Capture the current game as a `GameSave` for persistence.
     func snapshot(name: String, savedAt: Date = Date()) -> GameSave {
-        GameSave(
-            name: name,
-            savedAt: savedAt,
-            startingPlayer: startingPlayer.rawValue,
-            aiColor: aiColor?.rawValue,
-            history: history
-        )
+        GameSave(record: record, name: name, savedAt: savedAt)
     }
 }

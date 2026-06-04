@@ -16,6 +16,13 @@ struct GameView: View {
     var onBack: () -> Void = {}
     /// Replace the finished session with a fresh one (same settings). Defaults to a no-op so `#Preview`s compile.
     var onNewGame: () -> Void = {}
+    /// Persist the current game under the given name (#61). Defaults to a no-op so `#Preview`s compile.
+    var onSave: (String) -> Void = { _ in }
+    /// Auto-save the in-progress game after every move (#61). Defaults to a no-op so `#Preview`s compile.
+    var onAutosave: () -> Void = {}
+
+    @State private var showingSaveDialog = false
+    @State private var saveName = ""
 
     /// Drives the move-history sheet (#60).
     @State private var showHistory = false
@@ -68,13 +75,19 @@ struct GameView: View {
                     .padding(.vertical, 12)
                 }
 
-                // Floating chrome: Back (top-leading) + debug toggle (top-trailing).
-                // The portrait `topBar` keeps its counters centered so these corners
-                // stay clear; in landscape the corners overlay the board / panel head.
-                BackButton(action: onBack)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                // Floating chrome: Back + Save (top-leading) + debug toggle
+                // (top-trailing). The portrait `topBar` keeps its counters centered so
+                // these corners stay clear; in landscape the corners overlay the board /
+                // panel head. Save hides once the game is over (finished games aren't saved).
+                HStack(spacing: 8) {
+                    BackButton(action: onBack)
+                    if !session.isTerminal {
+                        SaveButton(action: presentSaveDialog)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
                 DebugOverlayToggle(session: session, onHistory: { showHistory = true })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.horizontal, 16)
@@ -88,8 +101,42 @@ struct GameView: View {
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
             }
+            .alert("Save game", isPresented: $showingSaveDialog) {
+                TextField("Name", text: $saveName)
+                Button("Save") {
+                    let trimmed = saveName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    onSave(trimmed.isEmpty ? Self.defaultSaveName() : trimmed)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Name this save so you can find it on the start screen.")
+            }
+            // Auto-save after every move (#61): `history` grows by one per finished
+            // turn — human, AI, or forced pass — so this fires once per ply. The
+            // handler overwrites the single autosave slot (or clears it once the
+            // game is over), so only the last in-progress game is ever kept.
+            .onChange(of: session.history.count) { _, _ in onAutosave() }
         }
     }
+
+    /// Seed the field with a timestamped default and open the naming dialog.
+    private func presentSaveDialog() {
+        saveName = Self.defaultSaveName()
+        showingSaveDialog = true
+    }
+
+    /// A timestamped fallback name (e.g. "Game · Jun 2, 3:04 PM") used when the
+    /// player leaves the field empty.
+    private static func defaultSaveName() -> String {
+        "Game · " + saveNameFormatter.string(from: Date())
+    }
+
+    private static let saveNameFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
 
     // Landscape: turn indicator + counters on top, controls anchored at the bottom.
     // Top-padded so the turn indicator clears the corner Back/debug overlays.
@@ -136,6 +183,28 @@ private struct BackButton: View {
             .background(ChromeTheme.undoTint.opacity(0.22))
             .cornerRadius(10)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.undoTint.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(ChromeTheme.ink)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Caramel pill that opens the manual-save naming dialog (#61).
+private struct SaveButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
+            }
+            .font(.callout.bold())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(ChromeTheme.doneTint.opacity(0.22))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.doneTint.opacity(0.6), lineWidth: 1))
             .foregroundStyle(ChromeTheme.ink)
         }
         .buttonStyle(.plain)
@@ -205,17 +274,15 @@ private struct BorneOffView: View {
     }
 }
 
-/// Contextual Undo/Done buttons that appear only when the move builder makes
-/// them valid. The dice no longer live here — they sit on the board's center bar
-/// (`BoardDiceView`, #46), which frees the side rails.
+/// Game controls. Undo peels back the last committed half-move within the current
+/// turn; it greys out when nothing has been built yet. Done appears only when the
+/// partial move is already legal. The dice no longer live here — they sit on the
+/// board's center bar (`BoardDiceView`, #46), which frees the side rails.
 private struct ControlsView: View {
     @ObservedObject var session: GameSession
 
     private var isHumanPicking: Bool {
         session.phase == .picking || session.phase == .moving
-    }
-    private var canUndo: Bool {
-        isHumanPicking && !session.moveBuilder.built.isEmpty
     }
     private var canFinish: Bool {
         isHumanPicking && session.moveBuilder.canFinishNow && !session.moveBuilder.built.isEmpty
@@ -223,10 +290,10 @@ private struct ControlsView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            if canUndo {
-                Button("Undo") { session.undo() }
-                    .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
-            }
+            Button("Undo") { session.undo() }
+                .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
+                .disabled(!session.canUndo)
+                .opacity(session.canUndo ? 1 : 0.4)
             if canFinish {
                 Button("Done") { session.confirm() }
                     .buttonStyle(ControlButtonStyle(tint: ChromeTheme.doneTint))

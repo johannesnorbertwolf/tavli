@@ -97,6 +97,10 @@ struct DebugOverlay: View {
                 .foregroundStyle(.white.opacity(0.85))
             }
             .buttonStyle(.plain)
+            Button("↩ Undo decision") { session.undoLastDecision() }
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(session.canUndoLastDecision ? .yellow : .white.opacity(0.3))
+                .disabled(!session.canUndoLastDecision)
         }
         .padding(10)
         .frame(width: 200, alignment: .leading)
