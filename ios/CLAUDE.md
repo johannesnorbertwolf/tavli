@@ -74,20 +74,23 @@ so the game flow is validated without a simulator.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
 - **Undo — two layers, one button (#59).** Every committed ply (human or AI move, or a forced
-  pass) is appended to a private `history` of `PlyRecord`s — `(mover, move?, dice)` — recorded by
-  `finishTurn` before it switches turn. The half-moves in a record reference the live board points,
-  so undoing a record reverses the exact board mutation; passes carry `move == nil`. `undo()` is
+  pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
+  `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
+  `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`. `undo()` is
   unified: while a move is being composed (`moveBuilder.built` non-empty) it pops the **last
   half-move** (the within-turn editing primitive); once nothing is built it calls
   `undoLastDecision()`, which steps back to the **previous decision point** — pops every ply from the
   human's last real move forward (reversing each on the board), restores that ply's player + dice,
   and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be re-decided.
+  Both `undoHistory` and `record.plies` are trimmed to the same target index so they stay in sync.
   This mirrors the CLI's `undo_to_my_decision` ([play/session.py](../play/session.py)): typically two
   plies (your move + the AI's reply), skipping passes (never a real choice), and clamping at the
   game start. The decide-side is `aiColor?.opponent` (the human); a human-vs-human session
   (`aiColor == nil`) steps back the single last move. `canUndo` (composing **or** a prior decision
   exists) gates the button; it's false during `aiThinking`/`animating`/`gameOver` and at game start
-  (e.g. the AI opened and the human hasn't moved). `newGame` clears `history`.
+  (e.g. the AI opened and the human hasn't moved). `newGame` clears `undoHistory`. After
+  `replay` (loading a save), `undoHistory` is empty — `Move` objects can't be reconstructed from
+  saved indices, so decision-point undo is unavailable until the first new move is played.
 
 - **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
   Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled
@@ -100,6 +103,67 @@ so the game flow is validated without a simulator.
   falls back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
   updates only from a real model score and stays at its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
+
+## Save & load (#61, replay-based)
+
+Persist and resume in-progress games the same way the CLI does: **store only the move
+history (dice + half-moves per ply), never the board state**, and rebuild by replaying from
+the initial position. This is model-independent by construction — a game saved under model
+vN reloads identically under vN+1 (acceptance criterion 3), because replay never consults the
+model. Three engine files, all SwiftUI-free and covered by `GameSavePersistenceTests` (11
+tests, no model/fixtures needed):
+
+- **Canonical record — `GameRecord` (#71).** One value type `{ startingPlayer, aiColor,
+  plies: [PlyRecord], outcome }` is the single source of truth for a game, in-progress and
+  completed. `GameSession` holds one `@Published private(set) var record`; `history`,
+  `startingPlayer` and `aiColor` are **computed passthroughs** over it (so every call site and
+  the `onChange(of: session.history.count)` autosave keep working — mutating `record` still
+  fires `objectWillChange`). `outcome` is the winner, set whenever a turn ends the game
+  (`finishTurn`/`replay`), else `nil`; it lives in memory only — the on-disk format does not
+  carry it yet (only in-progress games are persisted). This is the shared foundation the undo
+  (#59), history-log (#60), review/drill (#62/#63) and stats (#64) features build on.
+- **History recording — `GameSession`.** `history: [PlyRecord]` (the record's `plies`) gains one
+  entry per **finished turn**, recorded at all five turn-end points (`recordTurn` captures the
+  current dice + the played half-moves as `[[from, to]]`, and in parallel appends an `UndoRecord`
+  to `undoHistory` for decision-point undo): the two human finish paths (`commitHalfMove`
+  auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two forced-pass paths (human
+  `beginTurn`, AI `takeAITurn`) which record an **empty** half-move list. Saves are therefore only
+  ever taken at clean turn boundaries — there is no partial/pending move state to serialize (a
+  deliberate simplification). `newGame` resets the whole `record` (preserving `aiColor`).
+  `isTerminal` is the public "game over?" predicate the app uses to decide whether a save is
+  worth keeping.
+- **Resume — `GameSession.resume(from:config:agent:)` + private `replay(_:)`.** Builds a fresh
+  session at `save.startingPlayer`/`aiColor`, then `replay` applies each recorded pair directly
+  to the board (`board.points[from].pop()` / `board.points[to].push(mover)`, mirroring
+  `applyHalfMove`) **without re-deriving legal moves**, alternating the mover every ply and
+  stopping early if `game.isOver()`. It lands the session at `.awaitingRoll` (or `.gameOver`)
+  with an empty `MoveBuilder` and a refreshed evaluation. Because turn order always alternates,
+  the mover for ply *i* is `startingPlayer` when *i* is even, else its opponent — no per-ply
+  color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
+  reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
+  for a new game) so the AI moves if it owns the turn.
+- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
+  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
+  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
+  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
+  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
+  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
+  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
+  `rawValue` (`"W"`/`"B"`).
+- **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
+  `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
+  slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
+  names never clobber). The single autosave slot is overwritten on every move, so only the
+  **last** in-progress game is ever kept. All IO is **synchronous** so the autosave completes
+  before the app suspends. `list()` returns `SaveMetadata` (filename, name, savedAt, plyCount, isAutosave)
+  newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
+  **throws** `SaveStoreError.incompatibleSchema` on a version mismatch. `writeAutosave` /
+  `loadAutosave` / `clearAutosave` manage the reserved slot; `writeManual` returns the generated
+  filename. `SaveStore.default()` roots it at `Documents/SavedGames`.
+
+The app wiring (autosave after every move and on background, auto-resume on launch, the
+saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
+`Views/CLAUDE.md`.
 
 ## SwiftUI views
 
@@ -166,9 +230,10 @@ ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
 │   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
-│   │                            MoveBuilder, GameSession
+│   │                            MoveBuilder, GameSession, GameSave, SaveStore
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
-│                                MoveBuilderTests, GameSessionTests, GameSessionAITests
+│                                MoveBuilderTests, GameSessionTests, GameSessionAITests,
+│                                GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,

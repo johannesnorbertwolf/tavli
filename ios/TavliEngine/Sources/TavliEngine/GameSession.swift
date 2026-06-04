@@ -30,8 +30,20 @@ public final class GameSession: ObservableObject {
     /// The Core ML move selector. `nil` means no model is available — AI turns
     /// then fall back to a random legal move.
     public let agent: Agent?
+
+    /// The single canonical record of this game (turn order, AI side, plies played,
+    /// and the outcome once decided). The sole basis for save/resume: replaying its
+    /// plies from the initial position reproduces the exact board, with no stored
+    /// board state (see `GameSave`). Published so the app can auto-save after every
+    /// move (#61) and so history-consuming features observe it.
+    @Published public private(set) var record: GameRecord
+
     /// Which side the AI plays, if any. `nil` means a human-vs-human session.
-    public let aiColor: Color?
+    public var aiColor: Color? { record.aiColor }
+    /// The side that moved first this game (the live `game.player` alternates).
+    public var startingPlayer: Color { record.startingPlayer }
+    /// One entry per finished turn, in play order (empty `halfMoves` = a forced pass).
+    public var history: [PlyRecord] { record.plies }
 
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
@@ -49,20 +61,18 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
 
-    /// One committed ply, kept so the player can step back to a previous decision
-    /// (mirrors the CLI's `Snapshot` list). `move` is `nil` for a forced pass; the
-    /// recorded dice are restored on undo so the same position can be re-decided.
-    /// The half-moves reference the live board points, so undoing them reverses the
-    /// exact board mutation.
-    private struct PlyRecord {
+    /// One committed ply kept for decision-point undo. `move` is `nil` for a forced
+    /// pass; dice are restored on undo so the same position can be re-decided.
+    private struct UndoRecord {
         let mover: Color
         let move: Move?
         let dice: (Int, Int)
     }
 
-    /// Committed plies, oldest first. Drives decision-point undo. Not published —
+    /// Committed plies, oldest first. Parallel to `record.plies` but carries the
+    /// live `Move` objects needed to reverse board mutations. Not published —
     /// every transition that changes undo-availability also reassigns `phase`.
-    private var history: [PlyRecord] = []
+    private var undoHistory: [UndoRecord] = []
 
     public init(startingPlayer: Color = .black,
                 config: GameConfig = .standard,
@@ -71,11 +81,18 @@ public final class GameSession: ObservableObject {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
-        self.aiColor = aiColor
+        self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor)
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
     public var currentPlayer: Color { game.currentPlayer }
+
+    /// Whether the game has ended (someone won). Saves are only meaningful for
+    /// non-terminal games — the app clears the auto-save once this is true.
+    public var isTerminal: Bool {
+        if case .gameOver = phase { return true }
+        return false
+    }
 
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
     /// Returns `nil` when the model is absent so callers can fall back to random play.
@@ -161,7 +178,8 @@ public final class GameSession: ObservableObject {
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
-            finishTurn(playedMove: Move(moveBuilder.built), mover: game.currentPlayer)
+            recordTurn(mover: game.currentPlayer, move: Move(moveBuilder.built))
+            finishTurn()
         } else {
             refreshSources()
         }
@@ -186,7 +204,8 @@ public final class GameSession: ObservableObject {
     /// Finish the turn early when the partial sequence is already a legal move.
     public func confirm() {
         guard phase == .picking || phase == .moving, moveBuilder.canFinishNow else { return }
-        finishTurn(playedMove: Move(moveBuilder.built), mover: game.currentPlayer)
+        recordTurn(mover: game.currentPlayer, move: Move(moveBuilder.built))
+        finishTurn()
     }
 
     /// Reset to a fresh game, current player rolling first.
@@ -194,12 +213,13 @@ public final class GameSession: ObservableObject {
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
+        record = GameRecord(startingPlayer: startingPlayer, aiColor: record.aiColor)
         legalMoves = []
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
         selectableSources = []
         winProbability = 0.5
-        history = []
+        undoHistory = []
         phase = .awaitingRoll
         maybeStartAITurn()
     }
@@ -216,7 +236,8 @@ public final class GameSession: ObservableObject {
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn(playedMove: nil, mover: game.currentPlayer)
+            recordTurn(mover: game.currentPlayer, move: nil)
+            finishTurn()
             return
         }
 
@@ -248,19 +269,12 @@ public final class GameSession: ObservableObject {
         validTargets = []
     }
 
-    /// Record the just-played ply (so it can be rewound), then advance the turn.
-    /// `mover` and the live dice are captured before `switchTurn`. A winning move is
-    /// still recorded for history completeness, though undo is blocked at `gameOver`.
-    private func finishTurn(playedMove: Move?, mover: Color) {
-        history.append(PlyRecord(
-            mover: mover,
-            move: playedMove,
-            dice: (game.dice.die1.value, game.dice.die2.value)
-        ))
+    private func finishTurn() {
         clearSelection()
         selectableSources = []
 
         if game.isOver(), let winner = game.getWinner() {
+            record.outcome = winner
             phase = .gameOver(winner: winner)
             return
         }
@@ -300,10 +314,10 @@ public final class GameSession: ObservableObject {
     /// because they were never a real choice — undo lands on the prior decision.
     private func lastDecisionIndex() -> Int? {
         let undoColor = aiColor?.opponent
-        var i = history.count - 1
+        var i = undoHistory.count - 1
         while i >= 0 {
-            let record = history[i]
-            if record.move != nil, undoColor == nil || record.mover == undoColor {
+            let entry = undoHistory[i]
+            if entry.move != nil, undoColor == nil || entry.mover == undoColor {
                 return i
             }
             i -= 1
@@ -321,12 +335,14 @@ public final class GameSession: ObservableObject {
         // Discard any half-moves built this turn but not yet recorded.
         for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
 
-        let restoredColor = history[target].mover
-        let (d1, d2) = history[target].dice
-        while history.count > target {
-            let popped = history.removeLast()
+        let restoredColor = undoHistory[target].mover
+        let (d1, d2) = undoHistory[target].dice
+        while undoHistory.count > target {
+            let popped = undoHistory.removeLast()
             if let move = popped.move { game.board.undo(move) }
         }
+        // Keep record.plies in sync with undoHistory (both track one entry per turn).
+        record.plies = Array(record.plies.prefix(target))
 
         game.setPlayer(restoredColor)
         game.dice.set(d1, d2)
@@ -354,7 +370,8 @@ public final class GameSession: ObservableObject {
 
         guard !legalMoves.isEmpty else {
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            finishTurn(playedMove: nil, mover: game.currentPlayer)
+            recordTurn(mover: game.currentPlayer, move: nil)
+            finishTurn()
             return
         }
         moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
@@ -390,10 +407,89 @@ public final class GameSession: ObservableObject {
     private func applyAIMove(_ move: Move, score: Float?) {
         let mover = game.currentPlayer
         game.board.apply(move)
+        recordTurn(mover: mover, move: move)
         if let score {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
-        finishTurn(playedMove: move, mover: mover)
+        finishTurn()
+    }
+
+    // ── History recording ─────────────────────────────────────────────────────
+
+    /// Append a finished turn to both `record.plies` (for replay/save) and
+    /// `undoHistory` (for decision-point undo). Must be called before `finishTurn`
+    /// switches the turn, while the dice still hold this ply's values.
+    private func recordTurn(mover: Color, move: Move?) {
+        record.plies.append(PlyRecord(
+            die1: game.dice.die1.value,
+            die2: game.dice.die2.value,
+            halfMoves: (move?.halfMoves ?? []).map { [$0.from.position, $0.to.position] }
+        ))
+        undoHistory.append(UndoRecord(
+            mover: mover,
+            move: move,
+            dice: (game.dice.die1.value, game.dice.die2.value)
+        ))
+    }
+
+    // ── Resume from a save ────────────────────────────────────────────────────
+
+    /// Rebuild a session from a save by replaying its history from the initial
+    /// position. The returned session sits at the resumed player's `awaitingRoll`
+    /// (or `gameOver` if the recorded game already ended). Call `start()` afterward
+    /// — exactly as for a new game — so the AI takes its turn if it owns the move.
+    public static func resume(from save: GameSave,
+                              config: GameConfig = .standard,
+                              agent: Agent? = nil) -> GameSession {
+        let starting = Color(rawValue: save.startingPlayer) ?? .black
+        let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
+        let session = GameSession(startingPlayer: starting,
+                                  config: config,
+                                  agent: agent,
+                                  aiColor: aiColor)
+        session.replay(save.history)
+        return session
+    }
+
+    /// Apply each recorded half-move directly to the board, alternating the mover
+    /// every ply (a pass still passes the turn). Mirrors `applyHalfMove`
+    /// (`from.pop()` / `to.push(mover)`) without re-deriving legal moves, so the
+    /// reconstruction is exact and independent of the bundled model. `undoHistory`
+    /// is left empty after replay — Move objects cannot be reconstructed from saved
+    /// indices, so decision-point undo is unavailable until the first new move.
+    private func replay(_ plies: [PlyRecord]) {
+        let board = game.board
+        let upper = board.boardSize + 1
+        var mover = startingPlayer
+        record.plies = []
+        undoHistory = []
+
+        for ply in plies {
+            for pair in ply.halfMoves where pair.count == 2 {
+                let from = pair[0], to = pair[1]
+                guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
+                board.points[from].pop()
+                board.points[to].push(mover)
+            }
+            record.plies.append(ply)
+            if game.isOver() { break }
+            mover = mover.opponent
+            game.setPlayer(mover)
+        }
+
+        game.dice.set(1, 1)
+        legalMoves = []
+        moveBuilder = MoveBuilder(legalMoves: [], board: board)
+        clearSelection()
+        selectableSources = []
+
+        if game.isOver(), let winner = game.getWinner() {
+            record.outcome = winner
+            phase = .gameOver(winner: winner)
+        } else {
+            phase = .awaitingRoll
+            refreshEvaluation()
+        }
     }
 }
