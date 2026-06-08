@@ -185,14 +185,20 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
   outcomes, **oldest→newest**, for the sparkline), and the current streak (`streakCount` +
   `streakIsWin`, counting back from the most recent game; `0`/`false` when empty). `.empty` is
   the no-games value.
-- **`HumanStatsStorage`** — persistence seam (`load`/`save`). Default `UserDefaultsStatsStorage`
-  stores a JSON array under one `UserDefaults` key (the iPad app is offline + sandboxed, so it
-  can't share the CLI's `training_runs/human_game_history.log` — this is the on-device
-  equivalent that survives restarts). Tests inject an in-memory backing.
-- **`HumanStatsStore`** (`@MainActor`, `ObservableObject`) — loads on init, `record(humanWon:)`
-  appends + persists immediately and republishes so SwiftUI panels re-derive `stats`. `RootView`
-  owns one (`@StateObject`) and wires `session.onGameOver` to `store.record(humanWon: winner ==
-  humanColor)`.
+- **`HumanGameLog` + `HumanGameLogStore`** — persistence, following the **same conventions as
+  `SaveStore`** (not `UserDefaults`): `HumanGameLog` is a schema-versioned Codable wrapper
+  (`currentSchemaVersion`, `games: [HumanGameRecord]`), and `HumanGameLogStore` is a file-backed
+  store writing a single JSON file (the app uses `Documents/HumanGameLog.json`) with `.iso8601`
+  dates, pretty-printed + sorted-keys encoding, atomic writes, and an unrecognized
+  `schemaVersion` **skipped** (read as empty) — exactly like `SaveStore.list()`. This is the
+  iPad analogue of the CLI's `human_game_history.log` (the app is offline + sandboxed, so it can't
+  share that file). It is deliberately a **separate outcome log**, not part of the
+  `GameSave`/`SaveStore` game-storage standard (which stores resumable games), but it matches that
+  standard's on-disk style. Tests run it against a real temp file (like the `SaveStore` tests).
+- **`HumanStatsStore`** (`@MainActor`, `ObservableObject`) — loads on init from a
+  `HumanGameLogStore` (default `.default()`), `record(humanWon:)` appends + persists immediately
+  and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
+  wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
 
 ## SwiftUI views
 

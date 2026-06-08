@@ -63,18 +63,28 @@ final class HumanGameStatsTests: XCTestCase {
     }
 }
 
-/// In-memory storage so the store tests never touch real `UserDefaults`.
-private final class InMemoryStatsStorage: HumanStatsStorage {
-    var stored: [HumanGameRecord] = []
-    func load() -> [HumanGameRecord] { stored }
-    func save(_ records: [HumanGameRecord]) { stored = records }
-}
-
+/// Store tests run against a real temp-file-backed `HumanGameLogStore` (mirroring
+/// the `SaveStore` test style) so persistence is exercised end to end without
+/// touching the app's real `Documents`.
 @MainActor
 final class HumanStatsStoreTests: XCTestCase {
+    private var dir: URL!
+    private var fileURL: URL!
+
+    override func setUpWithError() throws {
+        dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("humanstats-\(UUID().uuidString)", isDirectory: true)
+        fileURL = dir.appendingPathComponent("HumanGameLog.json")
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: dir)
+    }
+
+    private func makeStore() -> HumanGameLogStore { HumanGameLogStore(fileURL: fileURL) }
+
     func testRecordAppendsAndPersists() {
-        let storage = InMemoryStatsStorage()
-        let store = HumanStatsStore(storage: storage)
+        let store = HumanStatsStore(store: makeStore())
         XCTAssertEqual(store.records.count, 0)
 
         store.record(humanWon: true)
@@ -83,35 +93,45 @@ final class HumanStatsStoreTests: XCTestCase {
         XCTAssertEqual(store.records.count, 2)
         XCTAssertEqual(store.stats.wins, 1)
         XCTAssertEqual(store.stats.losses, 1)
-        // Persisted to the backing storage immediately.
-        XCTAssertEqual(storage.stored.count, 2)
+        // A fresh store over the same file sees the persisted records.
+        XCTAssertEqual(HumanStatsStore(store: makeStore()).records.count, 2)
     }
 
     func testLoadsExistingHistoryOnInit() {
-        let storage = InMemoryStatsStorage()
-        storage.stored = [
+        makeStore().save([
             HumanGameRecord(date: Date(timeIntervalSince1970: 0), humanWon: true),
             HumanGameRecord(date: Date(timeIntervalSince1970: 1), humanWon: true),
-        ]
-        let store = HumanStatsStore(storage: storage)
+        ])
+        let store = HumanStatsStore(store: makeStore())
         XCTAssertEqual(store.records.count, 2)
         XCTAssertEqual(store.stats.streakCount, 2)
         XCTAssertTrue(store.stats.streakIsWin)
     }
 
-    func testUserDefaultsStorageRoundTrips() {
-        let suite = "humanGameStatsTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let storage = UserDefaultsStatsStorage(defaults: defaults, key: "history")
-        XCTAssertTrue(storage.load().isEmpty)
+    func testFileStoreRoundTrips() {
+        let store = makeStore()
+        XCTAssertTrue(store.load().isEmpty)
 
         let recs = [
             HumanGameRecord(date: Date(timeIntervalSince1970: 10), humanWon: false),
             HumanGameRecord(date: Date(timeIntervalSince1970: 20), humanWon: true),
         ]
-        storage.save(recs)
-        XCTAssertEqual(storage.load(), recs)
+        store.save(recs)
+        XCTAssertEqual(store.load(), recs)
+    }
+
+    func testIncompatibleSchemaIsSkipped() throws {
+        // A log written under a future schema version is ignored (read as empty),
+        // mirroring how SaveStore.list() skips incompatible files.
+        let future = HumanGameLog(
+            schemaVersion: HumanGameLog.currentSchemaVersion + 1,
+            games: [HumanGameRecord(date: Date(timeIntervalSince1970: 0), humanWon: true)]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try encoder.encode(future).write(to: fileURL)
+
+        XCTAssertTrue(makeStore().load().isEmpty)
     }
 }

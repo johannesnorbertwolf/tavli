@@ -58,37 +58,77 @@ public struct HumanGameStats: Equatable, Sendable {
     public static let empty = HumanGameStats(records: [])
 }
 
-/// Where the human game history is persisted. Abstracted so tests can swap in an
-/// in-memory backing without touching `UserDefaults`.
-public protocol HumanStatsStorage: AnyObject {
-    func load() -> [HumanGameRecord]
-    func save(_ records: [HumanGameRecord])
+/// The persisted human game log: a schema-versioned, append-only list of completed
+/// game outcomes. The iPad analogue of the CLI's `human_game_history.log`. This is
+/// **not** part of the `GameSave`/`SaveStore` game-storage standard on purpose — it
+/// records outcomes, not resumable games — but it deliberately follows the same
+/// file-backed, schema-versioned conventions (`currentSchemaVersion`, skip on an
+/// unrecognized version) so all on-disk data reads the same way.
+public struct HumanGameLog: Codable, Equatable {
+    public static let currentSchemaVersion = 1
+
+    public var schemaVersion: Int
+    public var games: [HumanGameRecord]
+
+    public init(schemaVersion: Int = HumanGameLog.currentSchemaVersion,
+                games: [HumanGameRecord] = []) {
+        self.schemaVersion = schemaVersion
+        self.games = games
+    }
 }
 
-/// Default persistence: a JSON-encoded array of records in `UserDefaults`, which
-/// survives app restarts (the iPad app is offline and sandboxed, so it can't share
-/// the CLI's log file — this is the on-device equivalent).
-public final class UserDefaultsStatsStorage: HumanStatsStorage {
-    private let defaults: UserDefaults
-    private let key: String
+/// File-backed store for the `HumanGameLog`, a single JSON file (the app uses
+/// `Documents/HumanGameLog.json`). Mirrors `SaveStore`'s conventions: `.iso8601`
+/// dates, pretty-printed + sorted-keys encoding, atomic writes, directory created
+/// on demand, and an unrecognized `schemaVersion` skipped (read as empty) rather
+/// than surfaced — the same way `SaveStore.list()` skips incompatible files.
+public final class HumanGameLogStore {
+    public let fileURL: URL
 
-    public init(defaults: UserDefaults = .standard, key: String = "humanGameHistory.v1") {
-        self.defaults = defaults
-        self.key = key
+    public init(fileURL: URL) {
+        self.fileURL = fileURL
     }
 
+    /// A store rooted at `Documents/HumanGameLog.json`.
+    public static func `default`() -> HumanGameLogStore {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return HumanGameLogStore(fileURL: docs.appendingPathComponent("HumanGameLog.json"))
+    }
+
+    /// The recorded games, or `[]` when the file is missing, unreadable, or written
+    /// under a `schemaVersion` this build does not recognize.
     public func load() -> [HumanGameRecord] {
-        guard let data = defaults.data(forKey: key),
-              let records = try? JSONDecoder().decode([HumanGameRecord].self, from: data) else {
+        guard let data = try? Data(contentsOf: fileURL),
+              let log = try? Self.decoder.decode(HumanGameLog.self, from: data),
+              log.schemaVersion == HumanGameLog.currentSchemaVersion else {
             return []
         }
-        return records
+        return log.games
     }
 
+    /// Overwrite the log with `records` (atomically), creating the directory if needed.
     public func save(_ records: [HumanGameRecord]) {
-        guard let data = try? JSONEncoder().encode(records) else { return }
-        defaults.set(data, forKey: key)
+        let log = HumanGameLog(games: records)
+        guard let data = try? Self.encoder.encode(log) else { return }
+        try? FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try? data.write(to: fileURL, options: .atomic)
     }
+
+    // ── Codable config (shared so reads and writes agree; mirrors SaveStore) ──
+    private static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return e
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
 }
 
 /// Observable owner of the human game history. Loads on init, appends on each
@@ -98,11 +138,11 @@ public final class UserDefaultsStatsStorage: HumanStatsStorage {
 @MainActor
 public final class HumanStatsStore: ObservableObject {
     @Published public private(set) var records: [HumanGameRecord]
-    private let storage: HumanStatsStorage
+    private let store: HumanGameLogStore
 
-    public init(storage: HumanStatsStorage = UserDefaultsStatsStorage()) {
-        self.storage = storage
-        self.records = storage.load()
+    public init(store: HumanGameLogStore = .default()) {
+        self.store = store
+        self.records = store.load()
     }
 
     public var stats: HumanGameStats { HumanGameStats(records: records) }
@@ -110,6 +150,6 @@ public final class HumanStatsStore: ObservableObject {
     /// Record the outcome of one completed game and persist it.
     public func record(humanWon: Bool, date: Date = Date()) {
         records.append(HumanGameRecord(date: date, humanWon: humanWon))
-        storage.save(records)
+        store.save(records)
     }
 }
