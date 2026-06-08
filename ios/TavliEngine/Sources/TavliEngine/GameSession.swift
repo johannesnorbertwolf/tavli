@@ -330,7 +330,10 @@ public final class GameSession: ObservableObject {
                 beamThreshold: search.beamThreshold,
                 relativeCutoff: search.relativeCutoff,
                 maxBranch: search.maxBranch,
-                maxDepth: search.maxDepth
+                maxDepth: search.maxDepth,
+                rootSoftBudget: search.rootSoftBudget,
+                minRootBranches: search.minRootBranches,
+                maxRootBranches: search.maxRootBranches
             )
             let chosenIndex = result?.index
             let chosenScore = result?.score

@@ -243,4 +243,36 @@ final class AgentSearchTests: XCTestCase {
         XCTAssertEqual(result.index, 0)
         XCTAssertEqual(result.depth, 1)
     }
+
+    // MARK: - adaptive root expansion
+
+    /// The adaptive root expansion must respect its branch caps and stay anytime:
+    /// with a tiny `timeBudget` (so deep branches can't all finish) it still returns
+    /// a legal in-range move with a valid score and leaves the board conserved.
+    func testAdaptiveRootExpansionIsAnytimeAndLegal() throws {
+        let config = gameConfig(Self.fixtures.config)
+        var picked: (board: GameBoard, moves: [Move], color: Color)?
+        for c in Self.fixtures.move_cases where c.moves.count >= 3 {
+            let board = makeBoard(c.points, config: config)
+            let color = parseColor(c.color)
+            let dice = Dice(numberOfSides: config.dieSides)
+            dice.set(c.dice[0], c.dice[1])
+            let moves = PossibleMoves(board: board, color: color, dice: dice).findMoves()
+            if moves.count >= 3 { picked = (board, moves, color); break }
+        }
+        let (board, moves, color) = try XCTUnwrap(picked, "no fixture case with >= 3 moves")
+        let checkersBefore = board.points.reduce(0) { $0 + $1.count }
+
+        let r = try XCTUnwrap(try Self.agent.getBestMove(
+            board, moves, color: color, timeBudget: 5,
+            beamThreshold: 0.08, relativeCutoff: 0.08, maxBranch: 4, maxDepth: 3,
+            rootSoftBudget: 8, minRootBranches: 2, maxRootBranches: 5
+        ))
+        XCTAssertTrue((0..<moves.count).contains(r.index), "index out of range: \(r.index)")
+        XCTAssertEqual(moves[r.index], r.move, "returned move/index disagree")
+        XCTAssertTrue(r.score >= 0 && r.score <= 1, "score out of range: \(r.score)")
+        XCTAssertGreaterThanOrEqual(r.depth, 1)
+        XCTAssertEqual(board.points.reduce(0) { $0 + $1.count }, checkersBefore,
+                       "search left the board mutated")
+    }
 }

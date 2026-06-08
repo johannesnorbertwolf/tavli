@@ -92,14 +92,6 @@ public final class Agent: @unchecked Sendable {
         return scores
     }
 
-    /// Index of the first maximal score (ties resolve to the earliest, matching
-    /// Python's `max(range, key=...)`).
-    private static func argmax(_ scores: [Float]) -> Int {
-        var best = 0
-        for i in 1..<scores.count where scores[i] > scores[best] { best = i }
-        return best
-    }
-
     /// Indices of the moves to expand, best-first. Mirrors `_prune_branches` in
     /// `ai/agent.py`: keep `score >= best*(1-relativeCutoff)` when a relative cutoff
     /// is set, else `score >= best - beamThreshold`; sort by score desc (ties by
@@ -196,15 +188,33 @@ public final class Agent: @unchecked Sendable {
         return scores
     }
 
-    /// Iterative-deepening beam expectimax under a wall-clock budget. Mirrors the
-    /// time-budget path of `get_best_move` in `ai/agent.py`.
+    /// Best-first search with a **2-ply baseline** and anytime deepening under a
+    /// wall-clock budget. This is the on-device search strategy and intentionally
+    /// diverges from the CLI's plain iterative-deepening `get_best_move` in
+    /// `ai/agent.py`: only the time/branch *policy* differs — the leaf scoring
+    /// (`evaluateMoves`) and the deeper recursion (`evaluateMovesNply`) are the
+    /// parity-validated port, so move evaluation still matches Python exactly.
     ///
-    /// Depth 1 scores all root moves; the loop then deepens while the deadline holds
-    /// and `depth <= maxDepth`, re-scoring only the pruned root candidates and
-    /// keeping prior-depth scores for the rest. A `SearchTimeout` mid-depth discards
-    /// that depth's partial result and returns the last fully completed depth's best.
-    /// Returns the chosen move with its score, its index into `moves` (so a caller
-    /// holding an equivalent move list can map back), and the depth actually reached.
+    /// Strategy:
+    /// 1. **1-ply** score every root move; keep the best-first candidate set within
+    ///    `relativeCutoff`, capped at `maxRootBranches`.
+    /// 2. **2-ply baseline** — score the whole candidate set at depth 2. This is the
+    ///    guaranteed floor: cheap, (almost) always completes, and gives the move
+    ///    ordering for the next step. Its best is the answer if `maxDepth <= 2` or if
+    ///    deepening can't finish a single branch.
+    /// 3. **Deepen to `maxDepth`** (anytime) — re-score candidates one at a time, in
+    ///    2-ply order, overwriting their baseline score with the deeper score:
+    ///    - always deepen at least `minRootBranches` (subject to the `timeBudget` hard cap), then
+    ///    - keep widening up to `maxRootBranches` total **only while elapsed < `rootSoftBudget`**.
+    ///    Inside each branch the 2nd/3rd levels prune to `maxBranch`.
+    /// 4. Return the argmax over the (mixed 2-ply / deepened) candidate scores.
+    ///
+    /// So cheap positions deepen the whole candidate set in well under the soft budget,
+    /// while a hugely-branching doubles roll still returns a complete 2-ply result plus
+    /// a genuine `maxDepth` evaluation of its best moves within `timeBudget`. A
+    /// `SearchTimeout` (hard cap hit mid-branch) keeps the best result so far; if not
+    /// even the 2-ply baseline finishes, the 1-ply best is returned (`depth = 1`).
+    /// Returns the chosen move, its score, its index into `moves`, and the depth reached.
     public func getBestMove(
         _ board: GameBoard,
         _ moves: [Move],
@@ -213,44 +223,78 @@ public final class Agent: @unchecked Sendable {
         beamThreshold: Float = 0.08,
         relativeCutoff: Float? = nil,
         maxBranch: Int? = nil,
-        maxDepth: Int? = nil
+        maxDepth: Int? = nil,
+        rootSoftBudget: TimeInterval = 8.0,
+        minRootBranches: Int = 2,
+        maxRootBranches: Int = 5
     ) throws -> (move: Move, score: Float, index: Int, depth: Int)? {
         guard !moves.isEmpty else { return nil }
         if moves.count == 1 { return (moves[0], 0.0, 0, 1) }
 
-        let deadline = DispatchTime.now() + timeBudget
+        let hardDeadline = DispatchTime.now() + timeBudget
+        let softDeadline = DispatchTime.now() + rootSoftBudget
 
-        var bestScores = try evaluateMoves(board, moves, color: color)
-        var bestIdx = Self.argmax(bestScores)
-        var reachedDepth = 1
+        // 1-ply score for every root move → best-first candidate set, capped.
+        let rootScores = try evaluateMoves(board, moves, color: color)
+        let candidates = Self.pruneBranches(
+            scores: rootScores, beamThreshold: beamThreshold,
+            relativeCutoff: relativeCutoff, maxBranch: maxRootBranches
+        )   // indices into `moves`, best-first
 
-        var depth = 2
-        while DispatchTime.now() < deadline {
-            if let maxDepth, depth > maxDepth { break }
-
-            let candidateIndices = Self.pruneBranches(
-                scores: bestScores, beamThreshold: beamThreshold,
-                relativeCutoff: relativeCutoff, maxBranch: maxBranch
-            )
-            let candidateMoves = candidateIndices.map { moves[$0] }
-
-            let partial: [Float]
-            do {
-                partial = try evaluateMovesNply(
-                    board, candidateMoves, color: color, depth: depth,
-                    beamThreshold: beamThreshold, relativeCutoff: relativeCutoff,
-                    maxBranch: maxBranch, deadline: deadline
-                )
-            } catch is SearchTimeout {
-                break  // discard partial results, keep previous depth's best
+        // argmax over candidate scores (ties → lowest move index), returns a position in `candidates`.
+        func bestPosition(_ scores: [Float]) -> Int {
+            var b = 0
+            for i in 1..<scores.count
+            where scores[i] > scores[b] || (scores[i] == scores[b] && candidates[i] < candidates[b]) {
+                b = i
             }
-
-            for (j, i) in candidateIndices.enumerated() { bestScores[i] = partial[j] }
-            bestIdx = Self.argmax(bestScores)
-            reachedDepth = depth
-            depth += 1
+            return b
         }
 
-        return (moves[bestIdx], bestScores[bestIdx], bestIdx, reachedDepth)
+        let targetDepth = maxDepth ?? 3
+        guard targetDepth > 1 else {
+            let p = bestPosition(candidates.map { rootScores[$0] })
+            return (moves[candidates[p]], rootScores[candidates[p]], candidates[p], 1)
+        }
+
+        // Step 2 — 2-ply baseline over the whole candidate set (the guaranteed floor).
+        var scores: [Float]
+        do {
+            scores = try evaluateMovesNply(
+                board, candidates.map { moves[$0] }, color: color, depth: 2,
+                beamThreshold: beamThreshold, relativeCutoff: relativeCutoff,
+                maxBranch: maxBranch, deadline: hardDeadline
+            )
+        } catch is SearchTimeout {
+            // Couldn't even finish 2-ply — fall back to the 1-ply best.
+            let p = bestPosition(candidates.map { rootScores[$0] })
+            return (moves[candidates[p]], rootScores[candidates[p]], candidates[p], 1)
+        }
+        var reachedDepth = 2
+
+        if targetDepth > 2 {
+            // Step 3 — deepen candidates, best-2-ply-first, overwriting their score.
+            let deepOrder = scores.indices.sorted {
+                scores[$0] != scores[$1] ? scores[$0] > scores[$1] : candidates[$0] < candidates[$1]
+            }
+            for (k, pos) in deepOrder.enumerated() {
+                if DispatchTime.now() > hardDeadline { break }
+                if k >= minRootBranches && DispatchTime.now() > softDeadline { break }
+
+                do {
+                    scores[pos] = try evaluateMovesNply(
+                        board, [moves[candidates[pos]]], color: color, depth: targetDepth,
+                        beamThreshold: beamThreshold, relativeCutoff: relativeCutoff,
+                        maxBranch: maxBranch, deadline: hardDeadline
+                    )[0]
+                } catch is SearchTimeout {
+                    break  // hard cap hit mid-branch — keep the best result so far
+                }
+                reachedDepth = targetDepth
+            }
+        }
+
+        let p = bestPosition(scores)
+        return (moves[candidates[p]], scores[p], candidates[p], reachedDepth)
     }
 }

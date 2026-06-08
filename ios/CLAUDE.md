@@ -97,18 +97,21 @@ so the game flow is validated without a simulator.
   chosen **index**, which the main actor maps back to the live `Move` before applying. An
   out-of-range/`nil` index (Core ML failure) falls back to a random live move.
 
-- **`SearchConfig`** mirrors the CLI's `config/config.yml` search section so on-device play matches
-  `./run.sh play`: `timeBudget`↔`play_time_budget_s` (20s safety ceiling), `beamThreshold`↔
-  `beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil), `relativeCutoff`↔
-  `search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` (5). The pruning knobs match the
-  CLI exactly. **`maxDepth` intentionally differs**: the CLI caps at `search_max_depth: 2`, but the
-  default `.standard` config sets `maxDepth: 3` for a full 3-ply on-device search (the 20s
-  `timeBudget` is only a safety ceiling that 3-ply reliably finishes within). `SearchConfig(maxDepth: 1)`
-  forces pure 1-ply (used by the headless game tests to stay fast).
+- **`SearchConfig`** — the leaf scoring + inner pruning mirror the CLI's `config/config.yml` search
+  section (so move *evaluation* matches `./run.sh play`), but the **root search strategy is
+  iOS-specific** (see `getBestMove` below). `timeBudget`↔`play_time_budget_s` (20s — now a *hard* cap),
+  `beamThreshold`↔`beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil),
+  `relativeCutoff`↔`search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` — the cap on
+  replies expanded per **inner** (2nd/3rd-level) node, default `4`. **`maxDepth` intentionally
+  differs**: the CLI caps at `search_max_depth: 2`, but `.standard` targets `maxDepth: 3` for a full
+  3-ply on-device search; `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests
+  to stay fast). Three knobs have **no CLI equivalent** and tune the root expansion only:
+  `rootSoftBudget` (8s), `minRootBranches` (2), `maxRootBranches` (5).
 
-- **`Agent` search (ported from `ai/agent.py`, #58).** Three layers on top of the parity-validated
+- **`Agent` search (#58).** Three layers on top of the parity-validated
   1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
-  restores the board on any exit):
+  restores the board on any exit). The leaf scoring and `evaluateMovesNply` are ported from
+  `ai/agent.py`; `getBestMove`'s *root strategy* is iOS-specific (below):
   - `pruneBranches(scores:beamThreshold:relativeCutoff:maxBranch:)` — beam helper mirroring
     `_prune_branches`: keep `score >= best*(1-relativeCutoff)` when a relative cutoff is set, else
     `score >= best - beamThreshold`; sort best-first (ties by original index, matching Python's
@@ -120,18 +123,28 @@ so the game flow is validated without a simulator.
     pre-screened, pruned via `pruneBranches`, recursed at `depth-1`, and folded in as
     `weight * (1 - oppDeep.max())`. Each apply is paired with a `defer`-undo so the board is restored
     even when a `SearchTimeout` unwinds from a deeper frame.
-  - `getBestMove(…timeBudget:…maxDepth:)` — iterative-deepening beam expectimax under a wall-clock
-    `DispatchTime` deadline. Single move → fast path (depth 1, index 0). Otherwise depth 1 scores all
-    root moves, then it deepens while the deadline holds and `depth ≤ maxDepth`, re-scoring only the
-    pruned root candidates (keeping prior-depth scores for the rest). A `SearchTimeout` mid-depth
-    discards that depth's partial result and returns the last fully completed depth's best. Returns
-    `(move, score, index, depth)`. Validated by `AgentSearchTests`: `pruneBranches` unit cases, an
-    independent in-test 2-ply reference vs unpruned `evaluateMovesNply` (float-exact), the
-    time-budget path (legal move, depth ≥ 2, budget respected, checkers conserved), and a
-    **terminal-during-lookahead** case (a position where some lines pin Black's start point for an
-    immediate win and others don't): every winning line must score exactly 1.0 via the `hasWon`
-    short-circuit, non-winning lines strictly < 1.0, the search must pick a winning index, and the
-    board must end byte-identical.
+  - `getBestMove(…timeBudget:…maxDepth:rootSoftBudget:minRootBranches:maxRootBranches:)` — **2-ply
+    baseline + anytime deepening** under a wall-clock `DispatchTime` deadline (this replaced the
+    earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). Otherwise: (1) score
+    every root move 1-ply and take the best-first candidate set within `relativeCutoff`, capped at
+    `maxRootBranches`; (2) **2-ply baseline** — score the whole candidate set at depth 2 (the
+    guaranteed floor: cheap, almost always completes, and orders the next step); (3) **deepen to
+    `maxDepth`** one candidate at a time in 2-ply order, overwriting each baseline score with the
+    deeper score — always at least `minRootBranches` (subject to the `timeBudget` hard cap), then keep
+    widening up to `maxRootBranches` total **only while elapsed < `rootSoftBudget`**; inside each
+    branch the 2nd/3rd levels prune to `maxBranch`; (4) return the argmax over the mixed
+    2-ply/deepened scores. So cheap positions deepen the whole set in well under the soft budget, while
+    a hugely-branching doubles roll still returns a complete 2-ply result plus a genuine `maxDepth`
+    evaluation of its best moves within `timeBudget`. A `SearchTimeout` keeps the best result so far;
+    if not even the 2-ply baseline finishes, the 1-ply best is returned (`depth = 1`). The cost floor
+    on extreme positions is the per-node screen (every reply is scored before pruning), which
+    `maxBranch` does not reduce. Returns `(move, score, index, depth)`. Validated by `AgentSearchTests`:
+    `pruneBranches` unit cases, an independent in-test 2-ply reference vs unpruned `evaluateMovesNply`
+    (float-exact), the budgeted path (legal move, budget respected, checkers conserved), an **anytime**
+    case (tiny budget still yields a legal conserved move), and a **terminal-during-lookahead** case (a
+    position where some lines pin Black's start point for an immediate win and others don't): every
+    winning line must score exactly 1.0 via the `hasWon` short-circuit, non-winning lines strictly
+    < 1.0, the search must pick a winning index, and the board must end byte-identical.
 
 ## Save & load (#61, replay-based)
 
