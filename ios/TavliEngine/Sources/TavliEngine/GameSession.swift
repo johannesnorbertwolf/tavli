@@ -61,6 +61,11 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
 
+    /// Fired exactly once, when the session first enters `.gameOver`, with the
+    /// winning color. The app layer uses this to record the human's win/loss
+    /// (issue #64); the engine itself stays unaware of stats persistence.
+    public var onGameOver: (@MainActor (Color) -> Void)?
+
     /// One committed ply kept for decision-point undo. `move` is `nil` for a forced
     /// pass; dice are restored on undo so the same position can be re-decided.
     private struct UndoRecord {
@@ -282,6 +287,7 @@ public final class GameSession: ObservableObject {
         if game.isOver(), let winner = game.getWinner() {
             record.outcome = winner
             phase = .gameOver(winner: winner)
+            onGameOver?(winner)
             return
         }
 

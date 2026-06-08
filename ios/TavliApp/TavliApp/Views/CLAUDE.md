@@ -244,10 +244,11 @@ published read-state and calls its intents — no game logic lives here. (T9 fir
 this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the assembled
 screen is fully playable, and added the Back button + hosted debug toggle.)
 
-- **`GameView`** (`@ObservedObject session`, plus `onBack: () -> Void = {}` — returns to
-  the mode picker, `onNewGame: () -> Void = {}` — replaces the finished session with
-  a fresh one, `onSave: (String) -> Void = { _ in }` (#61) — persists the game under the
-  given name, and `onAutosave: () -> Void = {}` (#61) — writes the single autosave slot; all
+- **`GameView`** (`@ObservedObject session`, plus `stats: HumanGameStats = .empty` (#64) — the
+  human's record shown in the win overlay, `onBack: () -> Void = {}` — returns to the mode
+  picker, `onNewGame: () -> Void = {}` — replaces the finished session with a fresh one,
+  `onSave: (String) -> Void = { _ in }` (#61) — persists the game under the given name, and
+  `onAutosave: () -> Void = {}` (#61) — writes the single autosave slot; all non-session args
   default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
   - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
@@ -317,11 +318,14 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   `moveBuilder.canFinishNow && !built.isEmpty`. Both styled by `ControlButtonStyle`
   (palette pill). The dice no longer live here — they moved to the board's center bar
   (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
-- **`WinOverlayView(winner:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!", a
+- **`WinOverlayView(winner:stats:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!",
+  the `StatsPanelView(stats:)` (so the human's record is **auto-shown after every game**, #64), a
   "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
   to replace the finished session with a fresh one — see `RootView.swift`), and a secondary
   "History" button (`onHistory`) so the log stays reachable after the game, when the scrim
-  covers the in-chrome `HistoryButton`.
+  covers the in-chrome `HistoryButton`. The just-finished game is already counted:
+  `session.onGameOver` records into `RootView`'s store, whose `@Published` change re-renders
+  `RootView` → passes fresh `stats` down before the overlay paints.
 - **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
   button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
   one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
@@ -426,14 +430,15 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
 The app's top-level view: switches between the caramel **mode picker**, the opening roll,
 and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
 
-- **`RootView`** — `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,
+- **`RootView`** — `@StateObject statsStore: HumanStatsStore` (the human W/L history, #64) plus
+  `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,
   `pendingHumanColor: EngineColor?`, `autosaveName: String` (the current game's stable display
   name — a timestamped `"Game · <date>"` default via `newAutosaveName()` for a fresh game, or the
   resumed game's own name). Body is a three-way branch inside `Group { }.onChange(of: scenePhase)`:
-  - `session != nil` → `GameView(session:onBack:onNewGame:onSave:onAutosave:)`. `onBack`
-    auto-saves then resets `session = nil`. `onNewGame` (Play Again) sets `session = nil` and
-    `pendingHumanColor = humanColor`, routing through the opening roll. `onSave` writes a named
-    manual save; `onAutosave` is `persistAutosave`.
+  - `session != nil` → `GameView(session:stats:onBack:onNewGame:onSave:onAutosave:)` (`stats =
+    statsStore.stats`, #64). `onBack` auto-saves then resets `session = nil`. `onNewGame` (Play
+    Again) sets `session = nil` and `pendingHumanColor = humanColor`, routing through the opening
+    roll. `onSave` writes a named manual save; `onAutosave` is `persistAutosave`.
   - `pendingHumanColor != nil` → `OpeningRollView`. On resolution mints a fresh `autosaveName`,
     stores `humanColor`, clears `pendingHumanColor`, and creates the session.
   - else → `ModePickerView`. Tapping a color sets `pendingHumanColor`.
@@ -461,11 +466,21 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
     play keeps the same identity), and switches into the replayed session.
   - Human color is recovered from `save.aiColor` (the human is the AI's opponent); a save with no
     AI color defaults the human to White.
-- **`ModePickerView(store:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
-  Garamond "Tavli" wordmark, two caramel `ModeButton`s ("Play vs AI / You play White|Black"),
-  and (#61) a **`SavedGamesList`** below them when any saves exist. Loads `store.list()` in
-  `@State saves` on `onAppear` (`reload`); `delete` removes a save and reloads. `onSelect` sets
-  `pendingHumanColor` (routes through the opening roll). The design
+- **Win/loss recording (#64).** A `.task(id: session.map(ObjectIdentifier.init))` modifier on the
+  branch arms each live session's game-over hook: `session.onGameOver = { winner in
+  store.record(humanWon: winner == humanColor) }` (capturing the `statsStore` + color by value).
+  Keying on session identity means it covers **every** entry point uniformly — opening roll,
+  resume from the list, and cold-launch auto-resume — rather than wiring at the (static) creation
+  sites; it skips the `-uiTestGame` session so test runs never write stats. It runs synchronously
+  (no `await`) well before any game can end, so the hook is always armed in time. Observing
+  `statsStore` re-renders `RootView` when a game is recorded, so the win overlay and picker read
+  fresh `stats`.
+- **`ModePickerView(store:stats:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
+  Garamond "Tavli" wordmark, two caramel `ModeButton`s ("Play vs AI / You play White|Black"), a
+  third **"My Record"** button (#64; subtitle = current `Ws – Ls`, or "No games yet") that presents
+  `StatsPanelView(stats:)` in a `.sheet`, and (#61) a **`SavedGamesList`** below them when any saves
+  exist. Loads `store.list()` in `@State saves` on `onAppear` (`reload`); `delete` removes a save
+  and reloads. `onSelect` sets `pendingHumanColor` (routes through the opening roll). The design
   reference's "Watch AI vs AI" mode is **deferred** (out of scope).
 - **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
   scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
@@ -480,6 +495,28 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
   gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
   `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
+
+## StatsPanelView.swift (#64 — human W/L panel)
+
+The iPad analogue of the CLI's post-game summary box. A **pure** view of a
+`HumanGameStats` (from `TavliEngine`) — no persistence or game logic; the store lives in
+`RootView`. Hosted in two places: inside `WinOverlayView` (auto-shown after every game) and
+from the mode picker's "My Record" sheet.
+
+- **`StatsPanelView(stats:)`** — a parchment card (`#f3ecdf` fill, `frameBot` border) with a
+  Cormorant Garamond "Human vs AI" header. When `stats.total == 0` it shows a "No games yet"
+  empty state; otherwise three sections:
+  1. **Overall** — `{wins}W – {losses}L (NN%)` over a thin win-rate `Capsule` bar
+     (`width = proxy.width * stats.winRate`).
+  2. **Sparkline** — a `Last 20` / `All N` label over a row of dots for `stats.recent`
+     (oldest→newest): filled **green** (`#6a8a4a`) for a win, **brick-red** (`#b0563f`) for
+     a loss.
+  3. **Streak** — `"{n} wins/losses in a row ↑/↓"`, tinted to the streak color.
+- Reuses `CaramelPalette` + `Color(hex:)` (same target) via a local `SColor` typealias (so a
+  bare `Color` stays unambiguous against `TavliEngine.Color`); a small private `Palette`
+  enum holds the panel-local colors. Carries `accessibilityIdentifier("statsPanel")`.
+- `#Preview`s: a mixed record over the light picker background, and the empty state over the
+  dark win-overlay scrim (the card reads on both).
 
 ## App.swift
 

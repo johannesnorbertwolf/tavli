@@ -103,6 +103,14 @@ so the game flow is validated without a simulator.
   updates only from a real model score and stays at its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
 
+- **Game-over hook (#64).** `GameSession.onGameOver: (@MainActor (Color) -> Void)?` fires
+  **exactly once**, inside `finishTurn` the moment the session enters `.gameOver`, with the
+  winning color. It's the seam the app uses to record the human's win/loss; the engine itself
+  stays unaware of stats persistence. It fires once per game because no intent re-enters
+  `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
+  game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
+  **not** fire it, so resuming a finished game never double-counts.
+
 ## Save & load (#61, replay-based)
 
 Persist and resume in-progress games the same way the CLI does: **store only the move
@@ -163,6 +171,34 @@ tests, no model/fixtures needed):
 The app wiring (autosave after every move and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
 `Views/CLAUDE.md`.
+
+## Human game stats (#64)
+
+`HumanGameStats.swift` is the iPad analogue of the CLI's post-game summary box / `human-stats`
+command (`main.py`). Pooled results only — no per-opponent / per-model breakdown (out of scope).
+SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
+(`HumanGameStatsTests`, `HumanStatsStoreTests`).
+
+- **`HumanGameRecord`** — `Codable` `{ date, humanWon }`. One completed game.
+- **`HumanGameStats(records:)`** — a **pure** summary mirroring `_print_human_record`:
+  `total` / `wins` / `losses`, `winRate` (∈ [0, 1], 0 when empty), `recent` (up to the last 20
+  outcomes, **oldest→newest**, for the sparkline), and the current streak (`streakCount` +
+  `streakIsWin`, counting back from the most recent game; `0`/`false` when empty). `.empty` is
+  the no-games value.
+- **`HumanGameLog` + `HumanGameLogStore`** — persistence, following the **same conventions as
+  `SaveStore`** (not `UserDefaults`): `HumanGameLog` is a schema-versioned Codable wrapper
+  (`currentSchemaVersion`, `games: [HumanGameRecord]`), and `HumanGameLogStore` is a file-backed
+  store writing a single JSON file (the app uses `Documents/HumanGameLog.json`) with `.iso8601`
+  dates, pretty-printed + sorted-keys encoding, atomic writes, and an unrecognized
+  `schemaVersion` **skipped** (read as empty) — exactly like `SaveStore.list()`. This is the
+  iPad analogue of the CLI's `human_game_history.log` (the app is offline + sandboxed, so it can't
+  share that file). It is deliberately a **separate outcome log**, not part of the
+  `GameSave`/`SaveStore` game-storage standard (which stores resumable games), but it matches that
+  standard's on-disk style. Tests run it against a real temp file (like the `SaveStore` tests).
+- **`HumanStatsStore`** (`@MainActor`, `ObservableObject`) — loads on init from a
+  `HumanGameLogStore` (default `.default()`), `record(humanWon:)` appends + persists immediately
+  and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
+  wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
 
 ## SwiftUI views
 

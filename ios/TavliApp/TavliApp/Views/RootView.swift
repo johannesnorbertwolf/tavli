@@ -13,6 +13,7 @@ private typealias EngineColor = TavliEngine.Color
 /// across re-renders; `GameView` observes it. Picking a color goes to the
 /// opening roll; the roll result (or manual override) builds the session.
 struct RootView: View {
+    @StateObject private var statsStore = HumanStatsStore()
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
     /// Non-nil while the opening roll screen is showing (between mode picker and game).
@@ -49,6 +50,7 @@ struct RootView: View {
             if let session {
                 GameView(
                     session: session,
+                    stats: statsStore.stats,
                     onBack: {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil
@@ -72,6 +74,7 @@ struct RootView: View {
                 }
             } else {
                 ModePickerView(store: store,
+                               stats: statsStore.stats,
                                onSelect: { color in
                                    pendingHumanColor = color
                                },
@@ -80,6 +83,19 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background { persistAutosave() }
+        }
+        // Wire each live session's game-over hook to record the human's W/L (#64).
+        // Done here (keyed on session identity) rather than at the static creation
+        // sites so it covers every entry point uniformly — opening roll, resume from
+        // the picker, and cold-launch auto-resume — while skipping the deterministic
+        // UI-test game so test runs never write stats. Runs synchronously (no await)
+        // well before any game can end, so the hook is always armed in time.
+        .task(id: session.map(ObjectIdentifier.init)) {
+            guard let session,
+                  !ProcessInfo.processInfo.arguments.contains("-uiTestGame") else { return }
+            session.onGameOver = { [statsStore, humanColor] winner in
+                statsStore.record(humanWon: winner == humanColor)
+            }
         }
     }
 
@@ -157,10 +173,13 @@ struct RootView: View {
 /// the design reference is deferred.
 private struct ModePickerView: View {
     let store: SaveStore
+    let stats: HumanGameStats
     let onSelect: (EngineColor) -> Void
     let onResume: (SaveMetadata) -> Void
 
     @State private var saves: [SaveMetadata] = []
+
+    @State private var showStats = false
 
     var body: some View {
         ZStack {
@@ -177,6 +196,9 @@ private struct ModePickerView: View {
                     ModeButton(title: "Play vs AI", subtitle: "You play Black") {
                         onSelect(.black)
                     }
+                    ModeButton(title: "My Record", subtitle: recordSubtitle) {
+                        showStats = true
+                    }
                 }
 
                 if !saves.isEmpty {
@@ -189,6 +211,19 @@ private struct ModePickerView: View {
             .padding(40)
         }
         .onAppear { reload() }
+        .sheet(isPresented: $showStats) {
+            ZStack {
+                SColor(hex: 0xece6dc).ignoresSafeArea()
+                StatsPanelView(stats: stats)
+                    .padding(40)
+            }
+        }
+    }
+
+    private var recordSubtitle: String {
+        stats.total == 0
+            ? "No games yet"
+            : "\(stats.wins)W – \(stats.losses)L"
     }
 
     private func reload() { saves = store.list() }
