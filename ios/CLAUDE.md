@@ -102,11 +102,12 @@ so the game flow is validated without a simulator.
   iOS-specific** (see `getBestMove` below). `timeBudget`↔`play_time_budget_s` (20s — now a *hard* cap),
   `beamThreshold`↔`beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil),
   `relativeCutoff`↔`search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` — the cap on
-  replies expanded per **inner** (2nd/3rd-level) node, default `4`. **`maxDepth` intentionally
-  differs**: the CLI caps at `search_max_depth: 2`, but `.standard` targets `maxDepth: 3` for a full
-  3-ply on-device search; `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests
-  to stay fast). Three knobs have **no CLI equivalent** and tune the root expansion only:
-  `rootSoftBudget` (8s), `minRootBranches` (2), `maxRootBranches` (5).
+  replies expanded per **inner** node, default `4`. **`maxDepth`**: `.standard` defaults to `2` for a
+  fast 2-ply on-device search (typical turns are effectively instant); `maxDepth: 3`+ opts into the
+  anytime deepening described below (its worst case can take the full `timeBudget`), and
+  `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests to stay fast). Three
+  knobs have **no CLI equivalent**: `maxRootBranches` (5) caps the root candidate set at every depth;
+  `rootSoftBudget` (8s) and `minRootBranches` (2) only matter for the `maxDepth >= 3` deepening.
 
 - **`Agent` search (#58).** Three layers on top of the parity-validated
   1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
@@ -128,11 +129,12 @@ so the game flow is validated without a simulator.
     earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). Otherwise: (1) score
     every root move 1-ply and take the best-first candidate set within `relativeCutoff`, capped at
     `maxRootBranches`; (2) **2-ply baseline** — score the whole candidate set at depth 2 (the
-    guaranteed floor: cheap, almost always completes, and orders the next step); (3) **deepen to
-    `maxDepth`** one candidate at a time in 2-ply order, overwriting each baseline score with the
-    deeper score — always at least `minRootBranches` (subject to the `timeBudget` hard cap), then keep
-    widening up to `maxRootBranches` total **only while elapsed < `rootSoftBudget`**; inside each
-    branch the 2nd/3rd levels prune to `maxBranch`; (4) return the argmax over the mixed
+    guaranteed floor: cheap, almost always completes, and orders the next step) — **at the default
+    `maxDepth: 2` this baseline is the result and step 3 is skipped**; (3) when `maxDepth >= 3`,
+    **deepen to `maxDepth`** one candidate at a time in 2-ply order, overwriting each baseline score
+    with the deeper score — always at least `minRootBranches` (subject to the `timeBudget` hard cap),
+    then keep widening up to `maxRootBranches` total **only while elapsed < `rootSoftBudget`**; inside
+    each branch the 2nd/3rd levels prune to `maxBranch`; (4) return the argmax over the mixed
     2-ply/deepened scores. So cheap positions deepen the whole set in well under the soft budget, while
     a hugely-branching doubles roll still returns a complete 2-ply result plus a genuine `maxDepth`
     evaluation of its best moves within `timeBudget`. A `SearchTimeout` keeps the best result so far;

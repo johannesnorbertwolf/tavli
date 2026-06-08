@@ -15,8 +15,10 @@ import Foundation
 /// | `maxDepth`       | `search_max_depth`      |
 ///
 /// `rootSoftBudget`, `minRootBranches`, and `maxRootBranches` have no CLI equivalent —
-/// they tune the on-device root expansion only. `maxDepth` also intentionally differs:
-/// the CLI caps at 2, but on-device play targets a full 3-ply search.
+/// they tune the on-device root expansion only. On-device play defaults to **2-ply**
+/// (`maxDepth: 2`): fast, with typical turns effectively instant. The search still
+/// *supports* anytime deepening to 3-ply (set `maxDepth: 3`), but that's opt-in — the
+/// 3-ply worst case (a huge-branching doubles roll) can take the full `timeBudget`.
 public struct SearchConfig: Sendable, Hashable {
     /// Hard wall-clock cap per move (seconds). The root expansion never starts a new
     /// branch past this, and a branch that overruns it is abandoned (best-so-far kept).
@@ -27,21 +29,25 @@ public struct SearchConfig: Sendable, Hashable {
     public var relativeCutoff: Float?
     /// Cap on replies expanded per **inner** (2nd/3rd-level) search node, on top of `relativeCutoff`.
     public var maxBranch: Int?
-    /// Target search depth. The default `3` aims for a full 3-ply search (the CLI caps at 2).
+    /// Target search depth. The default `2` runs a 2-ply search; `3`+ enables anytime
+    /// deepening on top of the 2-ply baseline (see `Agent.getBestMove`).
     public var maxDepth: Int?
-    /// Soft budget (seconds) for *widening* the root: after `minRootBranches`, a new
-    /// root branch is only started while elapsed time is under this.
+    /// Soft budget (seconds) for *widening* the root during deepening: after
+    /// `minRootBranches`, a new branch is only deepened while elapsed time is under this.
+    /// Only relevant when `maxDepth >= 3`.
     public var rootSoftBudget: TimeInterval
-    /// Root branches always expanded at `maxDepth` (subject to `timeBudget`), regardless of the soft budget.
+    /// Candidates always deepened (subject to `timeBudget`), regardless of the soft budget.
+    /// Only relevant when `maxDepth >= 3`.
     public var minRootBranches: Int
-    /// Hard ceiling on how many root branches are ever expanded at `maxDepth`.
+    /// Hard ceiling on the root candidate set (the moves scored at the baseline depth, and
+    /// the most that are ever deepened).
     public var maxRootBranches: Int
 
     public init(timeBudget: TimeInterval = 20.0,
                 beamThreshold: Float = 0.08,
                 relativeCutoff: Float? = 0.08,
                 maxBranch: Int? = 4,
-                maxDepth: Int? = 3,
+                maxDepth: Int? = 2,
                 rootSoftBudget: TimeInterval = 8.0,
                 minRootBranches: Int = 2,
                 maxRootBranches: Int = 5) {
