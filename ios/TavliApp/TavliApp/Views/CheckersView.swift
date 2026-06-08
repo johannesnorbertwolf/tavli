@@ -73,8 +73,6 @@ struct CheckersView: View {
         }
     }
 
-    /// One checker, porting the reference `Checker` component: radial-gradient
-    /// disc, two concentric detail rings, a soft specular arc, and a drop shadow.
     private func drawChecker(
         in context: inout GraphicsContext,
         center: CGPoint,
@@ -82,49 +80,86 @@ struct CheckersView: View {
         s: CGFloat,
         color: TavliEngine.Color
     ) {
-        let style = CheckerStyle.of(color)
-        let cx = center.x, cy = center.y
-        let disc = CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
+        drawCheckerDisc(in: &context, center: center, r: r, s: s, color: color, lifted: false)
+    }
+}
 
-        context.drawLayer { layer in
-            layer.addFilter(.shadow(color: .black.opacity(0.28), radius: 3 * s, x: 0, y: 2 * s))
+/// One checker disc: radial-gradient fill, concentric detail rings, specular arc,
+/// and a drop shadow. `lifted: true` deepens the shadow to simulate being raised off
+/// the board (used for the drag ghost).
+func drawCheckerDisc(
+    in context: inout GraphicsContext,
+    center: CGPoint,
+    r: CGFloat,
+    s: CGFloat,
+    color: TavliEngine.Color,
+    lifted: Bool
+) {
+    let style = CheckerStyle.of(color)
+    let cx = center.x, cy = center.y
+    let disc = CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
+    let shadowRadius: CGFloat = lifted ? 8 * s : 3 * s
+    let shadowY: CGFloat     = lifted ? 5 * s : 2 * s
+    let shadowOpacity: CGFloat = lifted ? 0.40 : 0.28
 
-            // Main disc: radial gradient (SVG cx=0.38, cy=0.32, r=0.78 of the box).
-            layer.fill(
-                Path(ellipseIn: disc),
-                with: .radialGradient(
-                    Gradient(colors: [style.hi, style.fill]),
-                    center: CGPoint(x: cx - 0.24 * r, y: cy - 0.36 * r),
-                    startRadius: 0,
-                    endRadius: 1.56 * r
-                )
+    context.drawLayer { layer in
+        layer.addFilter(.shadow(color: .black.opacity(shadowOpacity),
+                                radius: shadowRadius, x: 0, y: shadowY))
+
+        // Main disc: radial gradient (SVG cx=0.38, cy=0.32, r=0.78 of the box).
+        layer.fill(
+            Path(ellipseIn: disc),
+            with: .radialGradient(
+                Gradient(colors: [style.hi, style.fill]),
+                center: CGPoint(x: cx - 0.24 * r, y: cy - 0.36 * r),
+                startRadius: 0,
+                endRadius: 1.56 * r
             )
-            layer.stroke(Path(ellipseIn: disc), with: .color(style.edge), lineWidth: 0.7 * s)
+        )
+        layer.stroke(Path(ellipseIn: disc), with: .color(style.edge), lineWidth: 0.7 * s)
 
-            // Concentric detail rings.
-            let ring1 = CGRect(x: cx - r * 0.66, y: cy - r * 0.66, width: r * 1.32, height: r * 1.32)
-            layer.stroke(Path(ellipseIn: ring1), with: .color(style.ring.opacity(0.85)), lineWidth: 1.1 * s)
-            let ring2 = CGRect(x: cx - r * 0.52, y: cy - r * 0.52, width: r * 1.04, height: r * 1.04)
-            layer.stroke(Path(ellipseIn: ring2), with: .color(style.ring.opacity(0.55)), lineWidth: 0.5 * s)
+        // Concentric detail rings.
+        let ring1 = CGRect(x: cx - r * 0.66, y: cy - r * 0.66, width: r * 1.32, height: r * 1.32)
+        layer.stroke(Path(ellipseIn: ring1), with: .color(style.ring.opacity(0.85)), lineWidth: 1.1 * s)
+        let ring2 = CGRect(x: cx - r * 0.52, y: cy - r * 0.52, width: r * 1.04, height: r * 1.04)
+        layer.stroke(Path(ellipseIn: ring2), with: .color(style.ring.opacity(0.55)), lineWidth: 0.5 * s)
 
-            // Specular arc (approximates the SVG elliptical arc with a quad curve).
-            var arc = Path()
-            arc.move(to: CGPoint(x: cx - 0.55 * r, y: cy - 0.35 * r))
-            arc.addQuadCurve(
-                to: CGPoint(x: cx + 0.55 * r, y: cy - 0.35 * r),
-                control: CGPoint(x: cx, y: cy - 0.85 * r)
-            )
-            layer.stroke(
-                arc,
-                with: .color(.white.opacity(color == .white ? 0.55 : 0.28)),
-                lineWidth: 0.7 * s
-            )
+        // Specular arc (quad-curve approximation of the SVG elliptical arc).
+        var arc = Path()
+        arc.move(to: CGPoint(x: cx - 0.55 * r, y: cy - 0.35 * r))
+        arc.addQuadCurve(
+            to: CGPoint(x: cx + 0.55 * r, y: cy - 0.35 * r),
+            control: CGPoint(x: cx, y: cy - 0.85 * r)
+        )
+        layer.stroke(
+            arc,
+            with: .color(.white.opacity(color == .white ? 0.55 : 0.28)),
+            lineWidth: 0.7 * s
+        )
+    }
+}
+
+/// A single checker floating at `location` in board coordinate space, rendered
+/// above all board layers during a drag gesture. Uses the lifted shadow variant
+/// to visually separate it from the board surface.
+struct DraggedCheckerView: View {
+    let geo: BoardGeometry
+    let location: CGPoint
+    let color: TavliEngine.Color
+
+    var body: some View {
+        Canvas { context, size in
+            let r = geo.checkerRadius
+            let s = geo.scale
+            drawCheckerDisc(in: &context, center: location, r: r, s: s, color: color, lifted: true)
         }
+        .aspectRatio(1, contentMode: .fit)
+        .allowsHitTesting(false)
     }
 }
 
 /// Maps an engine `Color` to its Caramel checker palette. Engine `.black` → red.
-private struct CheckerStyle {
+fileprivate struct CheckerStyle {
     let fill: SwiftUI.Color
     let hi: SwiftUI.Color
     let ring: SwiftUI.Color

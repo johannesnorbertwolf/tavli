@@ -79,6 +79,21 @@ final class BoardInteractionUITests: XCTestCase {
         XCTAssertEqual(after[19], 1, "Black's die-5 half-move should have landed on 19")
     }
 
+    /// The move-history panel (#60) opens from the chrome and lists the committed
+    /// ply — guards that the button is reachable mid-game and the log renders.
+    func testHistoryPanelListsCommittedPly() {
+        let (app, board) = launchedBoard()
+        // Black plays both dice from point 24 (die 3 → 21, die 5 → 19).
+        offset(board, point: 24).tap(); offset(board, point: 21).tap()
+        offset(board, point: 24).tap(); offset(board, point: 19).tap()
+
+        app.buttons["History"].tap()
+        XCTAssertTrue(app.staticTexts["Move history"].waitForExistence(timeout: 3),
+                      "history sheet should open")
+        XCTAssertTrue(app.staticTexts["d=3 5"].waitForExistence(timeout: 3),
+                      "the committed Black ply (dice 3 5) should be listed")
+    }
+
     /// The board must *visually* update after a move, not just in the model. Black
     /// renders red, so an occupied point 19 reads low-green; the empty ivory
     /// triangle reads high-green. Guards the reference-type-board stale-Canvas bug.

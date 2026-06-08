@@ -66,12 +66,30 @@ so the game flow is validated without a simulator.
   — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
   of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `confirm` / `newGame`. On roll it computes `legalMoves` via `PossibleMoves`; an empty
-  set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
-  board and auto-finishes when the move is complete or the only continuation is itself legal.
-  Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
+  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
+  applies the half-move to the board and auto-finishes when the move is complete or the only
+  continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
+  ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+- **Undo — two intents, two surfaces (#59).** Every committed ply (human or AI move, or a forced
+  pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
+  `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
+  `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
+  - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
+    half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
+    true only while `moveBuilder.built` is non-empty. Wired to the persistent **Undo** button in
+    `ControlsView`.
+  - `undoLastDecision()` — **decision-point rewind** (debug pane only): pops every ply from the
+    human's last real move forward (reversing each on the board), restores that ply's player +
+    dice, and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be
+    re-decided. Both `undoHistory` and `record.plies` are trimmed to the same target index so they
+    stay in sync. Mirrors the CLI's `undo_to_my_decision`: typically two plies (your move + the
+    AI's reply), skipping passes, clamped at game start. The decide-side is `aiColor?.opponent`;
+    a human-vs-human session steps back the single last move. `canUndoLastDecision` gates the
+    **"↩ Undo decision"** button in `DebugOverlay`. After `replay` (loading a save),
+    `undoHistory` is empty and `canUndoLastDecision` is false until the first new move.
 
 - **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
   Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled
@@ -90,7 +108,69 @@ so the game flow is validated without a simulator.
   winning color. It's the seam the app uses to record the human's win/loss; the engine itself
   stays unaware of stats persistence. It fires once per game because no intent re-enters
   `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
-  game (a new session, or `newGame`) re-arms it.
+  game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
+  **not** fire it, so resuming a finished game never double-counts.
+
+## Save & load (#61, replay-based)
+
+Persist and resume in-progress games the same way the CLI does: **store only the move
+history (dice + half-moves per ply), never the board state**, and rebuild by replaying from
+the initial position. This is model-independent by construction — a game saved under model
+vN reloads identically under vN+1 (acceptance criterion 3), because replay never consults the
+model. Three engine files, all SwiftUI-free and covered by `GameSavePersistenceTests` (11
+tests, no model/fixtures needed):
+
+- **Canonical record — `GameRecord` (#71).** One value type `{ startingPlayer, aiColor,
+  plies: [PlyRecord], outcome }` is the single source of truth for a game, in-progress and
+  completed. `GameSession` holds one `@Published private(set) var record`; `history`,
+  `startingPlayer` and `aiColor` are **computed passthroughs** over it (so every call site and
+  the `onChange(of: session.history.count)` autosave keep working — mutating `record` still
+  fires `objectWillChange`). `outcome` is the winner, set whenever a turn ends the game
+  (`finishTurn`/`replay`), else `nil`; it lives in memory only — the on-disk format does not
+  carry it yet (only in-progress games are persisted). This is the shared foundation the undo
+  (#59), history-log (#60), review/drill (#62/#63) and stats (#64) features build on.
+- **History recording — `GameSession`.** `history: [PlyRecord]` (the record's `plies`) gains one
+  entry per **finished turn**, recorded at all five turn-end points (`recordTurn` captures the
+  current dice + the played half-moves as `[[from, to]]`, and in parallel appends an `UndoRecord`
+  to `undoHistory` for decision-point undo): the two human finish paths (`commitHalfMove`
+  auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two forced-pass paths (human
+  `beginTurn`, AI `takeAITurn`) which record an **empty** half-move list. Saves are therefore only
+  ever taken at clean turn boundaries — there is no partial/pending move state to serialize (a
+  deliberate simplification). `newGame` resets the whole `record` (preserving `aiColor`).
+  `isTerminal` is the public "game over?" predicate the app uses to decide whether a save is
+  worth keeping.
+- **Resume — `GameSession.resume(from:config:agent:)` + private `replay(_:)`.** Builds a fresh
+  session at `save.startingPlayer`/`aiColor`, then `replay` applies each recorded pair directly
+  to the board (`board.points[from].pop()` / `board.points[to].push(mover)`, mirroring
+  `applyHalfMove`) **without re-deriving legal moves**, alternating the mover every ply and
+  stopping early if `game.isOver()`. It lands the session at `.awaitingRoll` (or `.gameOver`)
+  with an empty `MoveBuilder` and a refreshed evaluation. Because turn order always alternates,
+  the mover for ply *i* is `startingPlayer` when *i* is even, else its opponent — no per-ply
+  color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
+  reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
+  for a new game) so the AI moves if it owns the turn.
+- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
+  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
+  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
+  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
+  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
+  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
+  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
+  `rawValue` (`"W"`/`"B"`).
+- **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
+  `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
+  slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
+  names never clobber). The single autosave slot is overwritten on every move, so only the
+  **last** in-progress game is ever kept. All IO is **synchronous** so the autosave completes
+  before the app suspends. `list()` returns `SaveMetadata` (filename, name, savedAt, plyCount, isAutosave)
+  newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
+  **throws** `SaveStoreError.incompatibleSchema` on a version mismatch. `writeAutosave` /
+  `loadAutosave` / `clearAutosave` manage the reserved slot; `writeManual` returns the generated
+  filename. `SaveStore.default()` roots it at `Documents/SavedGames`.
+
+The app wiring (autosave after every move and on background, auto-resume on launch, the
+saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
+`Views/CLAUDE.md`.
 
 ## Human game stats (#64)
 
@@ -150,22 +230,28 @@ through its published read-state + intents — no game logic lives in views.
   `GameSession` intents via `BoardGeometry.hitTest`. `HighlightStyle` (`.frame` default / `.fill`)
   is the design's two-readings constant. Binds via `@ObservedObject`; no game logic in the view.
   See `Views/CLAUDE.md`.
-- **`GameView.swift`** (T9 chrome + T10 assembly) — the assembled game screen: the interactive
-  `PlayableBoardView` (which now hosts the center-bar dice) plus turn indicator, borne-off
-  counters, contextual Undo/Done (dice no longer in the chrome, #46), a top-leading Back button
-  (`onBack`), a top-trailing hosted `DebugOverlayToggle`, and the win overlay. Responsive
-  landscape/portrait layout, padded tight so the board fills the display (#46), bound to a
-  `GameSession`. See `Views/CLAUDE.md`.
+- **`GameView.swift`** (T9 chrome + T10 assembly + #61 manual save) — the assembled game screen:
+  the interactive `PlayableBoardView` (which now hosts the center-bar dice) plus turn indicator,
+  borne-off counters, contextual Undo/Done (dice no longer in the chrome, #46), a top-leading
+  Back button (`onBack`) **paired with a Save button** (`onSave`, hidden once the game is over),
+  a top-trailing hosted `DebugOverlayToggle`, and the win overlay. The Save button opens a naming
+  `.alert` (timestamped default) and calls `onSave(name)`. Responsive landscape/portrait layout,
+  padded tight so the board fills the display (#46), bound to a `GameSession`. See `Views/CLAUDE.md`.
 - **`DebugOverlay.swift`** (T11) — an off-by-default bug-icon toggle (`DebugOverlayToggle`)
   plus a read-only eval panel (`DebugOverlay`) bound to `GameSession`: WHITE win-probability
   meter + top-3 candidate moves via `agent.evaluateMoves`. Never mutates gameplay. Hosted by
   `GameView` (T10) as a top-trailing overlay. See `Views/CLAUDE.md`.
-- **`RootView.swift`** (T10) — app root: switches between the caramel mode picker
-  (`ModePickerView`: "Tavli" wordmark + two "Play vs AI — You play White/Black" buttons) and a
-  live `GameView`. Picking a color builds a human-vs-AI `GameSession(aiColor: humanColor.opponent)`
-  (Black opens for now); Back returns to the picker. "Play Again" on the win overlay replaces
-  the finished session with a fresh `GameSession` (same human color) by storing `humanColor` in
-  `@State` and reassigning `session`. See `Views/CLAUDE.md`.
+- **`RootView.swift`** (T10 + #61 save/load) — app root: switches between the caramel mode picker
+  (`ModePickerView`: "Tavli" wordmark + two "Play vs AI — You play White/Black" buttons **plus a
+  saved-games list**) and a live `GameView`. Picking a color builds a human-vs-AI
+  `GameSession(aiColor: humanColor.opponent)` (Black opens for now); Back returns to the picker.
+  "Play Again" on the win overlay replaces the finished session with a fresh `GameSession` (same
+  human color). Owns save/load via a `SaveStore.default()`: **auto-saves** the in-progress game
+  after **every move** (plus on background and on Back) into the single overwritten autosave slot
+  under a stable timestamped name (`persistAutosave` — clears the slot instead if the game is
+  terminal, since finished games aren't resumed), **auto-resumes** a non-terminal autosave on cold
+  launch (`autoResume` in `init`), and lets the picker resume or delete any saved game. The picker
+  badges the autosave row "Continue last game". See `Views/CLAUDE.md`.
 
 `App.swift` is `@main` hosting `RootView()`. The app launches on the mode picker; choosing a side
 starts a fully playable human-vs-AI game. (The earlier T7 sign-off bootstrap that hosted a fixed
@@ -179,14 +265,15 @@ ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
 │   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
-│   │                            MoveBuilder, GameSession
+│   │                            MoveBuilder, GameSession, GameSave, SaveStore
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
-│                                MoveBuilderTests, GameSessionTests, GameSessionAITests
+│                                MoveBuilderTests, GameSessionTests, GameSessionAITests,
+│                                GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
-│   ├── setup.sh                 ensure xcodegen → generate → resolve packages
+│   ├── setup.sh                 generate model (if missing) → ensure xcodegen → generate project → resolve packages
 │   ├── TavliAppUITests/         XCUITest target — drives the real gesture stack:
 │   │                            BoardInteractionUITests (tap/drag move, visual
 │   │                            repaint, full-turn → AI response). Launched with
@@ -212,10 +299,15 @@ ios/
 ### Build the app
 
 ```bash
-PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/convert_to_coreml.py  # model into Resources/
-bash ios/TavliApp/setup.sh            # generate TavliApp.xcodeproj
+bash ios/TavliApp/setup.sh            # generates the Core ML model (if missing) + TavliApp.xcodeproj
 open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
 ```
+
+`setup.sh` generates `PlakotoValue.mlpackage` only when it is absent (it shells out to
+`convert_to_coreml.py` via the repo `.venv`); pass `--force-model` to regenerate after changing
+`gold_model_path` or the encoder. A `preBuildScript` guard in `project.yml` fails the build
+outright if the model is still missing, so the app can never silently ship the random-move
+fallback.
 
 `SWIFT_VERSION` is pinned to 5.9 (Swift-5 mode) on the app target — Swift-6 strict concurrency
 errors on `MLModel` + the non-`Sendable` engine classes. The two display fonts are committed
