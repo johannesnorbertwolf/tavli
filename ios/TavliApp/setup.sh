@@ -55,7 +55,7 @@ PY="$VENV/bin/python"
 # (the project only references the model if it exists at generation time).
 if [ "$FORCE_MODEL" = true ] || [ ! -f "$MODEL/Manifest.json" ]; then
   echo "→ Generating Core ML model (PlakotoValue.mlpackage)…"
-  ( cd "$MAIN_ROOT" && PYTHONPATH=. "$PY" ios/scripts/convert_to_coreml.py )
+  ( cd "$ROOT" && PYTHONPATH=. "$PY" ios/scripts/convert_to_coreml.py )
 else
   echo "→ Core ML model present (pass --force-model to regenerate)."
 fi
