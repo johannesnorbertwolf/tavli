@@ -51,6 +51,7 @@ struct RootView: View {
                 GameView(
                     session: session,
                     stats: statsStore.stats,
+                    humanColor: humanColor,
                     onBack: {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil

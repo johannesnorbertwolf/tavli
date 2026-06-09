@@ -159,6 +159,69 @@ final class BoardGeometryTests: XCTestCase {
         XCTAssertEqual(tall.boardRect, CGRect(x: 0, y: 200, width: 600, height: 600))
     }
 
+    // ── Flip ──────────────────────────────────────────────────────────────
+
+    func testFlipIndex() {
+        // Bear-off trays swap.
+        XCTAssertEqual(BoardGeometry.flipIndex(0), 25)
+        XCTAssertEqual(BoardGeometry.flipIndex(25), 0)
+        // Points 1–12 shift +12, points 13–24 shift −12.
+        XCTAssertEqual(BoardGeometry.flipIndex(1), 13)
+        XCTAssertEqual(BoardGeometry.flipIndex(12), 24)
+        XCTAssertEqual(BoardGeometry.flipIndex(13), 1)
+        XCTAssertEqual(BoardGeometry.flipIndex(24), 12)
+        // Verify it is its own inverse.
+        for n in 0...25 {
+            XCTAssertEqual(BoardGeometry.flipIndex(BoardGeometry.flipIndex(n)), n, "n=\(n)")
+        }
+    }
+
+    func testFlippedPointMatchesRotatedUnflipped() {
+        let flipped = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 900, height: 900),
+                                    flipped: true)
+        // Logical point 1 (normally BR) should appear at the visual position
+        // of point 13 (TL) in the unflipped geometry.
+        XCTAssertEqual(flipped.point(1).center.x, geom.point(13).center.x, accuracy: eps)
+        XCTAssertEqual(flipped.point(1).center.y, geom.point(13).center.y, accuracy: eps)
+        // Logical point 24 (normally TR) should appear at point 12 (BL).
+        XCTAssertEqual(flipped.point(24).center.x, geom.point(12).center.x, accuracy: eps)
+        XCTAssertEqual(flipped.point(24).center.y, geom.point(12).center.y, accuracy: eps)
+        // Bear-off trays move to the LEFT strip when flipped.
+        // y coordinates still match the swapped unflipped positions (top↔bottom swap);
+        // x is now the left-strip midpoint (frame/2 = 20), not the right (880).
+        XCTAssertEqual(flipped.point(0).center.y, geom.point(25).center.y, accuracy: eps)
+        XCTAssertLessThan(flipped.point(0).center.x, 450, "flipped Black tray must be on left")
+        XCTAssertEqual(flipped.point(25).center.y, geom.point(0).center.y, accuracy: eps)
+        XCTAssertLessThan(flipped.point(25).center.x, 450, "flipped White tray must be on left")
+    }
+
+    func testFlippedCheckerCenterSwapsBearOff() {
+        let flipped = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 900, height: 900),
+                                    flipped: true)
+        // Flipped bear-off moves to the LEFT strip. Black's tray (logical 0) stacks
+        // from the top (same vertical direction as unflipped White/25), but at the
+        // left-strip x rather than the right-strip x.
+        let fBlack0 = flipped.checkerCenter(point: 0, slot: 0)
+        let fBlack1 = flipped.checkerCenter(point: 0, slot: 1)
+        // y grows downward from the top, same as unflipped slot 25.
+        XCTAssertEqual(fBlack0.y, geom.checkerCenter(point: 25, slot: 0).y, accuracy: eps)
+        XCTAssertGreaterThan(fBlack1.y, fBlack0.y, "flipped Black tray stacks downward")
+        // x is on the left side of the board.
+        XCTAssertLessThan(fBlack0.x, 450, "flipped Black tray checker must be on left")
+        // x is constant across slots.
+        XCTAssertEqual(fBlack0.x, fBlack1.x, accuracy: eps)
+    }
+
+    func testFlippedHitTestReturnsLogicalIndex() {
+        let flipped = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 900, height: 900),
+                                    flipped: true)
+        // Tapping at the visual center of unflipped-point 13 (= flipped logical 1)
+        // should return logical index 1.
+        let r13 = geom.point(13).hitRect
+        let loc = CGPoint(x: r13.midX, y: r13.midY)
+        XCTAssertEqual(flipped.hitTest(loc, candidates: Array(1...24)), 1)
+    }
+
     // 7 ── hitTest ─────────────────────────────────────────────────────────
     func testHitTestPlayablePoint() {
         let inside = geom.point(1).hitRect
