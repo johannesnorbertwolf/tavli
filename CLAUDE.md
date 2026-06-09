@@ -35,86 +35,25 @@ Test config is at `config-test.yml` (minimal: 1 epoch, 1 game, no gold eval).
 
 ## Architecture
 
-### Training loop (`ai/td_lambda_training.py`)
+Reimplementation-grade detail — training pipeline, encoder versions, checkpoint
+back-compat, network, the full config-knobs table, eval/logging, and the
+tournament system — lives in **`docs/architecture.md`**. Read it when working on
+training or eval internals. Quick map:
 
-Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
-1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], terminal_winner_white}`. Weights do not change mid-game.
-2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`). The post-terminal state's target is 0 (mover_T is the loser).
-3. All `T+1` `(encoded_state, target)` pairs are pushed into a `ReplayBuffer` (capacity ~50k, ring buffer, uniform sampling).
-4. `_train_minibatches` runs `updates_per_game` Adam steps of `binary_cross_entropy_with_logits(forward_logits, target)`. Optional linear LR warmup `0.1·lr → lr` over `lr_warmup_steps` optimizer steps. `max_grad_norm` clips the gradient L2 norm pre-Adam (not the eligibility trace as the old code did).
+- **Training** `ai/td_lambda_training.py` — forward-view TD(λ), replay buffer, Adam.
+- **Encoding** `ai/board_encoder.py` — perspective-invariant; current `unary_v3` (486-dim).
+- **Network** `ai/board_evaluator.py` — MLP; `hidden_sizes` from `config.yml`.
+- **Checkpoints** `ai/checkpoint_io.py` — use `load_agent_from_checkpoint()`; back-compat across encoder versions.
+- **Tournaments** `tournaments/` — round-robin gold-vs-gold eval.
 
-Perspective helper: from mover_i's view, `U(j, i) = V[j]` if `mover_j == mover_i` else `1 - V[j]`. λ-return at state i with `N = T - i`:
-`G^λ_i = (1-λ) · Σ_{n=1..N-1} λ^{n-1}·G^{(n)}_i + λ^{N-1}·G^{(N)}_i`
-with `G^{(n)}_i = U(i+n, i)` if `i+n < T`, else `1` if mover_i won else `0`.
+Each top-level package (`ai/`, `domain/`, `game/`, `play/`, `ios/`) has its own `CLAUDE.md`
+that indexes its modules and points to its reference doc(s).
 
-The replay buffer is not persisted across restarts (refills naturally). Adam optimizer state IS persisted inside `trained_model.pth` alongside `state_dict` (format_version=2; old checkpoints without optimizer state load fine and Adam starts fresh).
-
-The training loop owns `.eval()` / `.train()` mode — `Agent` methods are mode-agnostic.
-
-### Perspective-invariant encoding (`ai/board_encoder.py`)
-
-The network always sees the board "from its own side". For the current player's turn we iterate board points forward (0→25); for the opponent we iterate in reverse (25→0) — this is the board flip. The same physical position encodes identically regardless of which color is "current player", so the network needs no separate white/black representations.
-
-In flipped coordinates, slot 0 is opponent's bear-off, slot 25 is our bear-off, our home is slots 19–24, opp home is slots 1–6.
-
-Three encoder versions exist (each behind a checkpoint metadata tag):
-
-| Version | Per-point | Smart features | Input size | Used by |
-|---|---|---|---|---|
-| `legacy_unary_v1` | 2 color + 2 captured + 15 unary count | — | 494 | gold_v1–v4 |
-| `unary_v2` | 1 color + 2 captured + 15 unary count | — | 468 | gold_v5 |
-| `unary_v3` (current) | same as v2 | 18 hand-crafted globals | 486 | new training |
-
-The 18 `unary_v3` smart features (Tesauro-style) are folded into the same per-point loop and appended to the raw vector: pip count (us/them), blots, held points, pinned/pinning, home counts (4 quadrants), borne-off, max prime length, plus pip and borne-off differentials. All are normalized to roughly [0, 1].
-
-The encoder uses pre-allocated `np.zeros(..., dtype=float32)` with slice writes per point. Mid-game encode is ~18µs (v3) vs ~30µs for the original list-extension implementation.
-
-### Checkpoint backward compatibility (`ai/checkpoint_io.py`)
-
-Checkpoints store `encoder_version`, `hidden_sizes`, and `network_type`. Two things to know:
-
-- All three encoder versions above are still loadable; gold_v1–v4 stay at `legacy_unary_v1` and gold_v5 at `unary_v2`. New checkpoints are saved as `unary_v3`.
-- **Legacy layer names**: old checkpoints use `fc1/fc2/fc3/fc4`; `_migrate_state_dict()` remaps these to `layers.0/1/2/3` on load automatically.
-
-When constructing a `BoardEvaluator` for a loaded checkpoint, always derive `input_size` from a `BoardEncoder` built with the checkpoint's `encoder_version`, and pass `hidden_sizes` from the checkpoint metadata. `load_agent_from_checkpoint()` handles this correctly — use it rather than constructing evaluator/encoder manually.
-
-When bumping encoder version mid-project, training cannot resume from an old `trained_model.pth` (input dimension mismatch); `main.py` catches the load error and starts fresh. Delete `trained_model.pth` and `training_state.json` to start a clean run.
-
-Future encoder optimization ideas (GPU fixed-features layer, incremental caching on `Board`) are documented in `docs/encoder_optimization_ideas.md`.
-
-### Network (`ai/board_evaluator.py`)
-
-`BoardEvaluator(input_size, hidden_sizes)` builds a simple MLP with ReLU hidden layers and sigmoid output (win probability ∈ [0,1]). Hidden sizes are configurable via `config.yml` (`hidden_sizes: [128, 64]` default). Layers stored in `nn.ModuleList` as `self.layers`. Two forwards: `forward(x)` returns sigmoid probabilities (used by `Agent` / eval); `forward_logits(x)` returns pre-sigmoid logits (used by the training loop with `binary_cross_entropy_with_logits` for numerical stability).
-
-### Key config knobs
-
-| Key | Effect |
-|---|---|
-| `discount_factor` | γ — use `1.0` for terminal-reward games |
-| `lambda_start/end` | TD(λ) — forward-view weighting of n-step returns |
-| `epsilon_start/end/decay` | Exploration schedule |
-| `max_grad_norm` | Global L2 clip on gradients pre-Adam (0 = off) |
-| `hidden_sizes` | Network width list, e.g. `[128, 64]` |
-| `learning_rate` | Adam lr |
-| `lr_warmup_steps` | Linear warmup `0.1·lr → lr` over this many optimizer steps (0 = off) |
-| `replay_buffer_capacity` | Sample capacity of replay buffer |
-| `minibatch_size` | SGD minibatch size |
-| `updates_per_game` | Adam steps run per ingested trajectory |
-| `min_buffer_to_train` | Don't start training until buffer holds this many samples |
-| `model_save_every_epochs` | Periodic mid-run checkpoint saves |
-| `gold_model_path` | Reference model for eval |
-| `play_time_budget_s` | Max wall-clock budget per AI move during play / `eval-lookahead` (safety ceiling; usually finishes earlier via `search_max_depth`) |
-| `search_relative_cutoff` | Move-pruning width: keep moves with `score >= best*(1-cutoff)` at each search node |
-| `search_max_branch` | Hard cap on moves expanded per search node, applied on top of `search_relative_cutoff` |
-| `search_max_depth` | Stop iterative deepening at this depth (depth 4+ is unreachable in budget) |
-
-The `alpha`, `alpha_decay`, `alpha_decay_every`, `alpha_min` keys are deprecated (left readable for old `training_state.json` resumes) and ignored by the Adam path.
-
-### Model files and gold standards
+## Model files and gold standards
 
 **Current trained model**: `trained_model.pth` in the repo root. This is the live model updated by training. It contains both the network `state_dict` and Adam optimizer state (format_version=2).
 
-**Gold standard checkpoints**: `models/gold_v1.pth` … `models/gold_vN.pth`. These are frozen reference models used as eval opponents. Higher number = newer/better. The current gold reference is whichever version `gold_model_path` points to in `config/config.yml` — check that file to see which is active (currently `gold_v9.pth`).
+**Gold standard checkpoints**: `models/gold_v1.pth` … `models/gold_vN.pth`. These are frozen reference models used as eval opponents. Higher number = newer/better. The current gold reference is whichever version `gold_model_path` points to in `config/config.yml` — check that file to see which is active (currently `gold_v9.pth`). Gold files grow when the architecture changes (v9 is 1.9 MB vs v8's 652 KB because `hidden_sizes` grew from `[128,64]` to `[256,128,64]`).
 
 **To promote the current trained model to a new gold standard**:
 ```bash
@@ -122,51 +61,27 @@ cp trained_model.pth models/gold_vN.pth          # increment N
 # then update config/config.yml: gold_model_path: models/gold_vN.pth
 ```
 
-Gold models grow in size when the network architecture changes (e.g. v9 is 1.9 MB vs v8's 652 KB because hidden_sizes grew from [128,64] to [256,128,64]).
-
-### Eval and logging
-
-Each eval run appends one line to `training_runs/eval_gold_history.log`:
-```
-2026-05-01 17:00:58 epoch=100 games_per_color=100 white=0.04 black=0.02 avg=0.03
-```
-
-`local_tools/` contains SVG graph generators and a file-watch daemon for live dashboards during training.
-
-### Tournament system (`tournaments/`)
-
-Round-robin tournament framework for evaluating all gold models against each other. Runs N independent tournaments, each with 9 models playing every other model in 2 games (once as WHITE, once as BLACK). Parallelized across workers.
-
-**Key modules**:
-- `tournament_engine.py`: Plays one round-robin tournament; reuses existing `Game`, `Agent.get_best_move()`, `legal_moves()`
-- `tournament_runner.py`: Orchestrates N parallel tournaments; auto-discovers gold models from `models/gold_v*.pth`; handles seeding for reproducibility
-- `tournament_aggregator.py`: Computes statistics (win rates, ELO, confidence intervals, head-to-head records, placement frequency)
-- `tournament_reporter.py`: Generates HTML visualizations (summary table, ELO evolution chart, placement frequency heatmap, head-to-head matrix)
-- `tournament_cli.py`: CLI entry point; argument parsing and report generation
-- `monitor.py`: Live progress monitor showing tournament winners and running statistics
-
-**Usage**:
-```bash
-./run.sh tournament [num_runs] [seed]        # Default: 100 runs, 6 workers
-python main.py tournament --num-runs 1000    # Full 1000-tournament run
-python3 tournaments/monitor.py [interval]    # Live dashboard in another terminal
-```
-
-**Output** (in `tournament_results/`):
-- `aggregated_results.csv`: Per-model statistics (wins, losses, win rate, ELO, CI)
-- `match_matrix.csv`: Head-to-head records
-- `placement_frequency.json`: How often each model finishes in each placement
-- `html/summary.html`: Ranking table with ELO and color breakdowns
-- `html/elo_evolution.html`: Interactive line chart showing ELO convergence across runs
-- `html/placement_frequency.html`: Heatmap and table of placement frequencies
-- `html/head_to_head_matrix.html`: 2D grid showing WHITE/BLACK win rates per matchup
-
-**Runtime**: ~2.5 min per 100 tournaments (7,200 games) on 6 workers with 1-ply lookahead. Scales linearly with number of tournaments.
-
 ## Documentation Policy
 
-Every significant source file must have a corresponding documentation entry in its directory's `CLAUDE.md`. Documentation should be detailed enough that the file could be reimplemented from it alone.
+Docs are **two-tier** so they stay thorough without bloating the context window
+(`CLAUDE.md` files auto-load; reference files are read on demand):
 
-**Significant files** (must always be documented): training loop, encoder, evaluator, agent, checkpoint I/O, game runner, board, move generation, dice. Not `__init__.py`, config loaders, or utility scripts.
+- **`CLAUDE.md` = thin index.** Each directory's `CLAUDE.md` gives a one-line summary
+  per significant file, the critical conventions/gotchas for working there, and
+  pointers to its reference doc(s). Target ≤ ~80 lines.
+- **Reference files = the detail.** Reimplementation-grade detail lives in on-demand
+  `.md` files co-located with the code: a single `REFERENCE.md` by default, or a few
+  topic files (e.g. `USAGE.md` / `INTERNALS.md`) when a directory has genuinely distinct
+  topics read in different situations. Referenced from the `CLAUDE.md` hub.
+- **Self-contained, no cross-references.** Reference files don't link each other; only
+  the `CLAUDE.md` hub points to them. Accept minor redundancy over a web of links.
+- **Never `@import`** to offload detail — imports load at launch and save no context.
+  Use plain prose pointers.
 
-**In plan mode**: always include a "Documentation updates" step in the plan, and ask the user whether to update the docs alongside the implementation changes.
+**Significant files** (must always be documented): training loop, encoder, evaluator,
+agent, checkpoint I/O, game runner, board, move generation, dice. Not `__init__.py`,
+config loaders, or utility scripts. The "reimplementable from the docs alone" bar is
+preserved — it now lives in the reference files.
+
+**In plan mode**: always include a "Documentation updates" step in the plan, and ask the
+user whether to update the docs alongside the implementation changes.
