@@ -11,7 +11,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 HERE="$(pwd)"                       # …/ios/TavliApp
-ROOT="$(cd ../.. && pwd)"           # repo root
+
+# Resolve the *main* worktree root, not just the current directory tree.
+# In a git worktree, --git-common-dir points to the shared .git dir inside the
+# main repo, so dirname of that is the main worktree root where .venv lives.
+GIT_COMMON="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$GIT_COMMON" ] && [ "$GIT_COMMON" != ".git" ]; then
+  MAIN_ROOT="$(cd "$(dirname "$GIT_COMMON")" && pwd)"
+else
+  MAIN_ROOT="$(cd ../.. && pwd)"
+fi
+ROOT="$(cd ../.. && pwd)"           # worktree root (for PYTHONPATH etc.)
 MODEL="$HERE/TavliApp/Resources/PlakotoValue.mlpackage"
 
 FORCE_MODEL=false
@@ -25,13 +35,20 @@ done
 # (the project only references the model if it exists at generation time).
 if [ "$FORCE_MODEL" = true ] || [ ! -f "$MODEL/Manifest.json" ]; then
   echo "→ Generating Core ML model (PlakotoValue.mlpackage)…"
-  if [ -x "$ROOT/.venv/bin/python" ]; then
+  if [ -x "$MAIN_ROOT/.venv/bin/python" ]; then
+    PY="$MAIN_ROOT/.venv/bin/python"
+  elif [ -x "$ROOT/.venv/bin/python" ]; then
     PY="$ROOT/.venv/bin/python"
   else
-    PY="python3"
-    echo "  (no .venv found; using python3 — it must have torch + coremltools)"
+    echo ""
+    echo "ERROR: No .venv found. Create one first:"
+    echo "  cd $MAIN_ROOT"
+    echo "  uv venv .venv --python 3.11"
+    echo "  uv pip install --python .venv/bin/python torch numpy coremltools"
+    echo "Then re-run this script."
+    exit 1
   fi
-  ( cd "$ROOT" && PYTHONPATH=. "$PY" ios/scripts/convert_to_coreml.py )
+  ( cd "$MAIN_ROOT" && PYTHONPATH=. "$PY" ios/scripts/convert_to_coreml.py )
 else
   echo "→ Core ML model present (pass --force-model to regenerate)."
 fi
