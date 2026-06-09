@@ -6,6 +6,7 @@ import TavliEngine
 struct DebugOverlayToggle: View {
     @ObservedObject var session: GameSession
     @State private var isOn = false
+    var onHistory: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -19,7 +20,7 @@ struct DebugOverlayToggle: View {
             .accessibilityLabel("Toggle debug overlay")
 
             if isOn {
-                DebugOverlay(session: session)
+                DebugOverlay(session: session, onHistory: onHistory)
                     .transition(.opacity)
             }
         }
@@ -33,6 +34,7 @@ struct DebugOverlayToggle: View {
 /// the shared board and is only run at a clean turn-start (no committed half-moves).
 struct DebugOverlay: View {
     @ObservedObject var session: GameSession
+    var onHistory: () -> Void = {}
     @State private var candidates: [(label: String, score: Float)] = []
 
     var body: some View {
@@ -83,6 +85,22 @@ struct DebugOverlay: View {
             Text("Turn: \(session.currentPlayer.rawValue)  Dice: \(session.game.dice.die1.value),\(session.game.dice.die2.value)")
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.6))
+
+            Divider().background(Color.white.opacity(0.2))
+
+            Button(action: onHistory) {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.arrow.circlepath")
+                    Text("Move history")
+                }
+                .font(.system(size: 10, design: .default))
+                .foregroundStyle(.white.opacity(0.85))
+            }
+            .buttonStyle(.plain)
+            Button("↩ Undo decision") { session.undoLastDecision() }
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(session.canUndoLastDecision ? .yellow : .white.opacity(0.3))
+                .disabled(!session.canUndoLastDecision)
         }
         .padding(10)
         .frame(width: 200, alignment: .leading)

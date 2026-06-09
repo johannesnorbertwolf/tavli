@@ -4,17 +4,20 @@ import TavliEngine
 private typealias SColor = SwiftUI.Color
 private typealias EngineColor = TavliEngine.Color
 
-/// T10 — app root. Switches between the caramel mode picker and a live game, and
-/// owns save/load (#61): it auto-saves the in-progress game when the app
-/// backgrounds, auto-resumes that game on the next cold launch, and lets the
-/// player load or delete any saved game from the picker.
+/// T10 — app root. Switches between the caramel mode picker, the opening roll,
+/// and a live game. Owns save/load (#61): auto-saves the in-progress game when
+/// the app backgrounds, auto-resumes that game on the next cold launch, and lets
+/// the player load or delete any saved game from the picker.
 ///
 /// Holds the active `GameSession` in `@State` so the reference stays stable
-/// across re-renders; `GameView` observes it. Picking a color builds a fresh
-/// human-vs-AI session; Back tears it down and returns to the picker.
+/// across re-renders; `GameView` observes it. Picking a color goes to the
+/// opening roll; the roll result (or manual override) builds the session.
 struct RootView: View {
+    @StateObject private var statsStore = HumanStatsStore()
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
+    /// Non-nil while the opening roll screen is showing (between mode picker and game).
+    @State private var pendingHumanColor: EngineColor?
     /// The current game's display name — a timestamped default ("Game · <date>",
     /// the same convention as a manual save) for a fresh game, or the resumed
     /// game's own name. Written into the auto-save slot on every move (#61).
@@ -27,7 +30,7 @@ struct RootView: View {
         // UI-test hook: start directly in a deterministic human-vs-AI game so the
         // board interaction can be driven without the picker or random dice.
         if ProcessInfo.processInfo.arguments.contains("-uiTestGame") {
-            let s = RootView.makeSession(humanColor: .black)  // human (Black) opens
+            let s = RootView.makeSession(humanColor: .black, startingPlayer: .black)
             s.setManualDice(3, 5)
             _session = State(initialValue: s)
             _humanColor = State(initialValue: .black)
@@ -47,29 +50,52 @@ struct RootView: View {
             if let session {
                 GameView(
                     session: session,
+                    stats: statsStore.stats,
                     onBack: {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil
                     },
                     onNewGame: {
-                        autosaveName = Self.newAutosaveName()
-                        self.session = Self.makeSession(humanColor: self.humanColor)
+                        // "Play Again" returns to the opening roll so every game picks a starter.
+                        self.session = nil
+                        self.pendingHumanColor = self.humanColor
                     },
                     onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
                     onAutosave: persistAutosave
                 )
+            } else if let pending = pendingHumanColor {
+                OpeningRollView(humanColor: pending) { startingPlayer in
+                    humanColor = pending
+                    pendingHumanColor = nil
+                    autosaveName = Self.newAutosaveName()
+                    session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer)
+                } onBack: {
+                    pendingHumanColor = nil
+                }
             } else {
                 ModePickerView(store: store,
+                               stats: statsStore.stats,
                                onSelect: { color in
-                                   humanColor = color
-                                   autosaveName = Self.newAutosaveName()
-                                   session = Self.makeSession(humanColor: color)
+                                   pendingHumanColor = color
                                },
                                onResume: resume)
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background { persistAutosave() }
+        }
+        // Wire each live session's game-over hook to record the human's W/L (#64).
+        // Done here (keyed on session identity) rather than at the static creation
+        // sites so it covers every entry point uniformly — opening roll, resume from
+        // the picker, and cold-launch auto-resume — while skipping the deterministic
+        // UI-test game so test runs never write stats. Runs synchronously (no await)
+        // well before any game can end, so the hook is always armed in time.
+        .task(id: session.map(ObjectIdentifier.init)) {
+            guard let session,
+                  !ProcessInfo.processInfo.arguments.contains("-uiTestGame") else { return }
+            session.onGameOver = { [statsStore, humanColor] winner in
+                statsStore.record(humanWon: winner == humanColor)
+            }
         }
     }
 
@@ -130,13 +156,10 @@ struct RootView: View {
         return f
     }()
 
-    /// Build a human-vs-AI session. Black always opens for now (the proper
-    /// opening-roll rule is a separate ticket); `start()` lets the AI move first
-    /// when it owns Black (i.e. the human chose White).
     @MainActor
-    private static func makeSession(humanColor: EngineColor) -> GameSession {
+    private static func makeSession(humanColor: EngineColor, startingPlayer: EngineColor) -> GameSession {
         let session = GameSession(
-            startingPlayer: .black,
+            startingPlayer: startingPlayer,
             agent: GameSession.makeAgent(),
             aiColor: humanColor.opponent
         )
@@ -150,10 +173,13 @@ struct RootView: View {
 /// the design reference is deferred.
 private struct ModePickerView: View {
     let store: SaveStore
+    let stats: HumanGameStats
     let onSelect: (EngineColor) -> Void
     let onResume: (SaveMetadata) -> Void
 
     @State private var saves: [SaveMetadata] = []
+
+    @State private var showStats = false
 
     var body: some View {
         ZStack {
@@ -170,6 +196,9 @@ private struct ModePickerView: View {
                     ModeButton(title: "Play vs AI", subtitle: "You play Black") {
                         onSelect(.black)
                     }
+                    ModeButton(title: "My Record", subtitle: recordSubtitle) {
+                        showStats = true
+                    }
                 }
 
                 if !saves.isEmpty {
@@ -182,6 +211,19 @@ private struct ModePickerView: View {
             .padding(40)
         }
         .onAppear { reload() }
+        .sheet(isPresented: $showStats) {
+            ZStack {
+                SColor(hex: 0xece6dc).ignoresSafeArea()
+                StatsPanelView(stats: stats)
+                    .padding(40)
+            }
+        }
+    }
+
+    private var recordSubtitle: String {
+        stats.total == 0
+            ? "No games yet"
+            : "\(stats.wins)W – \(stats.losses)L"
     }
 
     private func reload() { saves = store.list() }

@@ -66,12 +66,30 @@ so the game flow is validated without a simulator.
   — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
   of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `confirm` / `newGame`. On roll it computes `legalMoves` via `PossibleMoves`; an empty
-  set is a **forced pass** that advances the turn. `commitHalfMove` applies the half-move to the
-  board and auto-finishes when the move is complete or the only continuation is itself legal.
-  Win detection uses `game.getWinner()`; `finishTurn` switches turn and returns to `awaitingRoll`.
+  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
+  applies the half-move to the board and auto-finishes when the move is complete or the only
+  continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
+  ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+- **Undo — two intents, two surfaces (#59).** Every committed ply (human or AI move, or a forced
+  pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
+  `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
+  `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
+  - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
+    half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
+    true only while `moveBuilder.built` is non-empty. Wired to the persistent **Undo** button in
+    `ControlsView`.
+  - `undoLastDecision()` — **decision-point rewind** (debug pane only): pops every ply from the
+    human's last real move forward (reversing each on the board), restores that ply's player +
+    dice, and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be
+    re-decided. Both `undoHistory` and `record.plies` are trimmed to the same target index so they
+    stay in sync. Mirrors the CLI's `undo_to_my_decision`: typically two plies (your move + the
+    AI's reply), skipping passes, clamped at game start. The decide-side is `aiColor?.opponent`;
+    a human-vs-human session steps back the single last move. `canUndoLastDecision` gates the
+    **"↩ Undo decision"** button in `DebugOverlay`. After `replay` (loading a save),
+    `undoHistory` is empty and `canUndoLastDecision` is false until the first new move.
 
 - **AI integration (T6 + multi-ply search, #58).** `GameSession` optionally drives one side with
   the Core ML `Agent`. Construct it with `agent:` + `aiColor:` (+ optional `searchConfig:`);
@@ -148,6 +166,14 @@ so the game flow is validated without a simulator.
     winning line must score exactly 1.0 via the `hasWon` short-circuit, non-winning lines strictly
     < 1.0, the search must pick a winning index, and the board must end byte-identical.
 
+- **Game-over hook (#64).** `GameSession.onGameOver: (@MainActor (Color) -> Void)?` fires
+  **exactly once**, inside `finishTurn` the moment the session enters `.gameOver`, with the
+  winning color. It's the seam the app uses to record the human's win/loss; the engine itself
+  stays unaware of stats persistence. It fires once per game because no intent re-enters
+  `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
+  game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
+  **not** fire it, so resuming a finished game never double-counts.
+
 ## Save & load (#61, replay-based)
 
 Persist and resume in-progress games the same way the CLI does: **store only the move
@@ -157,15 +183,25 @@ vN reloads identically under vN+1 (acceptance criterion 3), because replay never
 model. Three engine files, all SwiftUI-free and covered by `GameSavePersistenceTests` (11
 tests, no model/fixtures needed):
 
-- **History recording — `GameSession`.** `history: [PlyRecord]` (public read-only) gains one
-  entry per **finished turn**, recorded at all five turn-end points (`recordPly` captures the
-  current dice + the played half-moves as `[[from, to]]`): the two human finish paths
-  (`commitHalfMove` auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two
-  forced-pass paths (human `beginTurn`, AI `takeAITurn`) which record an **empty** half-move
-  list. Saves are therefore only ever taken at clean turn boundaries — there is no
-  partial/pending move state to serialize (a deliberate simplification). `startingPlayer` is
-  also published (read-only) and `newGame` resets both it and `history`. `isTerminal` is the
-  public "game over?" predicate the app uses to decide whether a save is worth keeping.
+- **Canonical record — `GameRecord` (#71).** One value type `{ startingPlayer, aiColor,
+  plies: [PlyRecord], outcome }` is the single source of truth for a game, in-progress and
+  completed. `GameSession` holds one `@Published private(set) var record`; `history`,
+  `startingPlayer` and `aiColor` are **computed passthroughs** over it (so every call site and
+  the `onChange(of: session.history.count)` autosave keep working — mutating `record` still
+  fires `objectWillChange`). `outcome` is the winner, set whenever a turn ends the game
+  (`finishTurn`/`replay`), else `nil`; it lives in memory only — the on-disk format does not
+  carry it yet (only in-progress games are persisted). This is the shared foundation the undo
+  (#59), history-log (#60), review/drill (#62/#63) and stats (#64) features build on.
+- **History recording — `GameSession`.** `history: [PlyRecord]` (the record's `plies`) gains one
+  entry per **finished turn**, recorded at all five turn-end points (`recordTurn` captures the
+  current dice + the played half-moves as `[[from, to]]`, and in parallel appends an `UndoRecord`
+  to `undoHistory` for decision-point undo): the two human finish paths (`commitHalfMove`
+  auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two forced-pass paths (human
+  `beginTurn`, AI `takeAITurn`) which record an **empty** half-move list. Saves are therefore only
+  ever taken at clean turn boundaries — there is no partial/pending move state to serialize (a
+  deliberate simplification). `newGame` resets the whole `record` (preserving `aiColor`).
+  `isTerminal` is the public "game over?" predicate the app uses to decide whether a save is
+  worth keeping.
 - **Resume — `GameSession.resume(from:config:agent:)` + private `replay(_:)`.** Builds a fresh
   session at `save.startingPlayer`/`aiColor`, then `replay` applies each recorded pair directly
   to the board (`board.points[from].pop()` / `board.points[to].push(mover)`, mirroring
@@ -176,10 +212,14 @@ tests, no model/fixtures needed):
   color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
   reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
   for a new game) so the AI moves if it owns the turn.
-- **`GameSave.swift`** — the Codable wire format. `PlyRecord { die1, die2, halfMoves: [[Int]] }`
-  and `GameSave { schemaVersion, name, savedAt, startingPlayer, aiColor?, history }`
-  (`currentSchemaVersion = 1`). `GameSession.snapshot(name:savedAt:)` (extension) packages the
-  live session into a `GameSave`. Colors serialize as their `rawValue` (`"white"`/`"black"`).
+- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
+  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
+  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
+  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
+  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
+  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
+  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
+  `rawValue` (`"W"`/`"B"`).
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
@@ -194,6 +234,34 @@ tests, no model/fixtures needed):
 The app wiring (autosave after every move and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
 `Views/CLAUDE.md`.
+
+## Human game stats (#64)
+
+`HumanGameStats.swift` is the iPad analogue of the CLI's post-game summary box / `human-stats`
+command (`main.py`). Pooled results only — no per-opponent / per-model breakdown (out of scope).
+SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
+(`HumanGameStatsTests`, `HumanStatsStoreTests`).
+
+- **`HumanGameRecord`** — `Codable` `{ date, humanWon }`. One completed game.
+- **`HumanGameStats(records:)`** — a **pure** summary mirroring `_print_human_record`:
+  `total` / `wins` / `losses`, `winRate` (∈ [0, 1], 0 when empty), `recent` (up to the last 20
+  outcomes, **oldest→newest**, for the sparkline), and the current streak (`streakCount` +
+  `streakIsWin`, counting back from the most recent game; `0`/`false` when empty). `.empty` is
+  the no-games value.
+- **`HumanGameLog` + `HumanGameLogStore`** — persistence, following the **same conventions as
+  `SaveStore`** (not `UserDefaults`): `HumanGameLog` is a schema-versioned Codable wrapper
+  (`currentSchemaVersion`, `games: [HumanGameRecord]`), and `HumanGameLogStore` is a file-backed
+  store writing a single JSON file (the app uses `Documents/HumanGameLog.json`) with `.iso8601`
+  dates, pretty-printed + sorted-keys encoding, atomic writes, and an unrecognized
+  `schemaVersion` **skipped** (read as empty) — exactly like `SaveStore.list()`. This is the
+  iPad analogue of the CLI's `human_game_history.log` (the app is offline + sandboxed, so it can't
+  share that file). It is deliberately a **separate outcome log**, not part of the
+  `GameSave`/`SaveStore` game-storage standard (which stores resumable games), but it matches that
+  standard's on-disk style. Tests run it against a real temp file (like the `SaveStore` tests).
+- **`HumanStatsStore`** (`@MainActor`, `ObservableObject`) — loads on init from a
+  `HumanGameLogStore` (default `.default()`), `record(humanWon:)` appends + persists immediately
+  and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
+  wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
 
 ## SwiftUI views
 
