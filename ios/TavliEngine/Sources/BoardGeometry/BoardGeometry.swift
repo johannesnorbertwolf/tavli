@@ -170,11 +170,17 @@ public struct BoardGeometry {
         let r = Self.checkerR
         let step = 2 * r + 0.5
         if physical == 0 || physical == 25 {
-            // A full-size checker is wider than the 40u strip; centering on the
-            // strip (880) would clip it at the board edge. Pull the stack center
-            // in only as far as needed so the full disc floats within the board.
-            let stripCenter = Self.frame + Self.inner + Self.frame / 2  // 880
-            let stripX = min(stripCenter, Self.designSide - r - 1)      // ≈ 873.5
+            // A full-size checker is wider than the 40u strip; clamp the center
+            // so the disc floats within the board rather than clipping the edge.
+            let stripX: CGFloat
+            if flipped {
+                // Left strip: push center rightward away from the left edge.
+                stripX = max(Self.frame / 2, r + 1)
+            } else {
+                // Right strip: pull center leftward away from the right edge.
+                let stripCenter = Self.frame + Self.inner + Self.frame / 2  // 880
+                stripX = min(stripCenter, Self.designSide - r - 1)          // ≈ 873.5
+            }
             let top = physical == 25
             let cy = top
                 ? Self.frame + r + 1 + CGFloat(slot) * step
@@ -242,13 +248,12 @@ public struct BoardGeometry {
         }
     }
 
-    /// Bear-off tray geometry: the right frame strip, White (25) in the top
-    /// half, Black (0) in the bottom half — matching each color's bearing
-    /// direction.
+    /// Bear-off tray geometry: right frame strip normally, left frame strip when
+    /// `flipped`. White (25) in the top half, Black (0) in the bottom half.
     private func bearOff(_ index: Int) -> PointGeometry {
         let top = index == 25
-        let stripX = Self.frame + Self.inner          // 860
-        let stripW = Self.frame                       // 40
+        let stripX = flipped ? 0 : Self.frame + Self.inner   // 0 or 860
+        let stripW = Self.frame                               // 40
         let yMin = top ? Self.frame : Self.designSide / 2
         let yMax = top ? Self.designSide / 2 : Self.designSide - Self.frame
         let trayDesign = CGRect(x: stripX, y: yMin, width: stripW, height: yMax - yMin)

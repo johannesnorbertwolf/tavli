@@ -186,26 +186,30 @@ final class BoardGeometryTests: XCTestCase {
         // Logical point 24 (normally TR) should appear at point 12 (BL).
         XCTAssertEqual(flipped.point(24).center.x, geom.point(12).center.x, accuracy: eps)
         XCTAssertEqual(flipped.point(24).center.y, geom.point(12).center.y, accuracy: eps)
-        // Bear-off trays swap: logical 0 (Black) visually at 25's position, and vice-versa.
-        XCTAssertEqual(flipped.point(0).center.x, geom.point(25).center.x, accuracy: eps)
+        // Bear-off trays move to the LEFT strip when flipped.
+        // y coordinates still match the swapped unflipped positions (top↔bottom swap);
+        // x is now the left-strip midpoint (frame/2 = 20), not the right (880).
         XCTAssertEqual(flipped.point(0).center.y, geom.point(25).center.y, accuracy: eps)
-        XCTAssertEqual(flipped.point(25).center.x, geom.point(0).center.x, accuracy: eps)
+        XCTAssertLessThan(flipped.point(0).center.x, 450, "flipped Black tray must be on left")
         XCTAssertEqual(flipped.point(25).center.y, geom.point(0).center.y, accuracy: eps)
+        XCTAssertLessThan(flipped.point(25).center.x, 450, "flipped White tray must be on left")
     }
 
     func testFlippedCheckerCenterSwapsBearOff() {
         let flipped = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 900, height: 900),
                                     flipped: true)
-        // Black's tray (logical 0) should stack like White's tray (25) in unflipped —
-        // i.e. growing downward from the top of the right strip.
+        // Flipped bear-off moves to the LEFT strip. Black's tray (logical 0) stacks
+        // from the top (same vertical direction as unflipped White/25), but at the
+        // left-strip x rather than the right-strip x.
         let fBlack0 = flipped.checkerCenter(point: 0, slot: 0)
-        let uWhite0 = geom.checkerCenter(point: 25, slot: 0)
-        XCTAssertEqual(fBlack0.x, uWhite0.x, accuracy: eps)
-        XCTAssertEqual(fBlack0.y, uWhite0.y, accuracy: eps)
         let fBlack1 = flipped.checkerCenter(point: 0, slot: 1)
-        let uWhite1 = geom.checkerCenter(point: 25, slot: 1)
-        XCTAssertEqual(fBlack1.x, uWhite1.x, accuracy: eps)
-        XCTAssertEqual(fBlack1.y, uWhite1.y, accuracy: eps)
+        // y grows downward from the top, same as unflipped slot 25.
+        XCTAssertEqual(fBlack0.y, geom.checkerCenter(point: 25, slot: 0).y, accuracy: eps)
+        XCTAssertGreaterThan(fBlack1.y, fBlack0.y, "flipped Black tray stacks downward")
+        // x is on the left side of the board.
+        XCTAssertLessThan(fBlack0.x, 450, "flipped Black tray checker must be on left")
+        // x is constant across slots.
+        XCTAssertEqual(fBlack0.x, fBlack1.x, accuracy: eps)
     }
 
     func testFlippedHitTestReturnsLogicalIndex() {
