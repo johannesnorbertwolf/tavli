@@ -65,7 +65,9 @@ struct CheckersView: View {
             let labelSlot = (pieces[0] != pieces[1]) ? 1 : 0
             let center = geo.checkerCenter(point: n, slot: labelSlot)
             let style = CheckerStyle.of(pieces[labelSlot])
-            let label = Text(String(count))
+            let ownerColor = pieces[labelSlot]
+            let ownerCount = pieces.filter { $0 == ownerColor }.count
+            let label = Text(String(ownerCount))
                 .font(.custom("Cormorant Garamond", size: r * 1.2))
                 .fontWeight(.bold)
                 .foregroundStyle(style.text)
