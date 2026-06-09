@@ -81,17 +81,80 @@ so the game flow is validated without a simulator.
     **"↩ Undo decision"** button in `DebugOverlay`. After `replay` (loading a save),
     `undoHistory` is empty and `canUndoLastDecision` is false until the first new move.
 
-- **AI integration (T6).** `GameSession` optionally drives one side with the Core ML `Agent`.
-  Construct it with `agent:` + `aiColor:`; `GameSession.makeAgent()` loads the app-bundled
-  `PlakotoValue.mlmodelc` (returns `nil` if absent → random fallback). Call `start()` once after
-  construction so the AI moves first if it owns the starting player. When `finishTurn` (or `start`/
-  `newGame`) lands on the AI's turn, `takeAITurn` rolls, computes legal moves (empty = forced pass),
-  then: with no model it applies a random legal move synchronously; with a model it enters
-  `aiThinking` and runs `agent.getBestMove` on a detached task **off the main actor**, hopping back
-  via `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure
-  falls back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
+- **AI integration (T6 + multi-ply search, #58).** `GameSession` optionally drives one side with
+  the Core ML `Agent`. Construct it with `agent:` + `aiColor:` (+ optional `searchConfig:`);
+  `GameSession.makeAgent()` loads the app-bundled `PlakotoValue.mlmodelc` (returns `nil` if absent →
+  random fallback). Call `start()` once after construction so the AI moves first if it owns the
+  starting player. When `finishTurn` (or `start`/`newGame`) lands on the AI's turn, `takeAITurn`
+  rolls, computes legal moves (empty = forced pass), then: with no model it applies a random legal
+  move synchronously; with a model it enters `aiThinking` and runs the **multi-ply expectimax
+  search** (`agent.getBestMove`) on a detached task **off the main actor**, hopping back via
+  `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure falls
+  back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
   updates only from a real model score and stays at its `0.5` default under the random fallback.
-  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback).
+  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
+  `searchConfig: SearchConfig(maxDepth: 1)` so full-game tests stay fast — the search itself is
+  covered by `AgentSearchTests`).
+
+  **Board-copy isolation.** The search must not race the live `game.board`: the main actor keeps
+  reading/scoring it (UI render, debug overlay) while the search applies/undoes thousands of times,
+  and sharing one board would interleave the unbalanced pop/push and corrupt the checker counts. So
+  `takeAITurn` snapshots `game.board.captureStacks()` + the dice on the main actor, and the detached
+  task rebuilds an **isolated `GameBoard` copy** (`restoreStacks`) to search. Move generation is
+  deterministic, so the copy's move list matches `liveMoves` index-for-index; the search returns the
+  chosen **index**, which the main actor maps back to the live `Move` before applying. An
+  out-of-range/`nil` index (Core ML failure) falls back to a random live move.
+
+- **`SearchConfig`** — the leaf scoring + inner pruning mirror the CLI's `config/config.yml` search
+  section (so move *evaluation* matches `./run.sh play`), but the **root search strategy is
+  iOS-specific** (see `getBestMove` below). `timeBudget`↔`play_time_budget_s` (20s — now a *hard* cap),
+  `beamThreshold`↔`beam_threshold` (absolute fallback, used only when `relativeCutoff` is nil),
+  `relativeCutoff`↔`search_relative_cutoff` (0.08), `maxBranch`↔`search_max_branch` — the cap on
+  replies expanded per **inner** node, default `4`. **`maxDepth`**: `.standard` defaults to `2` for a
+  fast 2-ply on-device search (typical turns are effectively instant); `maxDepth: 3`+ opts into the
+  anytime deepening described below (its worst case can take the full `timeBudget`), and
+  `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests to stay fast). Three
+  knobs have **no CLI equivalent**: `maxRootBranches` (5) caps the root candidate set at every depth;
+  `rootSoftBudget` (8s) and `minRootBranches` (2) only matter for the `maxDepth >= 3` deepening.
+
+- **`Agent` search (#58).** Three layers on top of the parity-validated
+  1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
+  restores the board on any exit). The leaf scoring and `evaluateMovesNply` are ported from
+  `ai/agent.py`; `getBestMove`'s *root strategy* is iOS-specific (below):
+  - `pruneBranches(scores:beamThreshold:relativeCutoff:maxBranch:)` — beam helper mirroring
+    `_prune_branches`: keep `score >= best*(1-relativeCutoff)` when a relative cutoff is set, else
+    `score >= best - beamThreshold`; sort best-first (ties by original index, matching Python's
+    stable sort); cap to `maxBranch`; always keep ≥1.
+  - `evaluateMovesNply(…depth:…deadline:)` — recursive expectimax (`_evaluate_moves_nply`). `depth ≤ 1`
+    delegates to `evaluateMoves`. Deeper: for each candidate, iterate all 21 weighted dice outcomes
+    (`diceOutcomes`); the chance nodes are **never** pruned (distribution stays exact); a pass-position
+    (no opponent moves) is scored from our own perspective; otherwise opponent replies are 1-ply
+    pre-screened, pruned via `pruneBranches`, recursed at `depth-1`, and folded in as
+    `weight * (1 - oppDeep.max())`. Each apply is paired with a `defer`-undo so the board is restored
+    even when a `SearchTimeout` unwinds from a deeper frame.
+  - `getBestMove(…timeBudget:…maxDepth:rootSoftBudget:minRootBranches:maxRootBranches:)` — **2-ply
+    baseline + anytime deepening** under a wall-clock `DispatchTime` deadline (this replaced the
+    earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). Otherwise: (1) score
+    every root move 1-ply and take the best-first candidate set within `relativeCutoff`, capped at
+    `maxRootBranches`; (2) **2-ply baseline** — score the whole candidate set at depth 2 (the
+    guaranteed floor: cheap, almost always completes, and orders the next step) — **at the default
+    `maxDepth: 2` this baseline is the result and step 3 is skipped**; (3) when `maxDepth >= 3`,
+    **deepen to `maxDepth`** one candidate at a time in 2-ply order, overwriting each baseline score
+    with the deeper score — always at least `minRootBranches` (subject to the `timeBudget` hard cap),
+    then keep widening up to `maxRootBranches` total **only while elapsed < `rootSoftBudget`**; inside
+    each branch the 2nd/3rd levels prune to `maxBranch`; (4) return the argmax over the mixed
+    2-ply/deepened scores. So cheap positions deepen the whole set in well under the soft budget, while
+    a hugely-branching doubles roll still returns a complete 2-ply result plus a genuine `maxDepth`
+    evaluation of its best moves within `timeBudget`. A `SearchTimeout` keeps the best result so far;
+    if not even the 2-ply baseline finishes, the 1-ply best is returned (`depth = 1`). The cost floor
+    on extreme positions is the per-node screen (every reply is scored before pruning), which
+    `maxBranch` does not reduce. Returns `(move, score, index, depth)`. Validated by `AgentSearchTests`:
+    `pruneBranches` unit cases, an independent in-test 2-ply reference vs unpruned `evaluateMovesNply`
+    (float-exact), the budgeted path (legal move, budget respected, checkers conserved), an **anytime**
+    case (tiny budget still yields a legal conserved move), and a **terminal-during-lookahead** case (a
+    position where some lines pin Black's start point for an immediate win and others don't): every
+    winning line must score exactly 1.0 via the `hasWon` short-circuit, non-winning lines strictly
+    < 1.0, the search must pick a winning index, and the board must end byte-identical.
 
 - **Game-over hook (#64).** `GameSession.onGameOver: (@MainActor (Color) -> Void)?` fires
   **exactly once**, inside `finishTurn` the moment the session enters `.gameOver`, with the
@@ -197,10 +260,11 @@ ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
 │   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
-│   │                            MoveBuilder, GameSession, GameSave, SaveStore
-│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, FixtureSupport,
-│                                MoveBuilderTests, GameSessionTests, GameSessionAITests,
-│                                GameSavePersistenceTests
+│   │                            SearchConfig, MoveBuilder, GameSession,
+│   │                            GameSave, SaveStore
+│   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
+│                                FixtureSupport, MoveBuilderTests, GameSessionTests,
+│                                GameSessionAITests, GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
