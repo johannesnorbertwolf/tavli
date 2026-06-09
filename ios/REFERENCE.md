@@ -253,6 +253,38 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
   and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
   wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
 
+## Post-game blunder review (#62)
+
+`GameReview.swift` is the on-device analogue of the CLI's `review` command
+(`play/loop.py:_handle_review` → `_collect_blunders`): after a game ends it replays the canonical
+`GameRecord` and re-evaluates each human ply to surface the moves where the player deviated most
+from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so it's covered by
+`swift test` (`GameReviewTests`).
+
+- **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:progress:)`** — replays
+  the record from the initial position, advancing the board by applying each ply's recorded
+  half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
+  At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
+  **more than one legal move** (a single legal move is no decision — mirrors the CLI's
+  `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
+  (default **3**, the same parity-validated multi-ply scoring the live AI uses), with **no
+  wall-clock deadline** since analysis is offline. `evaluateMovesNply` capture/restores stacks, so
+  the working board is never corrupted. The played move is located among the legal moves by
+  **multiset-comparing `(from, to)` pairs** (order-independent — the recorded order may differ from
+  the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find` match). `progress`
+  fires once per evaluated human ply with `(done, total)`.
+- **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
+  `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
+  `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
+  `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
+- **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
+  those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters
+  at any threshold (the iPad UI fixes it at **10%**, matching the CLI default; a configurable one is
+  tracked in #77).
+
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
+task, streams progress back to the main actor, and presents the blunder list from the win overlay.
+
 ## Layout
 
 ```

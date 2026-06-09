@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Starting new work
+
+Before creating a branch or starting anything new, always pull `main` and work from the
+current state.
+
 ## Pull requests
 
 When opening a PR that addresses a tracked issue, always put a closing keyword in the PR
