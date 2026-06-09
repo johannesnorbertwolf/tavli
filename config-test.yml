@@ -22,6 +22,9 @@ lambda_start: 0.9
 lambda_end: 0.5
 lambda_decay: 0.999
 
+# Bear-off DB: keep tests fast — no full-size database build/load
+use_bearoff_db: false
+
 # Optimizer + replay buffer (Adam)
 learning_rate: 0.0003
 lr_warmup_steps: 0

@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from ai.agent import Agent, RandomAgent
+from ai.bearoff import BearoffDB, exact_value_on_roll
 from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
 from ai.checkpoint_io import (
@@ -120,7 +121,13 @@ class TdLambdaTraining:
         self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
         self.config = config
-        self.agent = Agent(self.board_evaluator, self.board_encoder)
+
+        # Exact bear-off DB: built eagerly here (cached on disk) so self-play
+        # workers spawned later only ever load the cache.
+        self.bearoff = None
+        if bool(self.config.get_use_bearoff_db()):
+            self.bearoff = BearoffDB.load_or_build(self.config.get_bearoff_db_path())
+        self.agent = Agent(self.board_evaluator, self.board_encoder, bearoff=self.bearoff)
 
         # TD(Lambda) parameters
         self.lambda_start = self.config.get_lambda_start()
@@ -199,6 +206,11 @@ class TdLambdaTraining:
 
     def _to_model_tensor(self, encoded_board: np.ndarray) -> torch.Tensor:
         return torch.from_numpy(encoded_board).float().unsqueeze(0).to(self.device)
+
+    def _state_exact_value(self, game) -> float:
+        """Exact win prob of the player to move (bear-off DB), NaN outside races."""
+        v = exact_value_on_roll(game.board, game.current_player == WHITE, self.bearoff)
+        return float("nan") if v is None else float(v)
 
     def _select_move_self_play(self, board, possible_moves, current_player):
         if len(possible_moves) == 1:
@@ -359,7 +371,7 @@ class TdLambdaTraining:
             gold_evaluator = BoardEvaluator(gold_encoder.input_size, hidden_sizes=hidden_sizes).to(self.device)
             gold_evaluator.load_state_dict(_migrate_state_dict(state_dict))
             gold_evaluator.eval()
-            self.gold_agent = Agent(gold_evaluator, gold_encoder)
+            self.gold_agent = Agent(gold_evaluator, gold_encoder, bearoff=self.bearoff)
             print(f"Loaded gold model from {self.gold_model_path}")
         except Exception as exc:
             print(f"Could not load gold model from {self.gold_model_path}: {exc}. Skipping gold eval.")
@@ -446,8 +458,21 @@ class TdLambdaTraining:
             values = self.board_evaluator(torch.from_numpy(states_np).float().to(self.device)).squeeze(-1).cpu().numpy()
         self.board_evaluator.train()
 
+        # Exact-race states (bear-off DB): bootstrap on truth instead of the
+        # net's own estimate, and train the race states toward the exact value.
+        exact_mask = None
+        exact_arr = traj.get("exact_values")
+        if exact_arr is not None:
+            exact_arr = np.asarray(exact_arr, dtype=np.float32)
+            exact_mask = ~np.isnan(exact_arr)
+            if exact_mask.any():
+                values = values.copy()
+                values[exact_mask] = exact_arr[exact_mask]
+
         movers_arr = np.array(movers, dtype=bool)
         targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_)
+        if exact_mask is not None and exact_mask.any():
+            targets[exact_mask] = exact_arr[exact_mask]
 
         # Push all T+1 (state, target) pairs into replay buffer.
         self.replay.push_many(states_np, targets)
@@ -509,6 +534,7 @@ class TdLambdaTraining:
         game_start_time = time.perf_counter()
 
         states = [self.board_encoder.encode_board(game.board, game.current_player == WHITE)]
+        exact_values = [self._state_exact_value(game)]
         movers = []
 
         self.board_evaluator.eval()
@@ -531,6 +557,7 @@ class TdLambdaTraining:
 
                 movers.append(is_white_to_move)
                 states.append(self.board_encoder.encode_board(game.board, game.current_player == WHITE))
+                exact_values.append(self._state_exact_value(game))
 
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
@@ -549,6 +576,7 @@ class TdLambdaTraining:
                     return {
                         "states": states,
                         "movers": movers,
+                        "exact_values": exact_values,
                         "terminal_winner_white": (game.get_winner() == WHITE),
                         "plies": len(movers),
                         "game_seconds": time.perf_counter() - game_start_time,
