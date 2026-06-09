@@ -38,6 +38,9 @@ struct GameView: View {
     /// Drives the post-game review sheet (#62).
     @State private var showReview = false
 
+    /// Drives the post-game drill sheet (#63).
+    @State private var showDrill = false
+
     private var flipped: Bool { humanColor == .black }
 
     var body: some View {
@@ -109,7 +112,8 @@ struct GameView: View {
                 if case .gameOver(let winner) = session.phase {
                     WinOverlayView(winner: winner, stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
-                                   onReview: { showReview = true })
+                                   onReview: { showReview = true },
+                                   onDrill: { showDrill = true })
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -119,6 +123,12 @@ struct GameView: View {
                 GameReviewView(record: session.record,
                                agent: session.agent,
                                humanColor: humanColor)
+            }
+            .sheet(isPresented: $showDrill) {
+                DrillView(record: session.record,
+                          precomputed: nil,
+                          agent: session.agent,
+                          humanColor: humanColor)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
                 TextField("Name", text: $saveName)
@@ -346,6 +356,7 @@ private struct WinOverlayView: View {
     let onNewGame: () -> Void
     let onHistory: () -> Void
     let onReview: () -> Void
+    let onDrill: () -> Void
 
     var body: some View {
         ZStack {
@@ -366,6 +377,8 @@ private struct WinOverlayView: View {
                     .buttonStyle(.plain)
                 HStack(spacing: 28) {
                     Button("Review game", action: onReview)
+                        .buttonStyle(.plain)
+                    Button("Drill blunders", action: onDrill)
                         .buttonStyle(.plain)
                     Button("History", action: onHistory)
                         .buttonStyle(.plain)

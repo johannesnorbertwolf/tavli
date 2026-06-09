@@ -202,3 +202,36 @@ public enum GameReview {
             .sorted { $0[0] != $1[0] ? $0[0] < $1[0] : $0[1] < $1[1] }
     }
 }
+
+public extension Agent {
+    /// Win probability for `mover` of a single candidate move at `position`
+    /// (`boardStacks`), scored at `depth` — the public entry the post-game drill
+    /// (#63) uses to grade an attempt. Builds an **isolated** board from the stacks
+    /// and reconstructs the move against it (the attempt's own `Move` references the
+    /// live drill board, which the main actor keeps reading), so it is safe to call
+    /// off the main actor. The score is identical to that move's entry in a full
+    /// `evaluateMovesNply` ranking — i.e. directly comparable to a `PlyEvaluation`'s
+    /// `bestScore`.
+    func scoreCandidate(boardStacks: [[Color]],
+                        move pairs: [[Int]],
+                        mover: Color,
+                        depth: Int = 3,
+                        config: GameConfig = .standard,
+                        searchConfig: SearchConfig = .standard) throws -> Float {
+        let board = GameBoard(config: config)
+        for (i, pieces) in boardStacks.enumerated() where i < board.points.count {
+            board.setPoint(i, pieces: pieces)
+        }
+        let halves = pairs.compactMap { pair -> HalfMove? in
+            guard pair.count == 2 else { return nil }
+            return HalfMove(from: board.points[pair[0]], to: board.points[pair[1]], color: mover)
+        }
+        return try evaluateMovesNply(
+            board, [Move(halves)], color: mover, depth: depth,
+            beamThreshold: searchConfig.beamThreshold,
+            relativeCutoff: searchConfig.relativeCutoff,
+            maxBranch: searchConfig.maxBranch,
+            deadline: nil
+        )[0]
+    }
+}

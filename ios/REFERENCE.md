@@ -285,6 +285,39 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
 The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
 task, streams progress back to the main actor, and presents the blunder list from the win overlay.
 
+## Post-game drill (#63)
+
+The interactive sibling of the review — the on-device analogue of the CLI's `drill` command
+(`play/loop.py:_handle_drill` / `_drill_inner`): step through the same blunders, and for each, ask
+the player to find a better move **on the real board**. It reuses #62's blunder detection
+(`GameReview`/`PlyEvaluation`) and two small additions to `GameSession`:
+
+- **Attempt mode** (`onMoveAttempt: (@MainActor (Move) -> Void)?`). When set, the session runs in
+  attempt mode: completing a move (via the normal `commitHalfMove`/`confirm` tap flow) reports it
+  to the hook and then **rolls it back** to the pre-move position (`board.undoHalfMove` per built
+  half-move, then `beginTurn()` re-arms `.picking` at the same dice) instead of recording it and
+  advancing the turn. `record.plies`/`undoHistory` and the turn are left untouched, so a finished
+  game's record is never mutated and the player can re-attempt the position indefinitely. Both
+  completion sites funnel through one private `completeMove()`; with the hook nil (normal play)
+  behaviour is unchanged.
+- **Drill seeder** (`GameSession.drill(boardStacks:die1:die2:mover:agent:config:)`). Stands up a
+  **human-vs-human** session (`aiColor: nil`, so no AI auto-moves) at an arbitrary position: seed
+  each point via `setPoint`, then `setManualDice` → `.picking` with `mover` to play.
+
+Grading reuses `Agent.scoreCandidate(boardStacks:move:mover:depth:)` (in `GameReview.swift`): it
+rebuilds an **isolated** board from the stacks, reconstructs the attempted move against it, and
+scores that single candidate at 3-ply via `evaluateMovesNply` — identical to that move's entry in a
+full ranking, so it's directly comparable to the `PlyEvaluation`'s `bestScore`, and safe to run off
+the main actor (the attempt's own `Move` references the live drill board the main actor keeps
+reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_inner` (correct =
+`gap ≤ max(0.01, best·0.03)`, close = `gap ≤ max(0.04, best·0.10)`, else wrong).
+
+The app side (`DrillView` + `@MainActor DrillModel`) analyzes (or takes a precomputed
+`GameReviewResult` from the review screen), seeds a card per blunder, wires `onMoveAttempt` to grade
+off the main actor, reveals the best move with `SourceRingView`/`TargetHighlightView`, and tracks
+solved/skipped for the "Drill complete" summary. Launchable from the win overlay and the review
+screen.
+
 ## Layout
 
 ```

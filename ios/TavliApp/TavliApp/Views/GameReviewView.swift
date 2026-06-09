@@ -19,6 +19,9 @@ struct GameReviewView: View {
     @StateObject private var model: GameReviewModel
     @Environment(\.dismiss) private var dismiss
 
+    /// Drives the drill sheet launched from the review list (#63).
+    @State private var showDrill = false
+
     /// `play/loop.py` default — flag moves ≥10% worse than the best.
     private let threshold = 0.10
 
@@ -51,6 +54,12 @@ struct GameReviewView: View {
         }
         .background(SColor(hex: 0xece6dc))
         .task { await model.run(record: record, agent: agent, humanColor: humanColor) }
+        .sheet(isPresented: $showDrill) {
+            if case .done(let result) = model.phase {
+                DrillView(record: record, precomputed: result,
+                          agent: agent, humanColor: humanColor)
+            }
+        }
     }
 
     private var header: some View {
@@ -115,11 +124,17 @@ struct GameReviewView: View {
     private func blunderList(_ blunders: [PlyEvaluation]) -> some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                Text(summary(blunders.count))
-                    .font(.subheadline)
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(summary(blunders.count))
+                        .font(.subheadline)
+                        .foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                    Spacer(minLength: 12)
+                    Button("Drill these") { showDrill = true }
+                        .font(.subheadline.bold())
+                        .foregroundStyle(ChromeTheme.ink)
+                        .buttonStyle(.plain)
+                }
+                .padding(.vertical, 12)
 
                 ForEach(blunders, id: \.plyNumber) { eval in
                     BlunderRow(eval: eval,

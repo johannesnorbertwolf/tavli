@@ -17,6 +17,7 @@ neither depends on views.
 | `PlayableBoardView.swift` | T7 — interactive board; tap/drag → `GameSession` intents; `TargetHighlightView`, `SourceRingView`, `HighlightStyle`. |
 | `GameView.swift` | T9/T10 — responsive game chrome + assembly; turn indicator, controls, win overlay, history sheet, save dialog. Defines `ChromeTheme`. |
 | `GameReviewView.swift` | #62 — post-game blunder review sheet (from the win overlay). Runs `GameReview.analyze` off the main actor via a small `GameReviewModel`, lists flagged plies (played→best + win-prob gap), expands a row to the board the player faced. Pure presentation. |
+| `DrillView.swift` | #63 — interactive post-game drill sheet (from the win overlay + the review screen). Per blunder, seeds a live board via `GameSession.drill` and grades the player's attempt (`onMoveAttempt` → `Agent.scoreCandidate`) as correct/close/wrong; "Show solution" reuses `SourceRingView`/`TargetHighlightView`. `DrillModel` drives it. |
 | `DebugOverlay.swift` | T11 — off-by-default eval panel (win-prob meter, top-3 moves, decision undo). Read-only. |
 | `OpeningRollView.swift` | #33 — opening-roll ceremony resolving the starting player. |
 | `RootView.swift` | T10/#61 — app root: mode picker ↔ opening roll ↔ game; owns all save/load + stats wiring. |
