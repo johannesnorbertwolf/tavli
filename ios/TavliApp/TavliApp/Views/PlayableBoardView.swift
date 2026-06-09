@@ -50,6 +50,10 @@ struct PlayableBoardView: View {
     /// Target marking style. A constant per the design's two-readings spec.
     var highlightStyle: HighlightStyle = .frame
 
+    /// When true the board renders from Black's perspective (180° flip).
+    /// Logical point indices are unchanged; only the visual layout rotates.
+    var flipped: Bool = false
+
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
@@ -65,7 +69,8 @@ struct PlayableBoardView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size))
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size),
+                                    flipped: flipped)
 
             // During drag: show one fewer checker at the source (it's in the air).
             let boardStacks = session.game.board.points.map(\.pieces)
@@ -92,10 +97,12 @@ struct PlayableBoardView: View {
 
             ZStack {
                 ZStack {
-                    BoardView()
-                    TargetHighlightView(targets: highlightTargets, style: highlightStyle)
-                    CheckersView(stacks: displayStacks)
-                    SourceRingView(selectedPoint: ringPoint, stacks: displayStacks)
+                    BoardView(flipped: flipped)
+                    TargetHighlightView(targets: highlightTargets, style: highlightStyle,
+                                        flipped: flipped)
+                    CheckersView(stacks: displayStacks, flipped: flipped)
+                    SourceRingView(selectedPoint: ringPoint, stacks: displayStacks,
+                                   flipped: flipped)
                 }
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))
@@ -209,10 +216,11 @@ struct PlayableBoardView: View {
 struct TargetHighlightView: View {
     let targets: Set<Int>
     let style: HighlightStyle
+    var flipped: Bool = false
 
     var body: some View {
         Canvas { context, size in
-            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
             let s = geo.scale
             for n in targets {
                 if n >= 1 && n <= 24 {
@@ -270,11 +278,12 @@ struct SourceRingView: View {
     /// Per-slot stacks (value type) so the ring tracks the selected stack reliably;
     /// see `CheckersView` for why `[Point]` references can't drive a Canvas redraw.
     let stacks: [[TavliEngine.Color]]
+    var flipped: Bool = false
 
     var body: some View {
         Canvas { context, size in
             guard let sel = selectedPoint, sel >= 1, sel <= 24 else { return }
-            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
             let r = geo.checkerRadius
             let s = geo.scale
             let visible = min(stacks[sel].count, 5)

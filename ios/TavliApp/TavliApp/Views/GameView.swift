@@ -16,6 +16,10 @@ struct GameView: View {
     /// Defaults to empty so `#Preview`s compile.
     var stats: HumanGameStats = .empty
 
+    /// Which color the human is playing. When `.black`, the board flips 180°
+    /// so Black's checkers start bottom-left (#67).
+    var humanColor: TavliEngine.Color = .white
+
     /// Return to the mode picker. Defaults to a no-op so `#Preview`s compile.
     var onBack: () -> Void = {}
     /// Replace the finished session with a fresh one (same settings). Defaults to a no-op so `#Preview`s compile.
@@ -30,6 +34,8 @@ struct GameView: View {
 
     /// Drives the move-history sheet (#60).
     @State private var showHistory = false
+
+    private var flipped: Bool { humanColor == .black }
 
     var body: some View {
         GeometryReader { proxy in
@@ -47,7 +53,7 @@ struct GameView: View {
                     // between the board and the panel sits on the right and the board
                     // never shifts as the panel chrome changes.
                     HStack(spacing: 0) {
-                        PlayableBoardView(session: session)
+                        PlayableBoardView(session: session, flipped: flipped)
                             .padding(8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         sidePanel
@@ -71,7 +77,7 @@ struct GameView: View {
                         Spacer(minLength: 0)
                         ControlsView(session: session)
                             .padding(.horizontal, 16)
-                        PlayableBoardView(session: session)
+                        PlayableBoardView(session: session, flipped: flipped)
                             .padding(.horizontal, 8)
                             .layoutPriority(1)
                     }

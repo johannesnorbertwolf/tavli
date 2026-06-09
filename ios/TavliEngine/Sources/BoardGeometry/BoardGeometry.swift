@@ -37,6 +37,12 @@ public struct PointGeometry {
 /// 900×900 viewBox. `BoardGeometry(rect:)` fits a centered square inside an
 /// arbitrary rect and scales every constant by `side / 900`, so values match
 /// the reference exactly when `rect == (0, 0, 900, 900)`.
+///
+/// When `flipped == true` the board is rendered from Black's perspective (180°
+/// rotation): logical point `n` is drawn at the screen position that would
+/// normally show point `flipIndex(n)`. All public API (point, checkerCenter,
+/// hitTest) continues to accept and return **logical** indices, so callers need
+/// no awareness of the orientation.
 public struct BoardGeometry {
     // ── Design space (900-unit reference) ──────────────────────────────────
     private static let designSide: CGFloat = 900
@@ -51,6 +57,9 @@ public struct BoardGeometry {
     private static let diceGap: CGFloat = 12                     // gap between adjacent dice
 
     // ── Derived screen geometry ────────────────────────────────────────────
+    /// When true, logical indices are mapped to their 180°-rotated visual
+    /// positions before computing screen coordinates.
+    public let flipped: Bool
     /// The fitted, centered square actually used inside the input rect.
     public let boardRect: CGRect
     public let scale: CGFloat
@@ -68,7 +77,8 @@ public struct BoardGeometry {
     /// Side length of one die face, scaled from the design reference.
     public let diceSize: CGFloat
 
-    public init(rect: CGRect) {
+    public init(rect: CGRect, flipped: Bool = false) {
+        self.flipped = flipped
         let side = min(rect.width, rect.height)
         let originX = rect.minX + (rect.width - side) / 2
         let originY = rect.minY + (rect.height - side) / 2
@@ -97,8 +107,22 @@ public struct BoardGeometry {
 
     // ── Public API ─────────────────────────────────────────────────────────
 
+    /// Maps a logical slot index to its 180°-rotated visual position.
+    /// - Slots 0 ↔ 25 swap (bear-off trays exchange halves of the right strip).
+    /// - Points 1–12 shift to 13–24 and vice versa.
+    public static func flipIndex(_ n: Int) -> Int {
+        switch n {
+        case 0:      return 25
+        case 25:     return 0
+        case 1...12: return n + 12
+        default:     return n - 12  // 13...24
+        }
+    }
+
+    /// Visual quadrant of a logical index, accounting for `flipped`.
     public func quadrant(of index: Int) -> BoardQuadrant? {
-        switch index {
+        let p = flipped ? Self.flipIndex(index) : index
+        switch p {
         case 1...6:   return .bottomRight
         case 7...12:  return .bottomLeft
         case 13...18: return .topLeft
@@ -108,11 +132,19 @@ public struct BoardGeometry {
     }
 
     /// Geometry for a slot 0…25. Slots 0 and 25 are the bear-off trays.
+    /// When `flipped`, logical index `n` is drawn at the visual position of
+    /// `flipIndex(n)`; `PointGeometry.index` is always the logical `index`.
     public func point(_ index: Int) -> PointGeometry {
-        if index == 0 || index == 25 {
-            return bearOff(index)
+        let physical = flipped ? Self.flipIndex(index) : index
+        if physical == 0 || physical == 25 {
+            let g = bearOff(physical)
+            return PointGeometry(index: index, isTop: g.isTop, quadrant: nil,
+                                 center: g.center, tip: g.tip,
+                                 baselineLeft: g.baselineLeft,
+                                 baselineRight: g.baselineRight,
+                                 hitRect: g.hitRect)
         }
-        let raw = Self.rawPoint(index)
+        let raw = Self.rawPoint(physical)
         let tipYDesign = raw.top ? raw.baseY + Self.pointH : raw.baseY - Self.pointH
         let half = Self.pointW / 2 - 1.5
         let laneY = raw.top ? raw.baseY : raw.baseY - Self.pointH
@@ -132,22 +164,24 @@ public struct BoardGeometry {
 
     /// Center of the checker at `slot` in a point's stack (slot 0 = base,
     /// closest to the baseline). Mirrors `Stack()` in the design reference.
+    /// When `flipped`, uses the visual position of `flipIndex(index)`.
     public func checkerCenter(point index: Int, slot: Int) -> CGPoint {
+        let physical = flipped ? Self.flipIndex(index) : index
         let r = Self.checkerR
         let step = 2 * r + 0.5
-        if index == 0 || index == 25 {
+        if physical == 0 || physical == 25 {
             // A full-size checker is wider than the 40u strip; centering on the
             // strip (880) would clip it at the board edge. Pull the stack center
             // in only as far as needed so the full disc floats within the board.
             let stripCenter = Self.frame + Self.inner + Self.frame / 2  // 880
             let stripX = min(stripCenter, Self.designSide - r - 1)      // ≈ 873.5
-            let top = index == 25
+            let top = physical == 25
             let cy = top
                 ? Self.frame + r + 1 + CGFloat(slot) * step
                 : (Self.designSide - Self.frame) - r - 1 - CGFloat(slot) * step
             return toScreen(stripX, cy)
         }
-        let raw = Self.rawPoint(index)
+        let raw = Self.rawPoint(physical)
         let cy = raw.top
             ? raw.baseY + r + 1 + CGFloat(slot) * step
             : raw.baseY - r - 1 - CGFloat(slot) * step

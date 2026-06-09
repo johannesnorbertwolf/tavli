@@ -21,12 +21,16 @@ struct CheckersView: View {
     /// a `[[Color]]` snapshot makes the input change by value, so every committed
     /// move reliably repaints.
     let stacks: [[TavliEngine.Color]]
+    var flipped: Bool = false
 
-    init(stacks: [[TavliEngine.Color]]) { self.stacks = stacks }
+    init(stacks: [[TavliEngine.Color]], flipped: Bool = false) {
+        self.stacks = stacks
+        self.flipped = flipped
+    }
 
     var body: some View {
         Canvas { context, size in
-            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
             draw(in: &context, geo: geo)
         }
         .aspectRatio(1, contentMode: .fit)

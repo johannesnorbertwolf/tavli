@@ -11,11 +11,13 @@ import BoardGeometry
 /// iPad size. All design constants come from the 900-unit reference in
 /// `docs/design/tavli/project/Tavli Board.html` and are scaled by `geo.scale`.
 public struct BoardView: View {
-    public init() {}
+    var flipped: Bool = false
+
+    public init(flipped: Bool = false) { self.flipped = flipped }
 
     public var body: some View {
         Canvas { context, size in
-            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size))
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
             draw(in: &context, geo: geo)
         }
         .aspectRatio(1, contentMode: .fit)
