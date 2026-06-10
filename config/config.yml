@@ -32,6 +32,8 @@ search_relative_cutoff: 0.08      # Keep moves within this relative fraction of 
 search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
 search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
+selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when runner-up is within this of the best 1-ply score (0 = off; #90)
+selfplay_2ply_max_moves: 4        # Max candidates re-scored at 2-ply when escalating
 gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
 bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)

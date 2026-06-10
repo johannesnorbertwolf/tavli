@@ -213,7 +213,7 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
-`_select_self_play_move`: ε-softmax over `agent.evaluate_moves` scores. With probability `1 - ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature`.
+`select_self_play_move` (shared by workers and the trainer's local-game path, which delegates to it): ε-softmax over 1-ply `agent.evaluate_moves` scores. With probability `1 − ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature` (always on the 1-ply scores). When `selfplay_2ply_margin > 0` (#90), a greedy decision whose runner-up is within the margin of the best is *escalated*: the top `selfplay_2ply_max_moves` candidates are re-scored at 2-ply and the deep best is played — targeted policy improvement at the ambiguous decisions only, keeping most plies at 1-ply cost.
 
 Workers always run in `eval()` mode (no gradient tracking). `torch.set_num_threads(1)` prevents thread contention between workers.
 

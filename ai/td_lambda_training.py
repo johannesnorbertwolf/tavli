@@ -139,6 +139,8 @@ class TdLambdaTraining:
         self.epsilon_end = self.config.get_epsilon_end()
         self.epsilon_decay = self.config.get_epsilon_decay()
         self.epsilon_decay_games = self.config.get_epsilon_decay_games()
+        self.selfplay_2ply_margin = self.config.get_selfplay_2ply_margin()
+        self.selfplay_2ply_max_moves = self.config.get_selfplay_2ply_max_moves()
         self.exploration_temperature = self.config.get_exploration_temperature()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
@@ -213,21 +215,14 @@ class TdLambdaTraining:
         return float("nan") if v is None else float(v)
 
     def _select_move_self_play(self, board, possible_moves, current_player):
-        if len(possible_moves) == 1:
-            return possible_moves[0], None
-
-        move_scores = self.agent.evaluate_moves(board, possible_moves, current_player)
-        best_idx = int(np.argmax(move_scores))
-
-        if np.random.random() >= self.epsilon:
-            return possible_moves[best_idx], move_scores[best_idx]
-
-        scores = np.array(move_scores, dtype=np.float64) / self.exploration_temperature
-        scores -= np.max(scores)
-        exp_scores = np.exp(scores)
-        probs = exp_scores / np.sum(exp_scores)
-        choice_idx = int(np.random.choice(len(possible_moves), p=probs))
-        return possible_moves[choice_idx], move_scores[choice_idx]
+        from ai.self_play_worker import select_self_play_move
+        move = select_self_play_move(
+            self.agent, board, possible_moves, current_player,
+            self.epsilon, self.exploration_temperature,
+            twoply_margin=self.selfplay_2ply_margin,
+            twoply_max_moves=self.selfplay_2ply_max_moves,
+        )
+        return move, None
 
     def _update_schedules(self, game_num):
         if self.epsilon_decay_games and self.epsilon_decay_games > 0:

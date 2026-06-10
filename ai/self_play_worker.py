@@ -24,17 +24,32 @@ from domain.move_generation import legal_moves
 from game.game import Game
 
 
-def _select_self_play_move(agent, board, possible_moves, current_player, epsilon, exploration_temperature):
+def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
+                          exploration_temperature, twoply_margin=0.0, twoply_max_moves=4):
+    """Shared self-play move selection (workers and the trainer's local path).
+
+    Greedy on 1-ply scores with ε-softmax exploration. When `twoply_margin > 0`
+    and the greedy decision is ambiguous (runner-up within the margin of the
+    best), the top `twoply_max_moves` candidates are re-scored at 2-ply and the
+    deep best is played (#90). Exploration stays on the 1-ply scores."""
     if len(possible_moves) == 1:
         return possible_moves[0]
     scores = agent.evaluate_moves(board, possible_moves, current_player)
     best_idx = int(np.argmax(scores))
-    if np.random.random() >= epsilon:
-        return possible_moves[best_idx]
-    s = np.array(scores, dtype=np.float64) / max(exploration_temperature, 1e-6)
-    s -= np.max(s)
-    probs = np.exp(s) / np.sum(np.exp(s))
-    return possible_moves[int(np.random.choice(len(possible_moves), p=probs))]
+    if np.random.random() < epsilon:
+        s = np.array(scores, dtype=np.float64) / max(exploration_temperature, 1e-6)
+        s -= np.max(s)
+        probs = np.exp(s) / np.sum(np.exp(s))
+        return possible_moves[int(np.random.choice(len(possible_moves), p=probs))]
+    if twoply_margin > 0.0:
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        close = [i for i in order if scores[i] >= scores[best_idx] - twoply_margin]
+        close = close[:max(2, int(twoply_max_moves))]
+        if len(close) > 1:
+            deep = agent.evaluate_moves(board, [possible_moves[i] for i in close],
+                                        current_player, lookahead_plies=2)
+            best_idx = close[int(np.argmax(deep))]
+    return possible_moves[best_idx]
 
 
 def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature):
@@ -45,6 +60,8 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     """
     t0 = time.perf_counter()
     game = Game(config)
+    twoply_margin = config.get_selfplay_2ply_margin()
+    twoply_max_moves = config.get_selfplay_2ply_max_moves()
 
     def state_exact_value():
         v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
@@ -63,8 +80,10 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         if not possible_moves:
             game.switch_turn()
         else:
-            move = _select_self_play_move(agent, game.board, possible_moves, current_player,
-                                          epsilon, exploration_temperature)
+            move = select_self_play_move(agent, game.board, possible_moves, current_player,
+                                         epsilon, exploration_temperature,
+                                         twoply_margin=twoply_margin,
+                                         twoply_max_moves=twoply_max_moves)
             token = game.board.apply(move, current_player)
             game.switch_turn()
         movers.append(is_white_to_move)
