@@ -66,11 +66,15 @@ def state_net_value(agent, board, mover_is_white: bool) -> float:
         return float(agent.board_evaluator(x).squeeze())
 
 
-def state_search_value(agent, board, mover_color: int) -> float:
-    """One-roll expectimax pre-roll value: expectation over the 21 dice
-    outcomes of the best 1-ply move score (exact-race leaves resolved by the
-    bear-off DB inside `_evaluate_moves_batch`). A pass roll keeps the board
-    and hands the turn to the opponent."""
+def state_search_value(agent, board, mover_color: int, move_plies: int = 1) -> float:
+    """Expectimax pre-roll value: expectation over the 21 dice outcomes of the
+    best move score at `move_plies` lookahead (exact-race leaves resolved by
+    the bear-off DB inside the agent's evaluators). A pass roll keeps the
+    board and hands the turn to the opponent.
+
+    `move_plies=1` is the cheap self-inconsistency signal used for mining;
+    `move_plies=2` is a TreeStrap-style policy-improvement value usable as a
+    fine-tune label (~21 2-ply move evals per state)."""
     mover_is_white = mover_color == WHITE
     dice = Dice(_DIE_SIDES)
     expected = 0.0
@@ -78,7 +82,7 @@ def state_search_value(agent, board, mover_color: int) -> float:
         dice.set(d1, d2)
         moves = legal_moves(board, mover_color, dice)
         if moves:
-            scores = agent._evaluate_moves_batch(board, moves, mover_color)
+            scores = agent.evaluate_moves(board, moves, mover_color, lookahead_plies=move_plies)
             expected += weight * max(scores)
         else:
             exact = exact_value_on_roll(board, not mover_is_white, agent.bearoff)
@@ -165,14 +169,22 @@ def mine_games(agent, config, num_games: int, sample_every: int,
 
 
 def label_positions(agent, positions: List[MinedPosition], rollouts_per_position: int,
-                    rng: np.random.Generator) -> np.ndarray:
-    """Mean truncated-rollout return per position, mover's perspective."""
+                    rng: np.random.Generator, label_mode: str = "rollout") -> np.ndarray:
+    """Label per position, mover's perspective.
+
+    - `rollout`: mean of `rollouts_per_position` race-truncated playouts under
+      the 1-ply greedy policy (policy *evaluation* with exact endings).
+    - `search2`: depth-2 expectimax state value (one step of policy
+      *improvement*; deterministic, no MC noise)."""
     labels = np.empty(len(positions), dtype=np.float32)
     for i, pos in enumerate(positions):
-        total = 0.0
-        for _ in range(rollouts_per_position):
-            total += rollout_value(agent, pos.board, pos.mover_color, rng)
-        labels[i] = total / rollouts_per_position
+        if label_mode == "search2":
+            labels[i] = state_search_value(agent, pos.board, pos.mover_color, move_plies=2)
+        else:
+            total = 0.0
+            for _ in range(rollouts_per_position):
+                total += rollout_value(agent, pos.board, pos.mover_color, rng)
+            labels[i] = total / rollouts_per_position
     return labels
 
 
@@ -181,7 +193,7 @@ def _worker_mine_and_label(args) -> dict:
     rollout-label them, and return flat arrays (no Board objects cross the
     process boundary)."""
     (worker_id, checkpoint_path, config_path, num_games, sample_every,
-     top_k_local, rollouts_per_position, base_seed) = args
+     top_k_local, rollouts_per_position, base_seed, label_mode) = args
     torch.set_num_threads(1)
     from config.config_loader import ConfigLoader
     config = ConfigLoader(config_path)
@@ -196,7 +208,7 @@ def _worker_mine_and_label(args) -> dict:
     mined = mine_games(agent, config, num_games, sample_every, rng)
     mined.sort(key=lambda p: p.residual, reverse=True)
     labeled, anchors = mined[:top_k_local], mined[top_k_local:]
-    labels = label_positions(agent, labeled, rollouts_per_position, rng)
+    labels = label_positions(agent, labeled, rollouts_per_position, rng, label_mode=label_mode)
     return {
         "labeled_states": np.stack([p.encoded for p in labeled]) if labeled else np.empty((0, 0), np.float32),
         "labels": labels,
@@ -248,7 +260,8 @@ def run_rollout_lab(config, config_path: str, checkpoint_path: str = "trained_mo
                     num_games: int = 600, sample_every: int = 2, top_k: int = 4000,
                     rollouts_per_position: int = 64, lr: float = 1e-4,
                     steps: int = 2000, num_workers: int = 6,
-                    base_seed: Optional[int] = None) -> dict:
+                    base_seed: Optional[int] = None,
+                    label_mode: str = "rollout") -> dict:
     """Full pipeline: parallel mine+label, fine-tune, save candidate checkpoint.
 
     Returns a summary dict (counts, residual stats, paths). The candidate keeps
@@ -262,7 +275,7 @@ def run_rollout_lab(config, config_path: str, checkpoint_path: str = "trained_mo
     games_per_worker = max(1, num_games // num_workers)
     top_k_local = max(1, top_k // num_workers)
     jobs = [(w, checkpoint_path, config_path, games_per_worker, sample_every,
-             top_k_local, rollouts_per_position, base_seed)
+             top_k_local, rollouts_per_position, base_seed, label_mode)
             for w in range(num_workers)]
 
     t0 = time.perf_counter()
@@ -305,5 +318,6 @@ def run_rollout_lab(config, config_path: str, checkpoint_path: str = "trained_mo
         "mean_abs_label_shift": float(np.abs(labels - v_nets).mean()) if len(labels) else 0.0,
         "seconds": time.perf_counter() - t0,
         "base_seed": base_seed,
+        "label_mode": label_mode,
     }
     return summary

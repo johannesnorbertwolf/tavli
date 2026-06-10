@@ -38,8 +38,24 @@ class TestRolloutLab(unittest.TestCase):
         board = Board.initial(self.config)
         v_net = state_net_value(self.agent, board, mover_is_white=True)
         v_search = state_search_value(self.agent, board, WHITE)
+        v_search2 = state_search_value(self.agent, board, WHITE, move_plies=2)
         self.assertTrue(0.0 <= v_net <= 1.0)
         self.assertTrue(0.0 <= v_search <= 1.0)
+        self.assertTrue(0.0 <= v_search2 <= 1.0)
+
+    def test_label_positions_search2_mode(self):
+        from ai.rollout_lab import label_positions
+        board = Board.initial(self.config)
+        pos = MinedPosition(board=board, mover_color=WHITE,
+                            encoded=self.agent.board_encoder.encode_board(board, is_whites_turn=True),
+                            v_net=0.5, v_search=0.5)
+        rng = np.random.default_rng(0)
+        labels = label_positions(self.agent, [pos], rollouts_per_position=1,
+                                 rng=rng, label_mode="search2")
+        self.assertEqual(labels.shape, (1,))
+        self.assertTrue(0.0 <= labels[0] <= 1.0)
+        expected = state_search_value(self.agent, board, WHITE, move_plies=2)
+        self.assertAlmostEqual(float(labels[0]), expected, places=5)
 
     def test_residual_property(self):
         pos = MinedPosition(board=None, mover_color=WHITE,

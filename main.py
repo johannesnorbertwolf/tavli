@@ -911,6 +911,7 @@ def main():
         checkpoint_path = "trained_model.pth"
         out_path = "models/rollout_candidate.pth"
         apply_if_better = False
+        label_mode = "rollout"
         args = sys.argv[2:]
         i = 0
         while i < len(args):
@@ -918,6 +919,13 @@ def main():
             if arg == "--apply":
                 apply_if_better = True
                 i += 1
+                continue
+            if arg == "--label" and i + 1 < len(args):
+                label_mode = args[i + 1]
+                if label_mode not in ("rollout", "search2"):
+                    print(f"Invalid --label mode: {label_mode} (use rollout|search2)")
+                    return
+                i += 2
                 continue
             if arg == "--checkpoint" and i + 1 < len(args):
                 checkpoint_path = args[i + 1]
@@ -944,6 +952,7 @@ def main():
             out_path=out_path, num_games=opts["--games"], top_k=opts["--top"],
             rollouts_per_position=opts["--rollouts"], lr=opts["--lr"],
             steps=opts["--steps"], num_workers=opts["--workers"],
+            label_mode=label_mode,
         )
         for k, v in summary.items():
             print(f"rollout-lab {k}: {v}")
