@@ -719,6 +719,62 @@ def evaluate_against_gold(
     return results
 
 
+def race_calibration(config, model_load_path="trained_model.pth", num_states=2000, seed=0):
+    """Games-free progress metric (#82): the net's error vs exact bear-off
+    equity on randomly sampled pure-race states. Prints MAE, bias, and RMSE.
+
+    Random race state: each side gets a uniform checker count 1..15 spread
+    uniformly over its 6 home points; the mover is White (perspective-invariant
+    encoding makes the choice irrelevant). The exact value comes from the
+    bear-off DB; the net sees the same pre-roll state.
+    """
+    from ai.bearoff import BearoffDB
+    from domain.board import Board
+
+    device = torch.device("cpu")
+    agent, _ = load_agent_from_checkpoint(model_load_path, config, device=device)
+    db = agent.bearoff or BearoffDB.load_or_build(config.get_bearoff_db_path())
+
+    rng = np.random.default_rng(seed)
+    board_size = config.get_board_size()
+
+    def sample_counts():
+        total = int(rng.integers(1, 16))
+        counts = [0] * 6
+        for _ in range(total):
+            counts[int(rng.integers(0, 6))] += 1
+        return tuple(counts)
+
+    encoded = []
+    exact = np.empty(num_states, dtype=np.float64)
+    for k in range(num_states):
+        white_counts = sample_counts()   # distance d → point board_size+1−d
+        black_counts = sample_counts()   # distance d → point d
+        board = Board()
+        for d in range(1, 7):
+            if white_counts[d - 1]:
+                board.set_point(board_size + 1 - d, WHITE, white_counts[d - 1])
+            if black_counts[d - 1]:
+                board.set_point(d, BLACK, black_counts[d - 1])
+        board.borne_off[WHITE] = config.get_pieces_per_player() - sum(white_counts)
+        board.borne_off[BLACK] = config.get_pieces_per_player() - sum(black_counts)
+        exact[k] = db.win_prob_on_roll(white_counts, black_counts)
+        encoded.append(agent.board_encoder.encode_board(board, is_whites_turn=True))
+
+    x = torch.from_numpy(np.stack(encoded)).float()
+    with torch.no_grad():
+        pred = agent.board_evaluator(x).squeeze(1).numpy().astype(np.float64)
+
+    err = pred - exact
+    print(f"Race calibration over {num_states} sampled race states (seed={seed}):")
+    print(f"  MAE  = {np.abs(err).mean():.4f}")
+    print(f"  bias = {err.mean():+.4f}")
+    print(f"  RMSE = {np.sqrt((err ** 2).mean()):.4f}")
+    print(f"  (model: {model_load_path})")
+    return {"mae": float(np.abs(err).mean()), "bias": float(err.mean()),
+            "rmse": float(np.sqrt((err ** 2).mean()))}
+
+
 def main():
     config = ConfigLoader("config/config.yml")
 
@@ -914,6 +970,30 @@ def main():
                     print(f"Promoted candidate to {checkpoint_path} (backup at {backup}).")
             else:
                 print("Gate FAILED — candidate not promoted.")
+    elif mode == 'race-calibration':
+        num_states = 2000
+        model_path = "trained_model.pth"
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--model" and i + 1 < len(args):
+                model_path = args[i + 1]
+                i += 2
+                continue
+            if not arg.startswith("--"):
+                try:
+                    num_states = int(arg)
+                    if num_states <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid num_states. Please provide a positive integer.")
+                    return
+                i += 1
+                continue
+            print(f"Unknown race-calibration argument: {arg}")
+            return
+        race_calibration(config, model_load_path=model_path, num_states=num_states)
     elif mode in ('human-stats',):
         analyze_human_games()
     elif mode in ('human-graph',):
