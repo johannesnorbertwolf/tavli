@@ -7,7 +7,7 @@ die_sides: 6
 alpha: 0.0003              # DEPRECATED (was learning rate for manual TD update); ignored by Adam path
 discount_factor: 1.0       # No discounting — correct for a finite terminal-reward game
 epsilon_start: 1.0         # Start with 100% random moves
-epsilon_end: 0.05          # End with 5% random moves to keep opening exploration
+epsilon_end: 0.0           # EXP E1 (#81): dice randomness explores enough; random moves corrupt λ-returns
 epsilon_decay: 0.9995      # Slower decay to allow for more exploration
 epsilon_decay_games: 0     # If >0, linearly decay epsilon to epsilon_end over this many games
 exploration_temperature: 1.0  # Softmax temperature during self-play exploration
@@ -32,7 +32,7 @@ search_relative_cutoff: 0.08      # Keep moves within this relative fraction of 
 search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
 search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
-gold_model_path: models/gold_v9.pth # Frozen reference model checkpoint
+gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
 bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)
 training_state_path: training_state.json # Persisted scheduler state for resumed training
@@ -46,7 +46,7 @@ lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit a
 lambda_decay: 0.999        # Decay rate for lambda per episode
 
 # Optimizer + replay buffer (Adam replaces manual TD update)
-learning_rate: 0.0003          # Adam lr
+learning_rate: 0.00003         # EXP E5 (#81): was 1e-4 (E2), 3e-4 before; staircase decay
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
 replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
