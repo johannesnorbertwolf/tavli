@@ -204,7 +204,7 @@ final class DrillModel: ObservableObject {
             result = precomputed
         } else if let agent {
             result = await Task.detached(priority: .userInitiated) {
-                GameReview.analyze(record: record, agent: agent, humanColor: humanColor, depth: 3)
+                GameReview.analyze(record: record, agent: agent, humanColor: humanColor)
             }.value
         } else {
             phase = .empty

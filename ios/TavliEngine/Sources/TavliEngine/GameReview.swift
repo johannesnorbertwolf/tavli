@@ -84,15 +84,22 @@ public enum GameReview {
     /// board is advanced by replaying the recorded half-moves in place, exactly as
     /// `GameSession.replay` does, so reconstruction is independent of the model.
     ///
+    /// `depth` defaults to **2-ply** — fast enough to surface blunders without a long
+    /// wait, and the same depth on-device play uses by default (`SearchConfig.maxDepth`).
+    ///
+    /// - Parameter onEvaluation: called on each evaluated human ply, in play order, as
+    ///   soon as it is scored — lets a caller stream results (e.g. show the first
+    ///   blunder while the rest are still being analyzed).
     /// - Parameter progress: called as each human ply finishes, with the number
     ///   evaluated so far and the total number that will be evaluated.
     public static func analyze(
         record: GameRecord,
         agent: Agent,
         humanColor: Color,
-        depth: Int = 3,
+        depth: Int = 2,
         config: GameConfig = .standard,
         searchConfig: SearchConfig = .standard,
+        onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil
     ) -> GameReviewResult {
         let board = GameBoard(config: config)
@@ -123,7 +130,7 @@ public enum GameReview {
                    ),
                    let bestIdx = argmax(scores),
                    let playedIdx = matchRecorded(ply.halfMoves, legal) {
-                    evaluations.append(PlyEvaluation(
+                    let evaluation = PlyEvaluation(
                         plyNumber: index + 1,
                         die1: ply.die1,
                         die2: ply.die2,
@@ -133,7 +140,9 @@ public enum GameReview {
                         playedScore: scores[playedIdx],
                         bestMove: pairs(of: legal[bestIdx]),
                         bestScore: scores[bestIdx]
-                    ))
+                    )
+                    evaluations.append(evaluation)
+                    onEvaluation?(evaluation)
                 }
                 done += 1
                 progress?(done, total)
@@ -215,7 +224,7 @@ public extension Agent {
     func scoreCandidate(boardStacks: [[Color]],
                         move pairs: [[Int]],
                         mover: Color,
-                        depth: Int = 3,
+                        depth: Int = 2,
                         config: GameConfig = .standard,
                         searchConfig: SearchConfig = .standard) throws -> Float {
         let board = GameBoard(config: config)

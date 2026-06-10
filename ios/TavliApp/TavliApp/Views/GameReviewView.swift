@@ -22,9 +22,6 @@ struct GameReviewView: View {
     /// Drives the drill sheet launched from the review list (#63).
     @State private var showDrill = false
 
-    /// `play/loop.py` default — flag moves ≥10% worse than the best.
-    private let threshold = 0.10
-
     init(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) {
         self.record = record
         self.agent = agent
@@ -55,10 +52,8 @@ struct GameReviewView: View {
         .background(SColor(hex: 0xece6dc))
         .task { await model.run(record: record, agent: agent, humanColor: humanColor) }
         .sheet(isPresented: $showDrill) {
-            if case .done(let result) = model.phase {
-                DrillView(record: record, precomputed: result,
-                          agent: agent, humanColor: humanColor)
-            }
+            DrillView(record: record, precomputed: model.result,
+                      agent: agent, humanColor: humanColor)
         }
     }
 
@@ -84,13 +79,10 @@ struct GameReviewView: View {
             analyzing(done: done, total: total)
         case .unavailable:
             message("Review needs the AI model, which isn’t available.")
-        case .done(let result):
-            let blunders = result.blunders(threshold: threshold)
-            if blunders.isEmpty {
-                message("No blunders found — well played!")
-            } else {
-                blunderList(blunders)
-            }
+        case .noBlunders:
+            message("No blunders found — well played!")
+        case .results(let blunders, let finished):
+            blunderList(blunders, finished: finished)
         }
     }
 
@@ -121,11 +113,11 @@ struct GameReviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func blunderList(_ blunders: [PlyEvaluation]) -> some View {
+    private func blunderList(_ blunders: [PlyEvaluation], finished: Bool) -> some View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(summary(blunders.count))
+                    Text(summary(blunders.count, finished: finished))
                         .font(.subheadline)
                         .foregroundStyle(ChromeTheme.ink.opacity(0.7))
                     Spacer(minLength: 12)
@@ -143,26 +135,41 @@ struct GameReviewView: View {
                                onTap: { model.toggle(eval.plyNumber) })
                     Divider().opacity(0.4)
                 }
+
+                // Footer: keep the player informed that more may still appear.
+                if !finished {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Still analyzing…")
+                            .font(.footnote)
+                            .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
     }
 
-    private func summary(_ count: Int) -> String {
-        count == 1 ? "1 blunder found (≥10% worse than best)."
-                   : "\(count) blunders found (≥10% worse than best)."
+    private func summary(_ count: Int, finished: Bool) -> String {
+        let noun = count == 1 ? "blunder" : "blunders"
+        return finished ? "\(count) \(noun) found (≥10% worse than best)."
+                        : "\(count) \(noun) so far (≥10% worse than best)…"
     }
 }
 
-/// Drives `GameReview.analyze` off the main actor and publishes its progress.
-/// `@MainActor` so `phase`/`expanded` mutate safely; the background task hops back
-/// here for each progress tick.
+/// Drives `GameReview.analyze` off the main actor and **streams** its blunders back:
+/// each blunder appears as soon as it's found, so the first one shows immediately
+/// while the rest are still being analyzed in the background. `@MainActor` so
+/// `phase`/`expanded` mutate safely; the background task hops back here per event.
 @MainActor
 final class GameReviewModel: ObservableObject {
     enum Phase {
-        case analyzing(done: Int, total: Int)
-        case done(GameReviewResult)
+        case analyzing(done: Int, total: Int)        // before the first blunder
+        case results(blunders: [PlyEvaluation], finished: Bool)
+        case noBlunders                              // finished, none found
         case unavailable
     }
 
@@ -170,7 +177,14 @@ final class GameReviewModel: ObservableObject {
     /// `plyNumber` of the row whose board preview is expanded, if any.
     @Published var expanded: Int?
 
+    /// `play/loop.py` default — flag moves ≥10% worse than the best.
+    private let threshold = 0.10
+    private var blunders: [PlyEvaluation] = []
     private var started = false
+    private var finished = false
+
+    /// The blunders found so far, as a result the drill can consume directly.
+    var result: GameReviewResult { GameReviewResult(evaluations: blunders) }
 
     init() {}
 
@@ -179,6 +193,8 @@ final class GameReviewModel: ObservableObject {
         self.phase = phase
         self.expanded = expanded
         self.started = true
+        self.finished = true
+        if case .results(let b, _) = phase { self.blunders = b }
     }
 
     func run(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) async {
@@ -188,20 +204,37 @@ final class GameReviewModel: ObservableObject {
         guard let agent else { phase = .unavailable; return }
 
         let result = await Task.detached(priority: .userInitiated) { [weak self] in
-            GameReview.analyze(record: record, agent: agent, humanColor: humanColor, depth: 3) { done, total in
-                Task { @MainActor in self?.report(done: done, total: total) }
-            }
+            GameReview.analyze(
+                record: record, agent: agent, humanColor: humanColor,
+                onEvaluation: { eval in Task { @MainActor in self?.ingest(eval) } },
+                progress: { done, total in Task { @MainActor in self?.report(done: done, total: total) } }
+            )
         }.value
 
-        phase = .done(result)
+        finish(with: result)
     }
 
     func toggle(_ plyNumber: Int) {
         expanded = (expanded == plyNumber) ? nil : plyNumber
     }
 
+    /// A streamed evaluation: show it immediately if it's a blunder.
+    private func ingest(_ eval: PlyEvaluation) {
+        guard !finished, eval.isBlunder(threshold: threshold) else { return }
+        blunders.append(eval)
+        phase = .results(blunders: blunders, finished: false)
+    }
+
     private func report(done: Int, total: Int) {
         if case .analyzing = phase { phase = .analyzing(done: done, total: total) }
+    }
+
+    /// Analysis complete: settle on the authoritative full set (streamed events may
+    /// still be in flight, so take the blunders straight from the returned result).
+    private func finish(with result: GameReviewResult) {
+        finished = true
+        blunders = result.blunders(threshold: threshold)
+        phase = blunders.isEmpty ? .noBlunders : .results(blunders: blunders, finished: true)
     }
 }
 
@@ -295,11 +328,11 @@ private extension ChromeTheme {
         playedMove: [[1, 7], [1, 6]], playedScore: 0.41,
         bestMove: [[12, 18], [12, 17]], bestScore: 0.58
     )
-    return GameReviewView(previewPhase: .done(GameReviewResult(evaluations: [eval])), expanded: 3)
+    return GameReviewView(previewPhase: .results(blunders: [eval], finished: true), expanded: 3)
 }
 
 #Preview("No blunders") {
-    GameReviewView(previewPhase: .done(GameReviewResult(evaluations: [])))
+    GameReviewView(previewPhase: .noBlunders)
 }
 
 #Preview("Analyzing") {

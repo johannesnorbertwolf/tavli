@@ -43,7 +43,7 @@ final class GameReviewTests: XCTestCase {
         dice.set(die1, die2)
         let moves = PossibleMoves(board: board, color: color, dice: dice).findMoves()
         let scores = try! Self.agent.evaluateMovesNply(
-            board, moves, color: color, depth: 3,
+            board, moves, color: color, depth: 2,
             beamThreshold: 0.08, relativeCutoff: 0.08, maxBranch: 4, deadline: nil
         )
         return (moves, scores)
@@ -66,7 +66,7 @@ final class GameReviewTests: XCTestCase {
             startingPlayer: .white, aiColor: .black,
             plies: [PlyRecord(die1: 6, die2: 5, halfMoves: pairs(of: moves[worstIdx]))]
         )
-        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3)
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
 
         XCTAssertEqual(result.evaluations.count, 1)
         let e = result.evaluations[0]
@@ -91,7 +91,7 @@ final class GameReviewTests: XCTestCase {
             startingPlayer: .white, aiColor: .black,
             plies: [PlyRecord(die1: 6, die2: 5, halfMoves: pairs(of: moves[bestIdx]))]
         )
-        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3)
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
 
         XCTAssertEqual(result.evaluations.count, 1)
         let e = result.evaluations[0]
@@ -112,10 +112,10 @@ final class GameReviewTests: XCTestCase {
         )
 
         // The only ply is White's, so reviewing Black's moves finds nothing.
-        let asBlack = GameReview.analyze(record: record, agent: Self.agent, humanColor: .black, depth: 3)
+        let asBlack = GameReview.analyze(record: record, agent: Self.agent, humanColor: .black, depth: 2)
         XCTAssertTrue(asBlack.evaluations.isEmpty)
 
-        let asWhite = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3)
+        let asWhite = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
         XCTAssertEqual(asWhite.evaluations.count, 1)
         XCTAssertTrue(asWhite.evaluations.allSatisfy { $0.mover == .white })
     }
@@ -126,7 +126,7 @@ final class GameReviewTests: XCTestCase {
             startingPlayer: .white, aiColor: .black,
             plies: [PlyRecord(die1: 3, die2: 4, halfMoves: [])]  // human pass
         )
-        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3)
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
         XCTAssertTrue(result.evaluations.isEmpty)
     }
 
@@ -140,7 +140,7 @@ final class GameReviewTests: XCTestCase {
             startingPlayer: .white, aiColor: .black,
             plies: [PlyRecord(die1: 6, die2: 5, halfMoves: pairs(of: moves[0]))]
         )
-        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3)
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
 
         let fresh = GameBoard(config: Self.config)
         fresh.initializeBoard()
@@ -161,7 +161,7 @@ final class GameReviewTests: XCTestCase {
         // last tick without a non-Sendable capture of a local `var`.
         final class Box: @unchecked Sendable { var last: (Int, Int)? }
         let box = Box()
-        _ = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 3) { done, total in
+        _ = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2) { done, total in
             box.last = (done, total)
         }
         XCTAssertEqual(box.last?.0, 1)

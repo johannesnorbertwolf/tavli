@@ -261,18 +261,20 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
 from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so it's covered by
 `swift test` (`GameReviewTests`).
 
-- **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:progress:)`** — replays
-  the record from the initial position, advancing the board by applying each ply's recorded
+- **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:onEvaluation:progress:)`** —
+  replays the record from the initial position, advancing the board by applying each ply's recorded
   half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
   At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
   **more than one legal move** (a single legal move is no decision — mirrors the CLI's
   `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
-  (default **3**, the same parity-validated multi-ply scoring the live AI uses), with **no
-  wall-clock deadline** since analysis is offline. `evaluateMovesNply` capture/restores stacks, so
-  the working board is never corrupted. The played move is located among the legal moves by
-  **multiset-comparing `(from, to)` pairs** (order-independent — the recorded order may differ from
-  the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find` match). `progress`
-  fires once per evaluated human ply with `(done, total)`.
+  (default **2** — fast, and the depth on-device play uses; the same parity-validated scoring the
+  live AI uses), with **no wall-clock deadline** since analysis is offline. `evaluateMovesNply`
+  capture/restores stacks, so the working board is never corrupted. The played move is located among
+  the legal moves by **multiset-comparing `(from, to)` pairs** (order-independent — the recorded
+  order may differ from the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find`
+  match). `onEvaluation` fires per evaluated ply **as it is scored** (lets the UI stream blunders —
+  show the first one immediately while the rest are still being found); `progress` fires once per
+  evaluated human ply with `(done, total)`.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
   `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
@@ -283,7 +285,9 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   tracked in #77).
 
 The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
-task, streams progress back to the main actor, and presents the blunder list from the win overlay.
+task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
+found (with a "Still analyzing…" footer) while the rest are scored in the background; on completion
+the model settles on the authoritative full set returned by `analyze`. Launched from the win overlay.
 
 ## Post-game drill (#63)
 
@@ -306,7 +310,7 @@ the player to find a better move **on the real board**. It reuses #62's blunder 
 
 Grading reuses `Agent.scoreCandidate(boardStacks:move:mover:depth:)` (in `GameReview.swift`): it
 rebuilds an **isolated** board from the stacks, reconstructs the attempted move against it, and
-scores that single candidate at 3-ply via `evaluateMovesNply` — identical to that move's entry in a
+scores that single candidate at 2-ply via `evaluateMovesNply` — identical to that move's entry in a
 full ranking, so it's directly comparable to the `PlyEvaluation`'s `bestScore`, and safe to run off
 the main actor (the attempt's own `Move` references the live drill board the main actor keeps
 reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_inner` (correct =
