@@ -141,6 +141,16 @@ class TdLambdaTraining:
         self.epsilon_decay_games = self.config.get_epsilon_decay_games()
         self.selfplay_2ply_margin = self.config.get_selfplay_2ply_margin()
         self.selfplay_2ply_max_moves = self.config.get_selfplay_2ply_max_moves()
+        self.selfplay_seeded_fraction = self.config.get_selfplay_seeded_fraction()
+        self.seed_pool = None
+        if self.selfplay_seeded_fraction > 0.0:
+            pool_path = self.config.get_selfplay_seed_pool_path()
+            if not os.path.exists(pool_path):
+                raise FileNotFoundError(
+                    f"selfplay_seeded_fraction > 0 but seed pool not found: {pool_path} "
+                    f"(build it with: python main.py seed-pool)")
+            from ai.seed_pool import SeedPool
+            self.seed_pool = SeedPool(pool_path)
         self.exploration_temperature = self.config.get_exploration_temperature()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
@@ -171,7 +181,7 @@ class TdLambdaTraining:
         self.device = next(self.board_evaluator.parameters()).device
         self.gold_agent = None
 
-        self.model_save_path = "trained_model.pth"
+        self.model_save_path = self.config.get_model_save_path()
 
         # Replay buffer + Adam optimizer
         self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size)
@@ -289,6 +299,15 @@ class TdLambdaTraining:
             _, meta = load_state_dict(self.model_save_path, device=self.device)
             opt_state = meta.get("optimizer_state_dict")
             if opt_state is not None:
+                # torch only validates group structure on load; a state saved for a
+                # different architecture would otherwise crash at the first step().
+                params = [p for g in self.optimizer.param_groups for p in g["params"]]
+                for key, entry in opt_state.get("state", {}).items():
+                    exp_avg = entry.get("exp_avg")
+                    if exp_avg is not None and tuple(exp_avg.shape) != tuple(params[int(key)].shape):
+                        print(f"Optimizer state in {self.model_save_path} does not match the "
+                              f"current architecture; starting Adam fresh")
+                        return
                 self.optimizer.load_state_dict(opt_state)
                 print(f"Loaded Adam optimizer state from {self.model_save_path}")
             else:
@@ -523,6 +542,8 @@ class TdLambdaTraining:
         """Self-play one full game in-process, collecting a trajectory dict matching the
         worker's output format. No mid-game weight updates."""
         game = Game(self.config)
+        if self.seed_pool is not None and random.random() < self.selfplay_seeded_fraction:
+            game.board, game.player = self.seed_pool.sample(self.config)
         log_fh = None
         if verbose_log_file:
             log_fh = open(verbose_log_file, 'w')

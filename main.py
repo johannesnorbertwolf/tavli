@@ -286,7 +286,7 @@ def train_ai(config, num_epochs_override=None):
     board_encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
     board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes()).to(device)
 
-    model_save_path = "trained_model.pth"
+    model_save_path = config.get_model_save_path()
     if os.path.exists(model_save_path):
         print(f"Loading existing model from {model_save_path}...")
         try:
@@ -979,6 +979,39 @@ def main():
                     print(f"Promoted candidate to {checkpoint_path} (backup at {backup}).")
             else:
                 print("Gate FAILED — candidate not promoted.")
+    elif mode == 'seed-pool':
+        opts = {"--games": 600, "--every": 2, "--top": 8000, "--workers": 6}
+        checkpoint_path = "trained_model.pth"
+        out_path = "models/seed_pool.npz"
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--checkpoint" and i + 1 < len(args):
+                checkpoint_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--out" and i + 1 < len(args):
+                out_path = args[i + 1]
+                i += 2
+                continue
+            if arg in opts and i + 1 < len(args):
+                try:
+                    opts[arg] = int(args[i + 1])
+                except ValueError:
+                    print(f"Invalid value for {arg}: {args[i + 1]}")
+                    return
+                i += 2
+                continue
+            print(f"Unknown seed-pool argument: {arg}")
+            return
+
+        from ai.seed_pool import build_seed_pool
+        build_seed_pool(
+            config, "config/config.yml", checkpoint_path=checkpoint_path,
+            out_path=out_path, num_games=opts["--games"], sample_every=opts["--every"],
+            top_k=opts["--top"], num_workers=opts["--workers"],
+        )
     elif mode == 'race-calibration':
         num_states = 2000
         model_path = "trained_model.pth"

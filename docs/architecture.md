@@ -74,6 +74,9 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
 | `selfplay_2ply_margin` | Self-play decisions whose 1-ply runner-up is within this absolute margin of the best are re-scored at 2-ply (top candidates only); 0 disables. Targeted policy improvement (#90) |
 | `selfplay_2ply_max_moves` | Max candidates re-scored at 2-ply on escalation |
+| `selfplay_seeded_fraction` | Fraction of self-play games started from a sampled seed-pool position instead of the initial board (#83); 0 disables. Trainer fails fast if the pool file is missing |
+| `selfplay_seed_pool_path` | npz pool of high-residual pre-roll positions, built offline via `python main.py seed-pool` (gitignored) |
+| `model_save_path` | Live checkpoint path (default `trained_model.pth`); training resumes weights + Adam state from it. `config-test.yml` points it at a test-local file so tests never touch live artifacts |
 | `gold_model_path` | Reference model for eval |
 | `use_bearoff_db` | Exact race equity from the bear-off DB (`ai/bearoff.py`): replaces net evals at search leaves and TD bootstrap values/targets for pure-race states (no pins, all checkers home). `false` in `config-test.yml` to keep tests fast |
 | `bearoff_db_path` | Disk cache of the one-sided bear-off DB (npz, ~54k states, built once in ~1 min, gitignored) |

@@ -25,6 +25,11 @@ lambda_decay: 0.999
 # Bear-off DB: keep tests fast — no full-size database build/load
 use_bearoff_db: false
 
+# Isolate tests from live training artifacts in the repo root: never resume
+# from (or save over) the real trained_model.pth / training_state.json.
+model_save_path: test_trained_model.pth
+training_state_path: test_training_state.json
+
 # Optimizer + replay buffer (Adam)
 learning_rate: 0.0003
 lr_warmup_steps: 0

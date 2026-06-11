@@ -52,14 +52,19 @@ def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
     return possible_moves[best_idx]
 
 
-def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature):
+def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
+                         seed_pool=None, seeded_fraction=0.0):
     """Play one self-play game to a real terminal. Returns a trajectory dict:
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
     - `terminal_winner_white`: True if White won.
-    """
+
+    When `seed_pool` is set, a `seeded_fraction` share of games starts from a
+    sampled high-residual position instead of the initial board (#83)."""
     t0 = time.perf_counter()
     game = Game(config)
+    if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
+        game.board, game.player = seed_pool.sample(config)
     twoply_margin = config.get_selfplay_2ply_margin()
     twoply_max_moves = config.get_selfplay_2ply_max_moves()
 
@@ -116,6 +121,13 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
         bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path(), progress=False)
     agent = Agent(evaluator, encoder, bearoff=bearoff)
 
+    seed_pool = None
+    seeded_fraction = config.get_selfplay_seeded_fraction()
+    if seeded_fraction > 0.0:
+        # The trainer validates the pool path before spawning workers.
+        from ai.seed_pool import SeedPool
+        seed_pool = SeedPool(config.get_selfplay_seed_pool_path())
+
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)
     np.random.seed(seed)
@@ -127,5 +139,6 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
             return
         weights, epsilon, exploration_temperature = msg
         evaluator.load_state_dict({k: torch.from_numpy(v) for k, v in weights.items()})
-        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)
+        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
+                                    seed_pool=seed_pool, seeded_fraction=seeded_fraction)
         traj_q.put((worker_id, traj))

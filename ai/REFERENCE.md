@@ -154,6 +154,18 @@ CLI knobs: `--games 600 --top 4000 --rollouts 64 --steps 2000 --lr 1e-4 --worker
 
 ---
 
+## seed_pool.py
+
+Seeded-start self-play (issue #83, experiment E9): a coverage lever. Pure self-play funnels every game through the same opening distribution, so the states where the net is least self-consistent are visited too rarely for TD to fix them. This module builds a pool of those states offline and lets self-play start a configurable fraction of games from them. Both sides still play the current policy from the seed onward, so the learned values keep their on-policy meaning (unlike league play, which changes the value definition).
+
+**Build** (`build_seed_pool`, exposed as `python main.py seed-pool`): reuses `rollout_lab.mine_games` across `num_workers` spawn-context processes (`_worker_mine_seeds`) — greedy 1-ply self-play, every `sample_every`-th non-race pre-roll state measured for residual `|V_search − V_net|`. Boards are flattened to plain arrays (`board_to_arrays`: `n` int16, `color` int8, `pinned` bool, two borne-off counts) so no `Board` objects cross the process boundary. The global top `top_k` by residual is saved to a compressed npz (default `models/seed_pool.npz`, gitignored) together with `mover_is_white` and the residuals.
+
+**Consume**: when `selfplay_seeded_fraction > 0`, each worker (and the trainer's local path) loads a `SeedPool` once; `play_one_game_record` then starts that fraction of games from `SeedPool.sample()` — `board_from_arrays` reconstructs the board and the stored mover becomes the player to move — instead of `Board.initial`. Sampling uses the worker's seeded global `random` so runs stay reproducible. The trainer validates the pool file exists at construction (fails fast with a build hint); trajectories, TD ingestion, and λ-returns are unchanged — seeded games are simply shorter.
+
+CLI knobs: `--games 600 --every 2 --top 8000 --workers 6 --checkpoint trained_model.pth --out models/seed_pool.npz`. The pool is static for a run; rebuild it from the latest checkpoint between runs to track the net's current weak spots.
+
+---
+
 ## td_lambda_training.py
 
 Contains the training loop (`TdLambdaTraining`), the replay buffer (`ReplayBuffer`), and the λ-return computation (`compute_lambda_returns`).
@@ -182,7 +194,7 @@ where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted t
 
 The main orchestrator. Constructed with `(board_evaluator, board_encoder, config)`.
 
-**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `trained_model.pth`), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
+**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `model_save_path`, default `trained_model.pth`; skipped with a message when the saved state's tensor shapes don't match the current architecture), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `selfplay_seeded_fraction > 0` it also loads the `SeedPool` (failing fast if the pool file is missing). When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
 1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
@@ -211,7 +223,7 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, bear-off DB (cache load only — the trainer builds it before spawning), and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
 
-`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
+`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature, seed_pool=None, seeded_fraction=0.0)`: plays one full self-play game. When a `SeedPool` is given, a `seeded_fraction` share of games starts from a sampled high-residual position instead of the initial board (see `seed_pool.py`). At each step: roll dice, get legal moves, call `select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
 `select_self_play_move` (shared by workers and the trainer's local-game path, which delegates to it): ε-softmax over 1-ply `agent.evaluate_moves` scores. With probability `1 − ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature` (always on the 1-ply scores). When `selfplay_2ply_margin > 0` (#90), a greedy decision whose runner-up is within the margin of the best is *escalated*: the top `selfplay_2ply_max_moves` candidates are re-scored at 2-ply and the deep best is played — targeted policy improvement at the ambiguous decisions only, keeping most plies at 1-ply cost.
 

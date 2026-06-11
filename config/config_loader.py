@@ -87,6 +87,9 @@ class ConfigLoader:
     def get_training_state_path(self):
         return self.config.get("training_state_path", "training_state.json")
 
+    def get_model_save_path(self):
+        return self.config.get("model_save_path", "trained_model.pth")
+
     def get_state_save_every_games(self):
         return self.config.get("state_save_every_games", 100)
 
@@ -149,6 +152,12 @@ class ConfigLoader:
 
     def get_selfplay_2ply_max_moves(self):
         return int(self.config.get("selfplay_2ply_max_moves", 4))
+
+    def get_selfplay_seeded_fraction(self):
+        return float(self.config.get("selfplay_seeded_fraction", 0.0))
+
+    def get_selfplay_seed_pool_path(self):
+        return self.config.get("selfplay_seed_pool_path", "models/seed_pool.npz")
 
     def get_use_bearoff_db(self):
         return bool(self.config.get("use_bearoff_db", True))
