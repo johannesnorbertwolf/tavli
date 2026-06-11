@@ -56,7 +56,7 @@ so the game flow is validated without a simulator.
   — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
   of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
   `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
   applies the half-move to the board and auto-finishes when the move is complete or the only
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
@@ -163,6 +163,18 @@ so the game flow is validated without a simulator.
   `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
   game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
   **not** fire it, so resuming a finished game never double-counts.
+
+- **Surrender / resign (#74).** `surrender()` lets the human concede: it discards any half-move
+  built this turn (`board.undoHalfMove`), records the AI side as the winner, and enters `.gameOver`
+  — the same terminal state a played-out loss reaches, so `onGameOver(aiColor)` fires and the loss
+  is counted normally. Gated by `canSurrender` (true only on the human's own `awaitingRoll`/`picking`/
+  `moving` phase of a game with an AI side — never mid-AI-think/animation or once over), so a double
+  tap or a tap during the AI's turn is a no-op and the hook still fires once. It records nothing to
+  `record.plies` (no ply was played), so the app's per-move auto-save hook does **not** fire on
+  resign — the view clears the auto-save slot explicitly via `onAutosave` after confirming.
+  `humanWinProbability` re-expresses WHITE's `winProbability` for the human side (or `nil` h-vs-h)
+  and drives the UI's double-confirm threshold; the engine owns the perspective flip, the view owns
+  the 10% policy.
 
 ## Save & load (#61, replay-based)
 

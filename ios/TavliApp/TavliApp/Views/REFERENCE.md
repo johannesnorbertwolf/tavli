@@ -279,10 +279,12 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     (Spacer + aspect-fit board) split the height and the board shrinks below full width.
     Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
     test and inspecting the screenshot attachment.
-  - Floating chrome in the `ZStack`: a top-leading `HStack { BackButton; SaveButton }` and a
-    top-trailing `DebugOverlayToggle(session:, onHistory:)` (see `DebugOverlay.swift`), each
-    pinned via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` is hidden once
-    `session.isTerminal` (finished games aren't saved, #61).
+  - Floating chrome in the `ZStack`: a top-leading `HStack { BackButton; SaveButton; SurrenderButton }`
+    and a top-trailing `DebugOverlayToggle(session:, onHistory:)` (see `DebugOverlay.swift`), each
+    pinned via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` and `SurrenderButton`
+    are hidden once `session.isTerminal` (finished games aren't saved/resigned, #61/#74). The
+    `SurrenderButton` (a brick-red "Resign" pill) is additionally `.disabled`/dimmed when
+    `!session.canSurrender`, so it greys out — rather than vanishing — while the AI is thinking.
   - **Move-history sheet (#60):** `DebugOverlayToggle` is passed `onHistory: { showHistory = true }`,
     which threads through to `DebugOverlay`'s "Move history" button. The `.sheet(isPresented: $showHistory)`
     is attached to the `ZStack`; `WinOverlayView` also carries its own History button so the log
@@ -296,6 +298,16 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     ply — `history` grows by one per finished turn (human, AI, or forced pass) — so the
     in-progress game is persisted after **every move**, not just on background. `RootView`'s
     `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
+  - **Surrender / resign (#74):** tapping the `SurrenderButton` runs `onSurrenderTapped`, which
+    reads `session.humanWinProbability`: above the `surrenderWarningThreshold` (10%) it captures the
+    rounded percent and flips `showWinProbWarning`; at/below it goes straight to `showSurrenderConfirm`.
+    Two `.alert`s on the `ZStack` render the flow — the preliminary "you still have X% chance" warning
+    ("I'm sure"/"Keep playing") and the standard "Are you sure you want to give up?" confirmation
+    ("Give up"/"Keep playing"). "I'm sure" advances to the confirmation via `DispatchQueue.main.async`
+    so the second alert presents only after the first fully dismisses (chained same-view alerts
+    otherwise race). "Give up" calls `session.surrender()` then `onAutosave()` — surrender records no
+    ply, so the per-move auto-save hook never fires; this clears the now-terminal game's auto-save
+    slot, matching a played-out loss.
   - `WinOverlayView` is layered **last** (above Back/Save/debug) whenever `session.phase` is
     `.gameOver`.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
