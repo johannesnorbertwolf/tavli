@@ -144,6 +144,12 @@ class ConfigLoader:
     def get_min_buffer_to_train(self):
         return int(self.config.get("min_buffer_to_train", 2000))
 
+    def get_selfplay_2ply_margin(self):
+        return float(self.config.get("selfplay_2ply_margin", 0.0))
+
+    def get_selfplay_2ply_max_moves(self):
+        return int(self.config.get("selfplay_2ply_max_moves", 4))
+
     def get_use_bearoff_db(self):
         return bool(self.config.get("use_bearoff_db", True))
 

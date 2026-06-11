@@ -184,6 +184,19 @@ elif [ "$1" == "eval-lookahead" ]; then
     else
         $RUNNER nix-shell --run "python3 main.py eval-lookahead $TOTAL_GAMES $WORKERS_ARG"
     fi
+elif [ "$1" == "rollout-lab" ]; then
+    shift
+    echo "Rollout lab: disagreement mining + rollout-labeled fine-tune..."
+    if command -v caffeinate >/dev/null 2>&1; then
+        RUNNER="caffeinate -dimsu"
+    else
+        RUNNER=""
+    fi
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $RUNNER $PY_RUNNER main.py rollout-lab "$@"
+    else
+        $RUNNER nix-shell --run "python3 main.py rollout-lab $*"
+    fi
 elif [ "$1" == "human-stats" ]; then
     if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
         $PY_RUNNER main.py human-stats

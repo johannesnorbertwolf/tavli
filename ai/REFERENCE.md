@@ -138,6 +138,22 @@ Config knobs: `use_bearoff_db` (default true) and `bearoff_db_path` (default `mo
 
 ---
 
+## rollout_lab.py
+
+Offline improvement pass (issue #80) targeting compute at positions where the net is most likely wrong. Three phases, orchestrated by `run_rollout_lab()` and exposed as `./run.sh rollout-lab` / `python main.py rollout-lab`:
+
+1. **Mine** (`mine_games`): greedy 1-ply self-play games with the current checkpoint. Every `sample_every`-th non-race pre-roll state gets two values: `V_net(s)` (static net eval, mover perspective) and `V_search(s)` (`state_search_value`: expectation over the 21 weighted dice outcomes of the best 1-ply move score, exact bear-off equity at race leaves; a pass roll contributes `1 − V(board, opponent)`). The residual `|V_search − V_net|` measures the net's self-inconsistency — a TD-error magnitude under the net's own policy. Pure-race states are skipped (they already train on exact targets).
+2. **Label** (`label_positions` / `rollout_value`): two modes. `rollout` (default): the top-`top_k` residual states are labeled by `rollouts_per_position` Monte-Carlo playouts under the greedy 1-ply policy (both sides). A playout returns as soon as the position becomes an exact race — the bear-off DB equity stands in for the rest of the game — or a side wins; a `max_plies` guard (default 1000) falls back to the net value. Labels are mean returns from the mover's perspective. Rollouts run on `board.clone()`; the mined board is never mutated. `search2` (`--label search2`): deterministic depth-2 expectimax state value (`state_search_value(move_plies=2)`) — a TreeStrap-style policy-*improvement* label, useful once 1-ply-policy rollouts stop disagreeing with the net (~2 s/position; rollout count is ignored).
+3. **Fine-tune** (`fine_tune`): Adam + BCE-with-logits on the labeled set at small LR (default 1e-4, 2000 steps). Each minibatch is half labeled positions, half **anchors** — the non-top mined states pinned to their own pre-fine-tune net values — so the net only moves where rollouts disagree with it (a cheap trust region against catastrophic forgetting). Sets `.train()` for the duration and restores `.eval()` in a `finally`.
+
+Parallelism: `run_rollout_lab` splits mining+labeling across `num_workers` spawn-context processes (`_worker_mine_and_label`); each worker loads its own agent from the checkpoint, keeps its local top `top_k/num_workers` (approximate global top-k), and returns flat numpy arrays — `Board` objects never cross the process boundary. The labeled dataset is cached next to the candidate (`*_dataset.npz`) so fine-tune variants can re-run without re-mining.
+
+The candidate checkpoint is the **source payload with only `state_dict` swapped** — optimizer state and metadata are preserved so a promoted candidate resumes TD training like any mid-run checkpoint. Promotion is gated in `main.py`: head-to-head vs the source checkpoint (`evaluate_against_gold`, `--gate-games` per color); the candidate is only promoted (with `--apply`, after a one-sided z-test at p < 0.05) and the source is backed up first.
+
+CLI knobs: `--games 600 --top 4000 --rollouts 64 --steps 2000 --lr 1e-4 --workers 6 --gate-games 2000 --label rollout|search2 --checkpoint trained_model.pth --out models/rollout_candidate.pth --apply`.
+
+---
+
 ## td_lambda_training.py
 
 Contains the training loop (`TdLambdaTraining`), the replay buffer (`ReplayBuffer`), and the λ-return computation (`compute_lambda_returns`).
@@ -197,7 +213,7 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
-`_select_self_play_move`: ε-softmax over `agent.evaluate_moves` scores. With probability `1 - ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature`.
+`select_self_play_move` (shared by workers and the trainer's local-game path, which delegates to it): ε-softmax over 1-ply `agent.evaluate_moves` scores. With probability `1 − ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature` (always on the 1-ply scores). When `selfplay_2ply_margin > 0` (#90), a greedy decision whose runner-up is within the margin of the best is *escalated*: the top `selfplay_2ply_max_moves` candidates are re-scored at 2-ply and the deep best is played — targeted policy improvement at the ambiguous decisions only, keeping most plies at 1-ply cost.
 
 Workers always run in `eval()` mode (no gradient tracking). `torch.set_num_threads(1)` prevents thread contention between workers.
 
