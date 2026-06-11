@@ -93,6 +93,7 @@ struct DrillView: View {
             if let card = model.session, let eval = model.current {
                 DrillCard(session: card, eval: eval, flipped: flipped,
                           feedback: model.feedback, showingSolution: model.showingSolution,
+                          lastAttempt: model.lastAttempt,
                           solved: model.solvedThisCard,
                           onShowSolution: { model.revealSolution() },
                           onAdvance: { model.advance() })
@@ -157,6 +158,9 @@ final class DrillModel: ObservableObject {
     @Published private(set) var session: GameSession?
     @Published var feedback: Feedback = .none
     @Published private(set) var showingSolution = false
+    /// The player's most recent attempt on this card, as `[from, to]` pairs (for
+    /// showing what they actually played, in writing). `nil` until they move.
+    @Published private(set) var lastAttempt: [[Int]]?
     /// Whether the current card has been solved (a correct attempt was made).
     @Published private(set) var solvedThisCard = false
 
@@ -221,6 +225,7 @@ final class DrillModel: ObservableObject {
         index = i
         feedback = .none
         showingSolution = false
+        lastAttempt = nil
         solvedThisCard = false
         let b = blunders[i]
         let s = GameSession.drill(boardStacks: b.boardStacks, die1: b.die1, die2: b.die2,
@@ -234,6 +239,7 @@ final class DrillModel: ObservableObject {
         guard let b = current, let agent else { return }
         feedback = .checking
         let pairs = move.halfMoves.map { [$0.from.position, $0.to.position] }
+        lastAttempt = pairs
         let stacks = b.boardStacks
         let mover = b.mover
         let best = b.bestScore
@@ -284,6 +290,8 @@ private struct DrillCard: View {
     let flipped: Bool
     let feedback: DrillModel.Feedback
     let showingSolution: Bool
+    /// The player's latest attempt on this card, as `[from, to]` pairs (shown in writing).
+    let lastAttempt: [[Int]]?
     let solved: Bool
     let onShowSolution: () -> Void
     let onAdvance: () -> Void
@@ -303,6 +311,7 @@ private struct DrillCard: View {
                         Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
                             .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
                         feedbackLine
+                        movesPanel
                         Spacer(minLength: 0)
                         controls
                     }
@@ -315,6 +324,7 @@ private struct DrillCard: View {
                         .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
                     board.layoutPriority(1).padding(.horizontal, 12)
                     feedbackLine
+                    movesPanel
                     controls.padding(.horizontal, 20)
                 }
                 .padding(.vertical, 12)
@@ -353,6 +363,34 @@ private struct DrillCard: View {
         case .wrong(let msg):
             Text(msg).font(.callout.bold()).foregroundStyle(DrillTint.wrong)
         }
+    }
+
+    /// Your move (once attempted) and the best move (once the solution is shown), in
+    /// writing — alongside the on-board halo.
+    @ViewBuilder
+    private var movesPanel: some View {
+        if lastAttempt != nil || showingSolution {
+            VStack(alignment: .leading, spacing: 6) {
+                if let lastAttempt {
+                    moveRow(label: "You played", move: lastAttempt, tint: ChromeTheme.ink)
+                }
+                if showingSolution {
+                    moveRow(label: "Best move", move: eval.bestMove, tint: DrillTint.correct)
+                }
+            }
+        }
+    }
+
+    private func moveRow(label: String, move: [[Int]], tint: SColor) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+            Text(moveText(move)).font(.callout.monospaced().bold()).foregroundStyle(tint)
+        }
+    }
+
+    private func moveText(_ pairs: [[Int]]) -> String {
+        guard !pairs.isEmpty else { return "(pass)" }
+        return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
     }
 
     private var controls: some View {
