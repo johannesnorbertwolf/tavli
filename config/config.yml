@@ -33,6 +33,8 @@ search_max_branch: 5              # Hard cap on moves expanded per node, on top 
 search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
 gold_model_path: models/gold_v9.pth # Frozen reference model checkpoint
+use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
+bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)
 training_state_path: training_state.json # Persisted scheduler state for resumed training
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)

@@ -69,6 +69,12 @@ public final class GameSession: ObservableObject {
     /// (issue #64); the engine itself stays unaware of stats persistence.
     public var onGameOver: (@MainActor (Color) -> Void)?
 
+    /// Drill attempt hook (#63). When set, the session runs in **attempt mode**: a
+    /// completed move is reported here and then rolled back to the pre-move position
+    /// instead of being recorded and advancing the turn, so the player can keep
+    /// trying the same position. `nil` (the default) is normal play.
+    public var onMoveAttempt: (@MainActor (Move) -> Void)?
+
     /// One committed ply kept for decision-point undo. `move` is `nil` for a forced
     /// pass; dice are restored on undo so the same position can be re-decided.
     private struct UndoRecord {
@@ -107,6 +113,24 @@ public final class GameSession: ObservableObject {
     public var isTerminal: Bool {
         if case .gameOver = phase { return true }
         return false
+    }
+
+    /// Whether the human may resign right now (#74): only on the human's own move
+    /// of a game with an AI side — never mid-AI-think/animation or once it's over.
+    public var canSurrender: Bool {
+        guard aiColor != nil else { return false }
+        switch phase {
+        case .awaitingRoll, .picking, .moving: return true
+        case .aiThinking, .animating, .gameOver: return false
+        }
+    }
+
+    /// WHITE's latest `winProbability` re-expressed for the human side (the AI's
+    /// opponent), or `nil` in a human-vs-human session. Drives the surrender
+    /// double-confirm threshold (#74).
+    public var humanWinProbability: Double? {
+        guard let human = aiColor?.opponent else { return nil }
+        return human.isWhite ? winProbability : 1 - winProbability
     }
 
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
@@ -192,12 +216,10 @@ public final class GameSession: ObservableObject {
             game.board.applyHalfMove(hm)
             complete = moveBuilder.commit(halfMove: hm)
         }
-        let played = moveBuilder.built
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
-            recordTurn(mover: game.currentPlayer, move: Move(moveBuilder.built))
-            finishTurn()
+            completeMove()
         } else {
             refreshSources()
         }
@@ -217,8 +239,41 @@ public final class GameSession: ObservableObject {
     /// Finish the turn early when the partial sequence is already a legal move.
     public func confirm() {
         guard phase == .picking || phase == .moving, moveBuilder.canFinishNow else { return }
-        recordTurn(mover: game.currentPlayer, move: Move(moveBuilder.built))
-        finishTurn()
+        completeMove()
+    }
+
+    /// Finalize the move just composed in `moveBuilder`. In normal play this records
+    /// the ply and advances the turn. In **attempt mode** (`onMoveAttempt` set — used
+    /// by the post-game drill, #63) the move is instead reported to the handler and
+    /// **rolled back** to the pre-move position, so the same position can be
+    /// re-attempted; `record.plies`/`undoHistory` and the turn are left untouched.
+    private func completeMove() {
+        let move = Move(moveBuilder.built)
+        if let onMoveAttempt {
+            for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+            onMoveAttempt(move)
+            beginTurn()   // recompute legal moves at the same dice → back to .picking
+        } else {
+            recordTurn(mover: game.currentPlayer, move: move)
+            finishTurn()
+        }
+    }
+
+    /// Resign on the human's behalf (#74): discard any half-move built this turn,
+    /// award the win to the AI, and enter `.gameOver` — the same terminal state a
+    /// played-out loss reaches, so `onGameOver` fires and the loss is recorded. No-op
+    /// once the game is over, while the AI is thinking/animating (`canSurrender`
+    /// guards both), or in a human-vs-human session (no AI side to award the win to).
+    public func surrender() {
+        guard canSurrender, let aiColor else { return }
+        for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+        moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
+        clearSelection()
+        selectableSources = []
+        legalMoves = []
+        record.outcome = aiColor
+        phase = .gameOver(winner: aiColor)
+        onGameOver?(aiColor)
     }
 
     /// Reset to a fresh game, current player rolling first.
@@ -502,6 +557,26 @@ public final class GameSession: ObservableObject {
             move: move,
             dice: (game.dice.die1.value, game.dice.die2.value)
         ))
+    }
+
+    // ── Drill seeding (#63) ───────────────────────────────────────────────────
+
+    /// Stand up a session at an arbitrary position for the post-game drill: seed the
+    /// board from `boardStacks`, set `mover` to play under the given dice, and land
+    /// in `.picking`. Always **human-vs-human** (`aiColor: nil`) so no AI auto-moves;
+    /// the caller sets `onMoveAttempt` to evaluate the player's tries. The agent is
+    /// kept only so the live win-probability overlay still works.
+    public static func drill(boardStacks: [[Color]],
+                             die1: Int, die2: Int,
+                             mover: Color,
+                             agent: Agent? = nil,
+                             config: GameConfig = .standard) -> GameSession {
+        let session = GameSession(startingPlayer: mover, config: config, agent: agent, aiColor: nil)
+        for i in session.game.board.points.indices where i < boardStacks.count {
+            session.game.board.setPoint(i, pieces: boardStacks[i])
+        }
+        session.setManualDice(die1, die2)   // → beginTurn → .picking at this position
+        return session
     }
 
     // ── Resume from a save ────────────────────────────────────────────────────

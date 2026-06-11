@@ -10,6 +10,8 @@ detail. Read it when implementing or modifying anything under `ai/`.
 
 **1-ply evaluation** (`_evaluate_moves_batch`): For each candidate move, apply it to the board, encode the resulting position from the *opponent's* perspective (since after our move it's their turn), run a batched forward pass, then return `1 - opponent_value` as our score. Winning moves are short-circuited to score 1.0 before the forward pass.
 
+**Exact-race leaves** (`_exact_value`, used by all three search depths): when the `Agent` was constructed with a `bearoff` DB, every position that would be sent to the net is first probed with `ai.bearoff.exact_value_on_roll` from the same perspective the encoder would use; exact races get DB equity instead of a net call (in 2-ply this is done via a placeholder-and-scatter pass so the remaining net evals still run as one batch; in N-ply it also short-circuits pass-positions). `bearoff` is optional — without it behavior is unchanged.
+
 **2-ply evaluation** (`_evaluate_moves_2ply_batch`): Expectimax. For each candidate move, iterate over all 21 distinct dice outcomes (doubles count once with weight 1/36; others weight 2/36). For each outcome, enumerate the opponent's legal responses, encode all resulting positions in one big batch *from our perspective* (after the reply we are on roll again — the net always values the player to move), and take the minimum over the opponent's choices (they minimize our value). An opponent reply that wins outright short-circuits the outcome to 0. Our expected score for a candidate move is the probability-weighted average across all dice outcomes. Agrees exactly with `_evaluate_moves_nply` at depth 2 with pruning disabled (regression-tested).
 
 **N-ply evaluation with branch pruning** (`_evaluate_moves_nply`): Recursive expectimax generalising to arbitrary depth. At depth=1 it delegates to `_evaluate_moves_batch`. At depth>1, for each candidate move it iterates all 21 dice outcomes; for each outcome it calls `_evaluate_moves_batch` on all opponent replies as a quick 1-ply pre-screen, then prunes the replies via `_prune_branches` (see below) and recurses at depth-1 on the survivors. Pass-positions (no opponent moves) are collected and resolved in a single deferred batch. The per-candidate body is wrapped in `try/finally` so the applied move is always undone — even when `_TimeoutError` unwinds the recursion from a deeper frame mid-iteration (without this, enclosing frames would leak their applied moves and corrupt the board). Raises the module-private `_TimeoutError` if a `deadline` (monotonic timestamp) is exceeded — callers catch this to discard partial results.
@@ -97,7 +99,7 @@ Construction: `sizes = [input_size] + hidden_sizes + [1]`; one `nn.Linear(sizes[
 
 ## checkpoint_io.py
 
-Handles saving and loading model checkpoints. The canonical entry point for loading is `load_agent_from_checkpoint(path, config, device)` which returns a ready-to-use `(Agent, meta)` pair — never construct an `Agent` manually from a checkpoint.
+Handles saving and loading model checkpoints. The canonical entry point for loading is `load_agent_from_checkpoint(path, config, device)` which returns a ready-to-use `(Agent, meta)` pair — never construct an `Agent` manually from a checkpoint. When `use_bearoff_db` is true in config, it also attaches the bear-off DB to the returned `Agent`, so standalone consumers (eval-gold, play, lookahead-eval) get exact race play for free.
 
 **Checkpoint format (format_version=2)**: a dict saved by `torch.save` containing:
 - `state_dict`: network weights
@@ -115,6 +117,24 @@ Handles saving and loading model checkpoints. The canonical entry point for load
 **`save_checkpoint(path, evaluator, config, optimizer=None)`**: saves format_version=2 always. Optimizer state is included if `optimizer` is provided.
 
 **`load_state_dict(path, device)`**: lower-level function that returns `(migrated_state_dict, meta_dict)`. Used internally and by the training loop to load optimizer state without constructing a full Agent.
+
+---
+
+## bearoff.py
+
+Exact equity for pure-race positions. Once a Plakoto position has **no pinned checkers anywhere and every stack inside its owner's home quadrant**, no future contact is possible and the game is an exactly solvable race — the net's estimate can be replaced with ground truth.
+
+**One-sided database** (`BearoffDB`): a state is a count-tuple `(c_1..c_6)` — `c_d` checkers at distance `d` from the bear-off slot, `sum ≤ 15` — giving C(21,6) = 54,264 states (the same DB serves both colors; distances are color-agnostic). For each state, `pmf[row]` holds the exact probability distribution of the number of rolls needed to bear everything off under **roll-minimizing play** (the standard one-sided approximation; truly equity-optimal play can depend on the opponent, but the error is negligible).
+
+**Build algorithm** (`BearoffDB.build`): states are processed in increasing-pip order, so every non-pass successor is already solved. For each state and each of the 21 weighted dice outcomes, move enumeration is **delegated to `domain.move_generation.legal_moves` on a synthetic one-sided board** (Black checkers on points 1..6, bear-off slot 0) — this guarantees the DB replicates the engine's exact rules, including *exact-die bear-off*, which means a race can stall on pass rolls. The chosen successor is the one minimizing exact expected rolls (`exp_rolls`, computed untruncated via `E = (1 + Σ w_r·E_succ) / (1 − p_pass)`). Pass rolls keep the state unchanged and are folded in closed form: `P(s,n) = base[n] + p_pass·P(s,n−1)`. The pmf is truncated at `N_MAX = 128` rolls (exact-die bear-off makes the worst states very slow — 15 checkers at distance 1 average ≈39 rolls with a geometric pass tail); the build raises if total truncated mass exceeds 1e-6. Build takes a few minutes; the result is cached as compressed npz (`models/bearoff_db.npz` by default, `format_version=1`) and `load_or_build()` loads the cache when present. **The trainer builds the DB eagerly before spawning workers** so the (non-atomic) cache write happens exactly once.
+
+**Two-sided win probability** (`win_prob_on_roll(me, opp)`): exact P(player on roll wins) = `Σ_{n≥1} pmf_me[n] · (1 − cdf_opp[n−1])` — I win iff I finish on my n-th roll and the opponent still needs ≥ n. Terminal edges short-circuit (`sum(me)==0` → 1.0, `sum(opp)==0` → 0.0).
+
+**Race detector** (`race_state(board)`): single pass over points 1..board_size; returns `(white_counts, black_counts)` by distance, or `None` if any checker is pinned or outside its owner's home. White's distance at point `i` is `board_size+1−i`, Black's is `i`.
+
+**Value hook** (`exact_value_on_roll(board, persp_is_white, db)`): returns the exact win probability of the perspective player *assuming they are on roll* — deliberately the same quantity the value net answers for an encoded position — or `None` outside exact races (or when `db is None`). All integration points (agent leaf evals, TD targets) call this and fall back to the net on `None`.
+
+Config knobs: `use_bearoff_db` (default true) and `bearoff_db_path` (default `models/bearoff_db.npz`). `config-test.yml` disables it to keep tests fast.
 
 ---
 
@@ -146,11 +166,11 @@ where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted t
 
 The main orchestrator. Constructed with `(board_evaluator, board_encoder, config)`.
 
-**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `trained_model.pth`), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`.
+**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `trained_model.pth`), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
-1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game.
-2. `_ingest_trajectory`: forward-pass all `T+1` states once (eval mode, no_grad) to get bootstrap values, compute λ-returns via `compute_lambda_returns`, push all `(state, target)` pairs into the replay buffer.
+1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
+2. `_ingest_trajectory`: forward-pass all `T+1` states once (eval mode, no_grad) to get bootstrap values; where `exact_values` is non-NaN, **overwrite the bootstrap value with the exact equity** (λ-returns then bootstrap on ground truth, propagating it backward into contact play); compute λ-returns via `compute_lambda_returns`; finally pin the targets of the exact-race states themselves to their exact values; push all `(state, target)` pairs into the replay buffer. Trajectories without an `exact_values` key (or with `use_bearoff_db: false`) train exactly as before.
 3. `_train_minibatches`: run `updates_per_game` Adam steps on randomly sampled minibatches from the replay buffer using `binary_cross_entropy_with_logits`.
 
 **Exploration**: `_select_move_self_play` applies ε-softmax: with probability `1 - ε` pick the greedy best move; with probability `ε` sample from a softmax over scores divided by `exploration_temperature`.
@@ -173,9 +193,9 @@ The main orchestrator. Constructed with `(board_evaluator, board_encoder, config
 
 Runs inside a worker subprocess spawned by the parallel training loop.
 
-`worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
+`worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, bear-off DB (cache load only — the trainer builds it before spawning), and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
 
-`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)`. Returns trajectory dict.
+`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
 `_select_self_play_move`: ε-softmax over `agent.evaluate_moves` scores. With probability `1 - ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature`.
 

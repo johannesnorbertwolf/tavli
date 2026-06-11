@@ -35,6 +35,24 @@ struct GameView: View {
     /// Drives the move-history sheet (#60).
     @State private var showHistory = false
 
+    /// Drives the post-game review sheet (#62).
+    @State private var showReview = false
+
+    /// Drives the post-game drill sheet (#63).
+    @State private var showDrill = false
+
+    /// Surrender flow (#74). `showWinProbWarning` is the preliminary "you can still
+    /// win" alert (shown only when the human's win probability exceeds the threshold);
+    /// `showSurrenderConfirm` is the standard confirmation; `surrenderWinPct` is the
+    /// rounded percentage captured for the warning copy.
+    @State private var showWinProbWarning = false
+    @State private var showSurrenderConfirm = false
+    @State private var surrenderWinPct = 0
+
+    /// Above this human win probability, resigning first shows the preliminary
+    /// "you can still win" alert before the standard confirmation (#74).
+    private let surrenderWarningThreshold = 0.10
+
     private var flipped: Bool { humanColor == .black }
 
     var body: some View {
@@ -93,6 +111,11 @@ struct GameView: View {
                     BackButton(action: onBack)
                     if !session.isTerminal {
                         SaveButton(action: presentSaveDialog)
+                        // Disabled (not hidden) while the AI thinks so the row layout
+                        // stays put; `canSurrender` gates both the button and the intent.
+                        SurrenderButton(action: onSurrenderTapped)
+                            .disabled(!session.canSurrender)
+                            .opacity(session.canSurrender ? 1 : 0.4)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -105,11 +128,24 @@ struct GameView: View {
 
                 if case .gameOver(let winner) = session.phase {
                     WinOverlayView(winner: winner, stats: stats, onNewGame: onNewGame,
-                                   onHistory: { showHistory = true })
+                                   onHistory: { showHistory = true },
+                                   onReview: { showReview = true },
+                                   onDrill: { showDrill = true })
                 }
             }
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
+            }
+            .fullScreenCover(isPresented: $showReview) {
+                GameReviewView(record: session.record,
+                               agent: session.agent,
+                               humanColor: humanColor)
+            }
+            .fullScreenCover(isPresented: $showDrill) {
+                DrillView(record: session.record,
+                          precomputed: nil,
+                          agent: session.agent,
+                          humanColor: humanColor)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
                 TextField("Name", text: $saveName)
@@ -120,6 +156,27 @@ struct GameView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Name this save so you can find it on the start screen.")
+            }
+            // Preliminary "you can still win" alert (#74), shown only when the human's
+            // win probability is above the threshold. Confirming here advances to the
+            // standard confirmation. The second alert is flipped on via `async` so it
+            // presents only after this one has fully dismissed (chained alerts on the
+            // same view otherwise race and the second can fail to appear).
+            .alert("Are you sure you want to give up?", isPresented: $showWinProbWarning) {
+                Button("I'm sure") { DispatchQueue.main.async { showSurrenderConfirm = true } }
+                Button("Keep playing", role: .cancel) {}
+            } message: {
+                Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
+            }
+            // Standard confirmation (#74). Confirming ends the game (AI recorded as
+            // winner) and clears the auto-save slot via `onAutosave` — the same path a
+            // played-out loss takes through the per-move auto-save hook below.
+            .alert("Are you sure you want to give up?", isPresented: $showSurrenderConfirm) {
+                Button("Give up", role: .destructive) {
+                    session.surrender()
+                    onAutosave()
+                }
+                Button("Keep playing", role: .cancel) {}
             }
             // Auto-save after every move (#61): `history` grows by one per finished
             // turn — human, AI, or forced pass — so this fires once per ply. The
@@ -133,6 +190,19 @@ struct GameView: View {
     private func presentSaveDialog() {
         saveName = Self.defaultSaveName()
         showingSaveDialog = true
+    }
+
+    /// Begin the surrender flow (#74). Above the win-probability threshold the
+    /// player is warned they can still win before the standard confirmation; at or
+    /// below it, the standard confirmation is shown directly.
+    private func onSurrenderTapped() {
+        let p = session.humanWinProbability ?? 0
+        if p > surrenderWarningThreshold {
+            surrenderWinPct = Int((p * 100).rounded())
+            showWinProbWarning = true
+        } else {
+            showSurrenderConfirm = true
+        }
     }
 
     /// A timestamped fallback name (e.g. "Game · Jun 2, 3:04 PM") used when the
@@ -215,6 +285,29 @@ private struct SaveButton: View {
             .background(ChromeTheme.doneTint.opacity(0.22))
             .cornerRadius(10)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.doneTint.opacity(0.6), lineWidth: 1))
+            .foregroundStyle(ChromeTheme.ink)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Caramel pill that opens the resign confirmation flow (#74). Tinted apart from
+/// Back/Save with a muted brick red to read as the one game-ending action.
+private struct SurrenderButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "flag.fill")
+                Text("Resign")
+            }
+            .font(.callout.bold())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(ChromeTheme.surrenderTint.opacity(0.22))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.surrenderTint.opacity(0.6), lineWidth: 1))
             .foregroundStyle(ChromeTheme.ink)
         }
         .buttonStyle(.plain)
@@ -336,6 +429,8 @@ private struct WinOverlayView: View {
     let stats: HumanGameStats
     let onNewGame: () -> Void
     let onHistory: () -> Void
+    let onReview: () -> Void
+    let onDrill: () -> Void
 
     var body: some View {
         ZStack {
@@ -354,10 +449,16 @@ private struct WinOverlayView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.3), lineWidth: 1))
                     .foregroundStyle(.white)
                     .buttonStyle(.plain)
-                Button("History", action: onHistory)
-                    .font(.body.bold())
-                    .foregroundStyle(.white.opacity(0.85))
-                    .buttonStyle(.plain)
+                HStack(spacing: 28) {
+                    Button("Review game", action: onReview)
+                        .buttonStyle(.plain)
+                    Button("Drill blunders", action: onDrill)
+                        .buttonStyle(.plain)
+                    Button("History", action: onHistory)
+                        .buttonStyle(.plain)
+                }
+                .font(.body.bold())
+                .foregroundStyle(.white.opacity(0.85))
             }
         }
     }
@@ -471,18 +572,22 @@ private struct HistoryRow: View {
 
 /// Centralizes the engine-`Color` → display mappings (name + checker color) so a
 /// future visual style can swap them in one place. Black renders as "Red".
-private enum ChromeTheme {
-    static let ink = SColor(hex: 0x3a2510)            // frame text from the Caramel palette
-    static let undoTint = SColor(hex: 0xa87a3e)       // beechwood amber
-    static let doneTint = SColor(hex: 0x6a8a4a)       // muted olive-green
+/// Shared with `GameReviewView` (#62), so it stays internal rather than private.
+enum ChromeTheme {
+    // Explicit `SwiftUI.Color` (not the file-private `SColor` alias) so this
+    // internal type — shared with `GameReviewView` — exposes no private type.
+    static let ink = SwiftUI.Color(hex: 0x3a2510)            // frame text from the Caramel palette
+    static let undoTint = SwiftUI.Color(hex: 0xa87a3e)       // beechwood amber
+    static let doneTint = SwiftUI.Color(hex: 0x6a8a4a)       // muted olive-green
+    static let surrenderTint = SwiftUI.Color(hex: 0xb05a44)  // muted brick red (resign)
 
     static func displayName(_ c: TavliEngine.Color) -> String {
         c == .white ? "White" : "Red"
     }
 
-    static func checkerColor(_ c: TavliEngine.Color) -> SColor {
-        c == .white ? SColor(hex: 0xfbeed1)           // ivory (board triangle fill)
-                    : SColor(hex: 0xa83a2a)           // caramel-harmonized deep red
+    static func checkerColor(_ c: TavliEngine.Color) -> SwiftUI.Color {
+        c == .white ? SwiftUI.Color(hex: 0xfbeed1)           // ivory (board triangle fill)
+                    : SwiftUI.Color(hex: 0xa83a2a)           // caramel-harmonized deep red
     }
 }
 

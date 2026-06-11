@@ -10,6 +10,7 @@ or modifying anything here.
 | `board_encoder.py` | `BoardEncoder` → flat float32 vector, always from the current player's perspective (board flip). Three checkpoint-tagged versions; current `unary_v3` (486-dim, +18 smart features). |
 | `board_evaluator.py` | `BoardEvaluator` MLP → win prob ∈ [0,1]. `forward` (sigmoid) vs `forward_logits` (raw). |
 | `checkpoint_io.py` | Save/load checkpoints (format_version=2, with Adam state). Encoder-version + legacy-layer-name back-compat. |
+| `bearoff.py` | Exact race equity: one-sided bear-off database (`BearoffDB`, DP over dice outcomes, disk-cached npz) + exact-race detector (`race_state`) + `exact_value_on_roll`. Replaces net evals and TD targets with ground truth in pure races. |
 | `td_lambda_training.py` | Training loop (`TdLambdaTraining`), `ReplayBuffer`, `compute_lambda_returns`. Forward-view TD(λ), Adam, parallel self-play workers. |
 | `self_play_worker.py` | Worker subprocess: plays self-play games, streams trajectories to the trainer. |
 | `evaluator.py` | Older vs-random eval helper (`AIEvaluator`); likely vestigial. |
@@ -22,3 +23,4 @@ or modifying anything here.
 - **Search width is bounded only by move pruning** (`_prune_branches`: relative cutoff + `max_branch`). The 21 dice chance-nodes are never pruned — the dice distribution stays exact.
 - **N-ply search wraps each applied move in `try/finally`** so `_TimeoutError` unwinding never leaks an un-undone move onto the board.
 - **Workers set `torch.set_num_threads(1)`** and run in `eval()` mode; they're seeded deterministically from `base_seed`.
+- **The bear-off DB is built once and cached** (`models/bearoff_db.npz`, gitignored). The trainer builds it eagerly before spawning workers so workers only load the cache; `load_agent_from_checkpoint()` attaches it automatically when `use_bearoff_db` is true.

@@ -56,7 +56,7 @@ so the game flow is validated without a simulator.
   — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
   of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
   `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
   applies the half-move to the board and auto-finishes when the move is complete or the only
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
@@ -164,6 +164,18 @@ so the game flow is validated without a simulator.
   game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
   **not** fire it, so resuming a finished game never double-counts.
 
+- **Surrender / resign (#74).** `surrender()` lets the human concede: it discards any half-move
+  built this turn (`board.undoHalfMove`), records the AI side as the winner, and enters `.gameOver`
+  — the same terminal state a played-out loss reaches, so `onGameOver(aiColor)` fires and the loss
+  is counted normally. Gated by `canSurrender` (true only on the human's own `awaitingRoll`/`picking`/
+  `moving` phase of a game with an AI side — never mid-AI-think/animation or once over), so a double
+  tap or a tap during the AI's turn is a no-op and the hook still fires once. It records nothing to
+  `record.plies` (no ply was played), so the app's per-move auto-save hook does **not** fire on
+  resign — the view clears the auto-save slot explicitly via `onAutosave` after confirming.
+  `humanWinProbability` re-expresses WHITE's `winProbability` for the human side (or `nil` h-vs-h)
+  and drives the UI's double-confirm threshold; the engine owns the perspective flip, the view owns
+  the 10% policy.
+
 ## Save & load (#61, replay-based)
 
 Persist and resume in-progress games the same way the CLI does: **store only the move
@@ -252,6 +264,79 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
   `HumanGameLogStore` (default `.default()`), `record(humanWon:)` appends + persists immediately
   and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
   wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
+
+## Post-game blunder review (#62)
+
+`GameReview.swift` is the on-device analogue of the CLI's `review` command
+(`play/loop.py:_handle_review` → `_collect_blunders`): after a game ends it replays the canonical
+`GameRecord` and re-evaluates each human ply to surface the moves where the player deviated most
+from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so it's covered by
+`swift test` (`GameReviewTests`).
+
+- **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:onEvaluation:progress:)`** —
+  replays the record from the initial position, advancing the board by applying each ply's recorded
+  half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
+  At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
+  **more than one legal move** (a single legal move is no decision — mirrors the CLI's
+  `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
+  (default **2** — fast, and the depth on-device play uses; the same parity-validated scoring the
+  live AI uses), with **no wall-clock deadline** since analysis is offline. `evaluateMovesNply`
+  capture/restores stacks, so the working board is never corrupted. The played move is located among
+  the legal moves by **multiset-comparing `(from, to)` pairs** (order-independent — the recorded
+  order may differ from the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find`
+  match). `onEvaluation` fires per evaluated ply **as it is scored** (lets the UI stream blunders —
+  show the first one immediately while the rest are still being found); `progress` fires once per
+  evaluated human ply with `(done, total)`.
+- **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
+  `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
+  `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
+  `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
+- **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
+  those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters
+  at any threshold (the iPad UI fixes it at **10%**, matching the CLI default; a configurable one is
+  tracked in #77).
+
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
+task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
+found (the panel notes it's still analyzing) while the rest are scored in the background; on
+completion the model settles on the authoritative full set returned by `analyze`. The screen is a
+**full-screen, board-centric** mode (a `fullScreenCover` from the win overlay): the position the
+player faced fills the screen, with a panel (played→best + win-prob gap, a Best/Yours/None move
+overlay) and Prev/Next/swipe to page through blunders. The drill is launched the same way (full
+screen), with the already-streamed blunders handed over as a precomputed `GameReviewResult`.
+
+## Post-game drill (#63)
+
+The interactive sibling of the review — the on-device analogue of the CLI's `drill` command
+(`play/loop.py:_handle_drill` / `_drill_inner`): step through the same blunders, and for each, ask
+the player to find a better move **on the real board**. It reuses #62's blunder detection
+(`GameReview`/`PlyEvaluation`) and two small additions to `GameSession`:
+
+- **Attempt mode** (`onMoveAttempt: (@MainActor (Move) -> Void)?`). When set, the session runs in
+  attempt mode: completing a move (via the normal `commitHalfMove`/`confirm` tap flow) reports it
+  to the hook and then **rolls it back** to the pre-move position (`board.undoHalfMove` per built
+  half-move, then `beginTurn()` re-arms `.picking` at the same dice) instead of recording it and
+  advancing the turn. `record.plies`/`undoHistory` and the turn are left untouched, so a finished
+  game's record is never mutated and the player can re-attempt the position indefinitely. Both
+  completion sites funnel through one private `completeMove()`; with the hook nil (normal play)
+  behaviour is unchanged.
+- **Drill seeder** (`GameSession.drill(boardStacks:die1:die2:mover:agent:config:)`). Stands up a
+  **human-vs-human** session (`aiColor: nil`, so no AI auto-moves) at an arbitrary position: seed
+  each point via `setPoint`, then `setManualDice` → `.picking` with `mover` to play.
+
+Grading reuses `Agent.scoreCandidate(boardStacks:move:mover:depth:)` (in `GameReview.swift`): it
+rebuilds an **isolated** board from the stacks, reconstructs the attempted move against it, and
+scores that single candidate at 2-ply via `evaluateMovesNply` — identical to that move's entry in a
+full ranking, so it's directly comparable to the `PlyEvaluation`'s `bestScore`, and safe to run off
+the main actor (the attempt's own `Move` references the live drill board the main actor keeps
+reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_inner` (correct =
+`gap ≤ max(0.01, best·0.03)`, close = `gap ≤ max(0.04, best·0.10)`, else wrong).
+
+The app side (`DrillView` + `@MainActor DrillModel`) analyzes (or takes a precomputed
+`GameReviewResult` from the review screen), seeds a card per blunder, wires `onMoveAttempt` to grade
+off the main actor, reveals the best move with `SourceRingView`/`TargetHighlightView`, and tracks
+solved/skipped for the "Drill complete" summary. Launchable from the win overlay and the review
+screen.
 
 ## Layout
 

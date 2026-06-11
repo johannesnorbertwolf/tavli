@@ -8,6 +8,7 @@ __pycache__/
 .idea/
 .idx/
 trained_model.pth
+models/bearoff_db.npz
 last_game_log.txt
 training_log_td.txt
 nohup.out

@@ -144,6 +144,12 @@ class ConfigLoader:
     def get_min_buffer_to_train(self):
         return int(self.config.get("min_buffer_to_train", 2000))
 
+    def get_use_bearoff_db(self):
+        return bool(self.config.get("use_bearoff_db", True))
+
+    def get_bearoff_db_path(self):
+        return self.config.get("bearoff_db_path", "models/bearoff_db.npz")
+
     def get_play_eval_lookahead_plies(self):
         return int(self.config.get("play", {}).get("eval_lookahead_plies", 4))
 
