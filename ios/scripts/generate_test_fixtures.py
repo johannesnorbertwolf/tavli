@@ -31,7 +31,6 @@ SEED = 12345
 NUM_GAMES = 12
 MAX_PLIES = 80
 SAMPLE_EVERY = 3            # sample roughly every Nth ply
-GOLD_PATH = "models/gold_v9.pth"
 
 
 def serialize_points(board: Board):
@@ -86,10 +85,13 @@ def main():
     encoder = BoardEncoder(config, version=UNARY_V3)
 
     # Optional: load the trained agent so we can also record 1-ply scores / best move.
+    # Disable bear-off DB so scores match pure Core ML output (the Swift agent has no DB).
     agent = None
     try:
         from ai.checkpoint_io import load_agent_from_checkpoint
-        agent, _meta = load_agent_from_checkpoint(os.path.join(ROOT, GOLD_PATH), config)
+        gold_model_path = config.get_gold_model_path()
+        agent, _meta = load_agent_from_checkpoint(os.path.join(ROOT, gold_model_path), config)
+        agent.bearoff = None
     except Exception as exc:  # noqa: BLE001
         print(f"[warn] could not load agent ({exc!r}); scores omitted", file=sys.stderr)
 
