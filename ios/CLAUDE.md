@@ -23,10 +23,11 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 
 | Type | What it is |
 |---|---|
-| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook. |
+| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook; **attempt mode** (`onMoveAttempt`) + `drill(...)` seeder for the post-game drill (#63). |
 | `MoveBuilder` | Incrementally composes a `Move` from half-moves against the live board; order-independent "bag" model; Pasch multi-hop + non-Pasch unmerge. |
 | `SearchConfig` / `Agent` search (#58) | On-device multi-ply expectimax: 2-ply baseline + anytime deepening on an isolated board copy. Leaf scoring mirrors the CLI; root strategy is iOS-specific. See `REFERENCE.md`. |
 | `GameRecord` / `GameSave.swift` | Canonical per-game value type + Codable wire format. Replay-based saves: store move history only, never board state (model-independent). |
+| `GameReview.swift` (#62, #63) | Post-game blunder analysis: replays a `GameRecord`, re-ranks every human ply at 2-ply, returns the moves that fell ≥10% short of the AI's best (streamed via `onEvaluation`). On-device port of the CLI `review` command. Also exposes `Agent.scoreCandidate` (single-move grading for the drill). See `REFERENCE.md`. |
 | `SaveStore.swift` | File-backed JSON saves under `Documents/SavedGames`; one overwritten autosave slot + named manual saves; synchronous IO; schema-versioned. |
 | `HumanGameStats.swift` | iPad analogue of the CLI human-record summary + its file-backed log/store (`HumanStatsStore`). |
 

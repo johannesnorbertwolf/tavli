@@ -16,6 +16,8 @@ neither depends on views.
 | `DiceView.swift` | T8/#46 — `DieFace`/`DiceRow`, the center-bar `BoardDiceView`, `ManualDiceControl`, `usedDiceFlags`. |
 | `PlayableBoardView.swift` | T7 — interactive board; tap/drag → `GameSession` intents; `TargetHighlightView`, `SourceRingView`, `HighlightStyle`. |
 | `GameView.swift` | T9/T10 — responsive game chrome + assembly; turn indicator, controls, win overlay, history sheet, save dialog. Defines `ChromeTheme`. |
+| `GameReviewView.swift` | #62 — **full-screen** post-game blunder review (from the win overlay). `GameReviewModel` runs `GameReview.analyze` off the main actor and **streams** blunders in; the view is board-centric, one blunder at a time (big board + Prev/Next/swipe), with a Best/Yours/None move overlay and played→best + win-prob gap. Pure presentation. |
+| `DrillView.swift` | #63 — **full-screen** interactive post-game drill (from the win overlay + the review screen). Per blunder, seeds a live board via `GameSession.drill` and grades the player's attempt (`onMoveAttempt` → `Agent.scoreCandidate`) as correct/close/wrong; "Show solution" reuses `SourceRingView`/`TargetHighlightView`. Responsive board-centric card; `DrillModel` drives it. |
 | `DebugOverlay.swift` | T11 — off-by-default eval panel (win-prob meter, top-3 moves, decision undo). Read-only. |
 | `OpeningRollView.swift` | #33 — opening-roll ceremony resolving the starting player. |
 | `RootView.swift` | T10/#61 — app root: mode picker ↔ opening roll ↔ game; owns all save/load + stats wiring. |

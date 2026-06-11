@@ -35,6 +35,12 @@ struct GameView: View {
     /// Drives the move-history sheet (#60).
     @State private var showHistory = false
 
+    /// Drives the post-game review sheet (#62).
+    @State private var showReview = false
+
+    /// Drives the post-game drill sheet (#63).
+    @State private var showDrill = false
+
     /// Surrender flow (#74). `showWinProbWarning` is the preliminary "you can still
     /// win" alert (shown only when the human's win probability exceeds the threshold);
     /// `showSurrenderConfirm` is the standard confirmation; `surrenderWinPct` is the
@@ -122,11 +128,24 @@ struct GameView: View {
 
                 if case .gameOver(let winner) = session.phase {
                     WinOverlayView(winner: winner, stats: stats, onNewGame: onNewGame,
-                                   onHistory: { showHistory = true })
+                                   onHistory: { showHistory = true },
+                                   onReview: { showReview = true },
+                                   onDrill: { showDrill = true })
                 }
             }
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
+            }
+            .fullScreenCover(isPresented: $showReview) {
+                GameReviewView(record: session.record,
+                               agent: session.agent,
+                               humanColor: humanColor)
+            }
+            .fullScreenCover(isPresented: $showDrill) {
+                DrillView(record: session.record,
+                          precomputed: nil,
+                          agent: session.agent,
+                          humanColor: humanColor)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
                 TextField("Name", text: $saveName)
@@ -410,6 +429,8 @@ private struct WinOverlayView: View {
     let stats: HumanGameStats
     let onNewGame: () -> Void
     let onHistory: () -> Void
+    let onReview: () -> Void
+    let onDrill: () -> Void
 
     var body: some View {
         ZStack {
@@ -428,10 +449,16 @@ private struct WinOverlayView: View {
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.3), lineWidth: 1))
                     .foregroundStyle(.white)
                     .buttonStyle(.plain)
-                Button("History", action: onHistory)
-                    .font(.body.bold())
-                    .foregroundStyle(.white.opacity(0.85))
-                    .buttonStyle(.plain)
+                HStack(spacing: 28) {
+                    Button("Review game", action: onReview)
+                        .buttonStyle(.plain)
+                    Button("Drill blunders", action: onDrill)
+                        .buttonStyle(.plain)
+                    Button("History", action: onHistory)
+                        .buttonStyle(.plain)
+                }
+                .font(.body.bold())
+                .foregroundStyle(.white.opacity(0.85))
             }
         }
     }
@@ -545,19 +572,22 @@ private struct HistoryRow: View {
 
 /// Centralizes the engine-`Color` → display mappings (name + checker color) so a
 /// future visual style can swap them in one place. Black renders as "Red".
-private enum ChromeTheme {
-    static let ink = SColor(hex: 0x3a2510)            // frame text from the Caramel palette
-    static let undoTint = SColor(hex: 0xa87a3e)       // beechwood amber
-    static let doneTint = SColor(hex: 0x6a8a4a)       // muted olive-green
-    static let surrenderTint = SColor(hex: 0xb05a44)  // muted brick red (resign)
+/// Shared with `GameReviewView` (#62), so it stays internal rather than private.
+enum ChromeTheme {
+    // Explicit `SwiftUI.Color` (not the file-private `SColor` alias) so this
+    // internal type — shared with `GameReviewView` — exposes no private type.
+    static let ink = SwiftUI.Color(hex: 0x3a2510)            // frame text from the Caramel palette
+    static let undoTint = SwiftUI.Color(hex: 0xa87a3e)       // beechwood amber
+    static let doneTint = SwiftUI.Color(hex: 0x6a8a4a)       // muted olive-green
+    static let surrenderTint = SwiftUI.Color(hex: 0xb05a44)  // muted brick red (resign)
 
     static func displayName(_ c: TavliEngine.Color) -> String {
         c == .white ? "White" : "Red"
     }
 
-    static func checkerColor(_ c: TavliEngine.Color) -> SColor {
-        c == .white ? SColor(hex: 0xfbeed1)           // ivory (board triangle fill)
-                    : SColor(hex: 0xa83a2a)           // caramel-harmonized deep red
+    static func checkerColor(_ c: TavliEngine.Color) -> SwiftUI.Color {
+        c == .white ? SwiftUI.Color(hex: 0xfbeed1)           // ivory (board triangle fill)
+                    : SwiftUI.Color(hex: 0xa83a2a)           // caramel-harmonized deep red
     }
 }
 
