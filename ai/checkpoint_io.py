@@ -83,6 +83,7 @@ def load_agent_from_checkpoint(path: str, config, device: Optional[torch.device]
     from ai.board_evaluator import BoardEvaluator
     from ai.board_encoder import BoardEncoder
     from ai.agent import Agent
+    from ai.bearoff import BearoffDB
 
     if device is None:
         device = torch.device("cpu")
@@ -91,4 +92,7 @@ def load_agent_from_checkpoint(path: str, config, device: Optional[torch.device]
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"]).to(device)
     evaluator.load_state_dict(state_dict)
     evaluator.eval()
-    return Agent(evaluator, encoder), meta
+    bearoff = None
+    if config.get_use_bearoff_db():
+        bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path())
+    return Agent(evaluator, encoder, bearoff=bearoff), meta

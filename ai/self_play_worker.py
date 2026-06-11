@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from ai.agent import Agent
+from ai.bearoff import BearoffDB, exact_value_on_roll
 from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from ai.checkpoint_io import ENCODER_VERSION_CURRENT
@@ -45,7 +46,12 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     t0 = time.perf_counter()
     game = Game(config)
 
+    def state_exact_value():
+        v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
+        return float("nan") if v is None else float(v)
+
     states = [encoder.encode_board(game.board, game.current_player == WHITE)]
+    exact_values = [state_exact_value()]
     movers = []
 
     while True:
@@ -63,11 +69,13 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
             game.switch_turn()
         movers.append(is_white_to_move)
         states.append(encoder.encode_board(game.board, game.current_player == WHITE))
+        exact_values.append(state_exact_value())
 
         if game.is_over():
             return {
                 "states": states,
                 "movers": movers,
+                "exact_values": exact_values,
                 "terminal_winner_white": (game.get_winner() == WHITE),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,
@@ -83,7 +91,11 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
     encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes))
     evaluator.eval()
-    agent = Agent(evaluator, encoder)
+    bearoff = None
+    if config.get_use_bearoff_db():
+        # The trainer builds the DB before spawning workers; this only loads the cache.
+        bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path(), progress=False)
+    agent = Agent(evaluator, encoder, bearoff=bearoff)
 
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)

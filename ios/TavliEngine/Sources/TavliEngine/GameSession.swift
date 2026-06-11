@@ -115,6 +115,24 @@ public final class GameSession: ObservableObject {
         return false
     }
 
+    /// Whether the human may resign right now (#74): only on the human's own move
+    /// of a game with an AI side — never mid-AI-think/animation or once it's over.
+    public var canSurrender: Bool {
+        guard aiColor != nil else { return false }
+        switch phase {
+        case .awaitingRoll, .picking, .moving: return true
+        case .aiThinking, .animating, .gameOver: return false
+        }
+    }
+
+    /// WHITE's latest `winProbability` re-expressed for the human side (the AI's
+    /// opponent), or `nil` in a human-vs-human session. Drives the surrender
+    /// double-confirm threshold (#74).
+    public var humanWinProbability: Double? {
+        guard let human = aiColor?.opponent else { return nil }
+        return human.isWhite ? winProbability : 1 - winProbability
+    }
+
     /// Load the bundled Core ML value model and wrap it in an `Agent`.
     /// Returns `nil` when the model is absent so callers can fall back to random play.
     ///
@@ -239,6 +257,23 @@ public final class GameSession: ObservableObject {
             recordTurn(mover: game.currentPlayer, move: move)
             finishTurn()
         }
+    }
+
+    /// Resign on the human's behalf (#74): discard any half-move built this turn,
+    /// award the win to the AI, and enter `.gameOver` — the same terminal state a
+    /// played-out loss reaches, so `onGameOver` fires and the loss is recorded. No-op
+    /// once the game is over, while the AI is thinking/animating (`canSurrender`
+    /// guards both), or in a human-vs-human session (no AI side to award the win to).
+    public func surrender() {
+        guard canSurrender, let aiColor else { return }
+        for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+        moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
+        clearSelection()
+        selectableSources = []
+        legalMoves = []
+        record.outcome = aiColor
+        phase = .gameOver(winner: aiColor)
+        onGameOver?(aiColor)
     }
 
     /// Reset to a fresh game, current player rolling first.
