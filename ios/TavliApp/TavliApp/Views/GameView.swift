@@ -593,16 +593,15 @@ enum ChromeTheme {
 
 // MARK: - Previews
 
-#Preview("Landscape") {
+#Preview("Landscape", traits: .landscapeLeft) {
     GameView(session: GameSession())
-        .previewInterfaceOrientation(.landscapeLeft)
 }
 
 #Preview("Portrait") {
     GameView(session: GameSession())
 }
 
-#Preview("Undo/Done") {
+#Preview("Undo/Done", traits: .landscapeLeft) {
     let session = GameSession()
     session.setManualDice(3, 5)
     if let source = session.selectableSources.sorted().first,
@@ -610,7 +609,6 @@ enum ChromeTheme {
         session.commitHalfMove(from: source, to: target)
     }
     return GameView(session: session)
-        .previewInterfaceOrientation(.landscapeLeft)
 }
 
 #Preview("History") {
