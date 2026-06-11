@@ -8,8 +8,8 @@ checkpoints, eval, or the tournament system.
 ## Training loop (`ai/td_lambda_training.py`)
 
 Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
-1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], terminal_winner_white}`. Weights do not change mid-game.
-2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`). The post-terminal state's target is 0 (mover_T is the loser).
+1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white}`. Weights do not change mid-game. `exact_values` holds the exact bear-off DB equity for pure-race states (NaN elsewhere; see `ai/bearoff.py` and the `use_bearoff_db` knob).
+2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, overwrites `V[j]` with the exact equity wherever `exact_values[j]` is non-NaN (λ-returns then bootstrap on ground truth), then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`) and pins exact-race states' targets to their exact values. The post-terminal state's target is 0 (mover_T is the loser).
 3. All `T+1` `(encoded_state, target)` pairs are pushed into a `ReplayBuffer` (capacity ~50k, ring buffer, uniform sampling).
 4. `_train_minibatches` runs `updates_per_game` Adam steps of `binary_cross_entropy_with_logits(forward_logits, target)`. Optional linear LR warmup `0.1·lr → lr` over `lr_warmup_steps` optimizer steps. `max_grad_norm` clips the gradient L2 norm pre-Adam (not the eligibility trace as the old code did).
 
@@ -73,6 +73,8 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `min_buffer_to_train` | Don't start training until buffer holds this many samples |
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
 | `gold_model_path` | Reference model for eval |
+| `use_bearoff_db` | Exact race equity from the bear-off DB (`ai/bearoff.py`): replaces net evals at search leaves and TD bootstrap values/targets for pure-race states (no pins, all checkers home). `false` in `config-test.yml` to keep tests fast |
+| `bearoff_db_path` | Disk cache of the one-sided bear-off DB (npz, ~54k states, built once in ~1 min, gitignored) |
 | `play_time_budget_s` | Max wall-clock budget per AI move during play / `eval-lookahead` (safety ceiling; usually finishes earlier via `search_max_depth`) |
 | `search_relative_cutoff` | Move-pruning width: keep moves with `score >= best*(1-cutoff)` at each search node |
 | `search_max_branch` | Hard cap on moves expanded per search node, applied on top of `search_relative_cutoff` |

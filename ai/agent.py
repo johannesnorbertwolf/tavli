@@ -10,6 +10,7 @@ from domain.move_generation import legal_moves
 from domain.constants import WHITE, BLACK
 from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
+from ai.bearoff import exact_value_on_roll
 
 
 _DIE_SIDES = 6
@@ -33,11 +34,20 @@ class _TimeoutError(Exception):
 
 
 class Agent:
-    def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder):
+    def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder,
+                 bearoff=None):
         self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
+        # Optional ai.bearoff.BearoffDB: exact-race positions bypass the net and
+        # get exact equity at every leaf-evaluation site.
+        self.bearoff = bearoff
         # Depth actually reached by the most recent get_best_move call (search instrumentation).
         self.last_search_depth = 1
+
+    def _exact_value(self, board: Board, persp_is_white: bool) -> Optional[float]:
+        """Exact win prob of the perspective player on roll, or None outside
+        exact races. Mirrors the net's output semantics exactly."""
+        return exact_value_on_roll(board, persp_is_white, self.bearoff)
 
     def _model_device(self):
         return next(self.board_evaluator.parameters()).device
@@ -85,8 +95,12 @@ class Agent:
             if board.has_won(color):
                 scores[idx] = 1.0
             else:
-                encoded_afterstates.append(self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next))
-                encode_indices.append(idx)
+                exact = self._exact_value(board, is_whites_turn_next)
+                if exact is not None:
+                    scores[idx] = 1.0 - exact
+                else:
+                    encoded_afterstates.append(self.board_encoder.encode_board(board, is_whites_turn=is_whites_turn_next))
+                    encode_indices.append(idx)
             board.undo(token)
 
         if encoded_afterstates:
@@ -107,8 +121,22 @@ class Agent:
 
         dice = Dice(_DIE_SIDES)
 
-        all_encoded: List[np.ndarray] = []
+        # Leaf values are gathered into one flat array; exact-race leaves are
+        # resolved immediately via the bear-off DB, the rest in one net batch.
+        leaf_values: List[float] = []
+        pending_encoded: List[np.ndarray] = []
+        pending_slots: List[int] = []
         plans: List[Optional[List[Tuple[int, int, float, str]]]] = []
+
+        def add_leaf(persp_is_white: bool) -> None:
+            exact = self._exact_value(board, persp_is_white)
+            if exact is not None:
+                leaf_values.append(exact)
+            else:
+                leaf_values.append(0.0)  # placeholder, filled from the net batch
+                pending_slots.append(len(leaf_values) - 1)
+                pending_encoded.append(
+                    self.board_encoder.encode_board(board, is_whites_turn=persp_is_white))
 
         for m_c in possible_moves:
             token_c = board.apply(m_c, color)
@@ -120,27 +148,28 @@ class Agent:
             for (i, j, weight) in _DICE_OUTCOMES:
                 dice.set(i, j)
                 opp_moves = legal_moves(board, opponent_color, dice)
-                start = len(all_encoded)
+                start = len(leaf_values)
                 if not opp_moves:
-                    all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
-                    end = len(all_encoded)
+                    add_leaf(is_our_turn)
+                    end = len(leaf_values)
                     cand_plan.append((start, end, weight, "pass"))
                 else:
                     for m_o in opp_moves:
                         token_o = board.apply(m_o, opponent_color)
-                        all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_opp_turn))
+                        add_leaf(is_opp_turn)
                         board.undo(token_o)
-                    end = len(all_encoded)
+                    end = len(leaf_values)
                     cand_plan.append((start, end, weight, "opp_max"))
             plans.append(cand_plan)
             board.undo(token_c)
 
-        if all_encoded:
-            board_batch = torch.from_numpy(np.stack(all_encoded)).float().to(device)
+        if pending_encoded:
+            board_batch = torch.from_numpy(np.stack(pending_encoded)).float().to(device)
             with torch.no_grad():
-                values = self.board_evaluator(board_batch).squeeze(1).detach().cpu().numpy()
-        else:
-            values = np.zeros(0, dtype=np.float32)
+                net_values = self.board_evaluator(board_batch).squeeze(1).detach().cpu().numpy()
+            for slot, val in zip(pending_slots, net_values):
+                leaf_values[slot] = float(val)
+        values = np.asarray(leaf_values, dtype=np.float32)
 
         scores: List[float] = []
         for cand_plan in plans:
@@ -207,8 +236,12 @@ class Agent:
                     opp_moves = legal_moves(board, opponent_color, dice)
 
                     if not opp_moves:
-                        pass_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
-                        pass_weights.append(weight)
+                        exact = self._exact_value(board, is_our_turn)
+                        if exact is not None:
+                            expected += weight * exact
+                        else:
+                            pass_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
+                            pass_weights.append(weight)
                         continue
 
                     # 1-ply pre-screen to prune unpromising opponent replies
