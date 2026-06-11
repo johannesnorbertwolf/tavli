@@ -114,6 +114,86 @@ class TestAgentEvaluateMoves(unittest.TestCase):
         self.assertAlmostEqual(scores[winning_index], 1.0, places=6)
 
 
+class PositionDependentEvaluator(torch.nn.Module):
+    """Deterministic value in (0,1) that varies with the encoding — a constant evaluator
+    would mask perspective/tempo bugs, since every leaf would score the same."""
+
+    def __init__(self, input_size):
+        super().__init__()
+        gen = torch.Generator().manual_seed(42)
+        w = (torch.rand((input_size, 1), generator=gen) - 0.5) * 0.2
+        self.register_buffer("w", w)
+        self._device_anchor = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+
+    def forward(self, x):
+        return torch.sigmoid(x @ self.w)
+
+
+class Test2PlyMatchesNPlyDepth2(unittest.TestCase):
+    """Regression for the 2-ply tempo bug: `_evaluate_moves_2ply_batch` must agree with
+    `_evaluate_moves_nply(depth=2)` when pruning is disabled. The fixed-2ply path used to
+    encode opponent-reply afterstates from the opponent's perspective (a tempo-shifted
+    question, since after the reply it is the original player's turn) while the n-ply path
+    encoded them from the to-move player's perspective."""
+
+    def setUp(self):
+        config_path = Path(__file__).resolve().parents[2] / "config-test.yml"
+        self.config = ConfigLoader(str(config_path))
+        self.encoder = BoardEncoder(self.config)
+        self.agent = Agent(PositionDependentEvaluator(self.encoder.input_size), self.encoder)
+
+    def _assert_paths_agree(self, board, color, d1, d2):
+        dice = Dice(self.config.get_die_sides())
+        dice.set(d1, d2)
+        moves = legal_moves(board, color, dice)
+        self.assertGreater(len(moves), 1)
+
+        scores_2ply = self.agent._evaluate_moves_2ply_batch(board, moves, color)
+        # Pruning disabled: absolute beam wider than the score range, no cutoff, no cap.
+        scores_nply = self.agent._evaluate_moves_nply(
+            board, moves, color, depth=2,
+            beam_threshold=10.0, relative_cutoff=None, max_branch=None,
+        )
+
+        self.assertEqual(len(scores_2ply), len(scores_nply))
+        for s2, sn in zip(scores_2ply, scores_nply):
+            self.assertAlmostEqual(s2, sn, places=5)
+
+    def test_midgame_white(self):
+        board = Board.from_config(self.config)
+        board.set_point(5, WHITE, 2)
+        board.set_point(10, WHITE, 1)
+        board.set_point(15, WHITE, 1)
+        board.set_point(8, BLACK, 1)
+        board.set_point(12, BLACK, 1)
+        board.set_point(20, BLACK, 2)
+        self._assert_paths_agree(board, WHITE, 2, 4)
+
+    def test_midgame_black(self):
+        board = Board.from_config(self.config)
+        board.set_point(5, WHITE, 2)
+        board.set_point(10, WHITE, 1)
+        board.set_point(15, WHITE, 1)
+        board.set_point(8, BLACK, 1)
+        board.set_point(12, BLACK, 1)
+        board.set_point(20, BLACK, 2)
+        self._assert_paths_agree(board, BLACK, 6, 3)
+
+    def test_race_with_opponent_winning_replies(self):
+        # Black can bear off their last piece on many replies, exercising the
+        # opponent-win short-circuit in both paths.
+        board = Board.from_config(self.config)
+        board_size = self.config.get_board_size()
+        board.set_point(board_size + 1, WHITE, 13)
+        board.borne_off[WHITE] = 13
+        board.set_point(20, WHITE, 1)
+        board.set_point(23, WHITE, 1)
+        board.set_point(0, BLACK, 14)
+        board.borne_off[BLACK] = 14
+        board.set_point(3, BLACK, 1)
+        self._assert_paths_agree(board, WHITE, 2, 5)
+
+
 class TestAgentNPly(unittest.TestCase):
     def setUp(self):
         config_path = Path(__file__).resolve().parents[2] / "config-test.yml"

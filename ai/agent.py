@@ -99,11 +99,12 @@ class Agent:
 
     def _evaluate_moves_2ply_batch(self, board: Board, possible_moves: List[Move], color: int) -> List[float]:
         """Expectimax over the 21 distinct dice outcomes. For each candidate move, opponent picks
-        the response that maximizes their own value; we average across dice weighted by probability."""
+        the response that minimizes our value; we average across dice weighted by probability.
+        Opponent-reply afterstates are encoded from *our* perspective (we are on roll again after
+        the reply), matching the 1-ply/N-ply convention that the net values the player to move."""
         device = self._model_device()
         opponent_color = -color
         is_our_turn = color == WHITE
-        is_opp_turn = not is_our_turn
 
         dice = Dice(_DIE_SIDES)
 
@@ -126,12 +127,23 @@ class Agent:
                     end = len(all_encoded)
                     cand_plan.append((start, end, weight, "pass"))
                 else:
+                    opp_wins = False
                     for m_o in opp_moves:
                         token_o = board.apply(m_o, opponent_color)
-                        all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_opp_turn))
+                        if board.has_won(opponent_color):
+                            opp_wins = True
+                            board.undo(token_o)
+                            break
+                        # After the opponent's reply it is our turn again, so encode from
+                        # our perspective — the net values the player on roll.
+                        all_encoded.append(self.board_encoder.encode_board(board, is_whites_turn=is_our_turn))
                         board.undo(token_o)
-                    end = len(all_encoded)
-                    cand_plan.append((start, end, weight, "opp_max"))
+                    if opp_wins:
+                        del all_encoded[start:]
+                        cand_plan.append((start, start, weight, "opp_win"))
+                    else:
+                        end = len(all_encoded)
+                        cand_plan.append((start, end, weight, "opp_min"))
             plans.append(cand_plan)
             board.undo(token_c)
 
@@ -151,8 +163,11 @@ class Agent:
             for (start, end, weight, kind) in cand_plan:
                 if kind == "pass":
                     val_d = float(values[start])
+                elif kind == "opp_win":
+                    val_d = 0.0
                 else:
-                    val_d = 1.0 - float(values[start:end].max())
+                    # Opponent picks the reply that minimizes our (to-move) value.
+                    val_d = float(values[start:end].min())
                 expected += weight * val_d
             scores.append(expected)
         return scores
