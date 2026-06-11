@@ -34,7 +34,7 @@ search_max_depth: 2               # Stop iterative deepening here. Set to 2 to d
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
 selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when runner-up is within this of the best 1-ply score (0 = off). E8 (#90) measured 0.03 flat at 13x cost — keep off
 selfplay_2ply_max_moves: 2        # Max candidates re-scored at 2-ply when escalating
-selfplay_seeded_fraction: 0.25    # EXP E9 (#83): fraction of self-play games started from seed-pool positions (0 = off)
+selfplay_seeded_fraction: 0.0     # Fraction of self-play games started from seed-pool positions (0 = off). E9 (#83) measured 0.25 flat — keep off
 selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
 gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets

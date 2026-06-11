@@ -138,6 +138,16 @@ Config knobs: `use_bearoff_db` (default true) and `bearoff_db_path` (default `mo
 
 ---
 
+## net2net.py
+
+Function-preserving MLP widening for capacity expansions (`python main.py expand-net --to 512,256,128 [--checkpoint X] [--out Y] [--noise 1e-3]`). Used when the net has converged to the fixed point of its training signal at its current capacity: widening lets training continue from the same playing strength instead of from scratch (the [128,64] → [256,128,64] expansion preceded gold_v9).
+
+`widen_evaluator(evaluator, new_hidden_sizes, noise_std, seed)`: per hidden layer, each new unit copies an original unit (identity for the first `old_n`, uniform-random duplicates for the rest); the next layer's columns are divided by each source unit's duplicate count, so every pre-activation — and hence the output, exactly, under ReLU — is unchanged. Gaussian noise (`noise_std`) on the duplicated rows breaks the symmetry so copies diverge during training; with `noise_std=0` preservation is exact (unit-tested to 1e-6). Layer count must match and layers can only grow.
+
+`expand_checkpoint(in_path, out_path, new_hidden_sizes, config, ...)`: loads via `load_state_dict`, refuses non-current encoder versions, widens, saves via `save_checkpoint` **without optimizer state** (Adam starts fresh on resume; the trainer's shape guard would skip a stale state anyway), and prints the max output deviation over 512 random inputs as verification. After expanding, set `hidden_sizes` in `config/config.yml` to the new sizes before training (and consider resetting `optimizer_steps` in `training_state.json` to re-enable LR warmup).
+
+---
+
 ## rollout_lab.py
 
 Offline improvement pass (issue #80) targeting compute at positions where the net is most likely wrong. Three phases, orchestrated by `run_rollout_lab()` and exposed as `./run.sh rollout-lab` / `python main.py rollout-lab`:

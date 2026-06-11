@@ -1012,6 +1012,48 @@ def main():
             out_path=out_path, num_games=opts["--games"], sample_every=opts["--every"],
             top_k=opts["--top"], num_workers=opts["--workers"],
         )
+    elif mode == 'expand-net':
+        to_sizes = None
+        checkpoint_path = "trained_model.pth"
+        out_path = "expanded_model.pth"
+        noise_std = 1e-3
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--to" and i + 1 < len(args):
+                try:
+                    to_sizes = [int(s) for s in args[i + 1].split(",")]
+                except ValueError:
+                    print(f"Invalid --to sizes: {args[i + 1]} (use e.g. 512,256,128)")
+                    return
+                i += 2
+                continue
+            if arg == "--checkpoint" and i + 1 < len(args):
+                checkpoint_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--out" and i + 1 < len(args):
+                out_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--noise" and i + 1 < len(args):
+                try:
+                    noise_std = float(args[i + 1])
+                except ValueError:
+                    print(f"Invalid --noise value: {args[i + 1]}")
+                    return
+                i += 2
+                continue
+            print(f"Unknown expand-net argument: {arg}")
+            return
+        if to_sizes is None:
+            print("expand-net requires --to <sizes>, e.g. --to 512,256,128")
+            return
+
+        from ai.net2net import expand_checkpoint
+        expand_checkpoint(checkpoint_path, out_path, to_sizes, config, noise_std=noise_std)
+        print(f"Remember to set hidden_sizes: {to_sizes} in config/config.yml before training.")
     elif mode == 'race-calibration':
         num_states = 2000
         model_path = "trained_model.pth"
