@@ -292,28 +292,47 @@ private struct DrillCard: View {
     private var bestTargets: Set<Int> { Set(eval.bestMove.compactMap { $0.count == 2 ? $0[1] : nil }) }
 
     var body: some View {
-        VStack(spacing: 16) {
-            Text("d=\(eval.die1) \(eval.die2) — find a better move")
-                .font(.callout)
-                .foregroundStyle(ChromeTheme.ink.opacity(0.7))
-
-            ZStack {
-                PlayableBoardView(session: session, flipped: flipped)
-                if showingSolution {
-                    TargetHighlightView(targets: bestTargets, style: .frame, flipped: flipped)
-                        .allowsHitTesting(false)
-                    SourceRingView(selectedPoint: bestFrom, stacks: eval.boardStacks, flipped: flipped)
-                        .allowsHitTesting(false)
+        GeometryReader { proxy in
+            let landscape = proxy.size.width >= proxy.size.height
+            if landscape {
+                HStack(spacing: 0) {
+                    board
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                        .padding(12)
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
+                            .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        feedbackLine
+                        Spacer(minLength: 0)
+                        controls
+                    }
+                    .frame(width: 320, alignment: .leading)
+                    .padding(.vertical, 16).padding(.trailing, 16)
                 }
+            } else {
+                VStack(spacing: 14) {
+                    Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
+                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                    board.layoutPriority(1).padding(.horizontal, 12)
+                    feedbackLine
+                    controls.padding(.horizontal, 20)
+                }
+                .padding(.vertical, 12)
             }
-            .frame(maxWidth: 520)
-            .padding(.horizontal, 8)
-
-            feedbackLine
-            controls
         }
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var board: some View {
+        ZStack {
+            PlayableBoardView(session: session, flipped: flipped)
+            if showingSolution {
+                TargetHighlightView(targets: bestTargets, style: .frame, flipped: flipped)
+                    .allowsHitTesting(false)
+                SourceRingView(selectedPoint: bestFrom, stacks: eval.boardStacks, flipped: flipped)
+                    .allowsHitTesting(false)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
     }
 
     @ViewBuilder

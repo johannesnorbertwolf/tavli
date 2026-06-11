@@ -286,8 +286,12 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
 
 The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
 task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
-found (with a "Still analyzing…" footer) while the rest are scored in the background; on completion
-the model settles on the authoritative full set returned by `analyze`. Launched from the win overlay.
+found (the panel notes it's still analyzing) while the rest are scored in the background; on
+completion the model settles on the authoritative full set returned by `analyze`. The screen is a
+**full-screen, board-centric** mode (a `fullScreenCover` from the win overlay): the position the
+player faced fills the screen, with a panel (played→best + win-prob gap, a Best/Yours/None move
+overlay) and Prev/Next/swipe to page through blunders. The drill is launched the same way (full
+screen), with the already-streamed blunders handed over as a precomputed `GameReviewResult`.
 
 ## Post-game drill (#63)
 

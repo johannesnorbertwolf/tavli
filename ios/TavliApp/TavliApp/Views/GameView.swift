@@ -119,12 +119,12 @@ struct GameView: View {
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
             }
-            .sheet(isPresented: $showReview) {
+            .fullScreenCover(isPresented: $showReview) {
                 GameReviewView(record: session.record,
                                agent: session.agent,
                                humanColor: humanColor)
             }
-            .sheet(isPresented: $showDrill) {
+            .fullScreenCover(isPresented: $showDrill) {
                 DrillView(record: session.record,
                           precomputed: nil,
                           agent: session.agent,
