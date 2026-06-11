@@ -266,7 +266,6 @@ private struct ORButton: ButtonStyle {
     OpeningRollView(humanColor: .white, onStart: { _ in }, onBack: { })
 }
 
-#Preview("Opening Roll — landscape") {
+#Preview("Opening Roll — landscape", traits: .landscapeLeft) {
     OpeningRollView(humanColor: .black, onStart: { _ in }, onBack: { })
-        .previewInterfaceOrientation(.landscapeLeft)
 }
