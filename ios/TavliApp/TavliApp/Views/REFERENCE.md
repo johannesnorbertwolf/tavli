@@ -265,7 +265,9 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     panel chrome changes. (The board *frame* art is unchanged; only the surrounding empty
     space shrank.)
   - **Portrait:** `VStack(spacing: 12)` — the `topBar` (counters + turn indicator as a
-    **centered** group, leaving the top corners free) pinned to the top, a flexible
+    **centered** group, top-padded `44` so it drops below the floating Back/Save/Resign
+    row: at #92's larger type the centered group no longer clears the corner pills on the
+    narrowest iPad; mirrors the landscape `sidePanel` padding) pinned to the top, a flexible
     `Spacer(minLength: 0)`, then the controls row and the board (`8pt` horizontal pad),
     with the `VStack` filling the height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`
     + `12pt` vertical pad). A square board can't fill a tall screen, so some vertical margin
@@ -357,6 +359,16 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
   plus `ink`/button tints. Reuses `Color(hex:)` from `BoardView.swift`.
+- **`ChromeType`** (#92) — centralizes the chrome's typography as fixed sizes one step
+  larger than the SwiftUI text styles the chrome originally used (the app targets older
+  players reading at arm's length). System-style mirrors: `title2` 26, `title3` 24,
+  `headline` 22 semibold, `body` 20, `callout` 19, `subheadline` 18, `caption` 16,
+  `caption2` 14. Display faces: `winTitle` 54 bold serif, `statsTitle` Cormorant 38,
+  `wordmark` Cormorant 96. Debug pane: `debugMono` 12 monospaced, `debugLabel` 13.
+  Weight/design variants are applied at the use site (`.bold()`, `.monospaced()`,
+  `.weight(:)`). Dynamic Type is a deliberate non-goal for now. Used by **all** chrome
+  views (`GameView`, `OpeningRollView`, `RootView`, `StatsPanelView`, `DebugOverlay`);
+  the board, dice faces and checkers keep their own geometry-scaled sizing.
 - **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, `"Undo/Done"`
   which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
   contextual buttons without T7, and `"History"` which scripts a ply and shows
@@ -432,8 +444,8 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
   gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
   The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
   game dice show during `awaitingRoll`) rather than a bespoke overlay.
-- **Chrome text** (`statusBlock`) — `.headline` + `.caption` layout matching `TurnIndicatorView`
-  exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
+- **Chrome text** (`statusBlock`) — `ChromeType.headline` + `ChromeType.caption` layout matching
+  `TurnIndicatorView` exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
 - **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
   resolved; hidden (`EmptyView`) once resolved (game is auto-starting).
 - **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
