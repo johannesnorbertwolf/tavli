@@ -36,7 +36,7 @@ selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when r
 selfplay_2ply_max_moves: 2        # Max candidates re-scored at 2-ply when escalating
 selfplay_seeded_fraction: 0.0     # Fraction of self-play games started from seed-pool positions (0 = off). E9 (#83) measured 0.25 flat — keep off
 selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
-selfplay_league_fraction: 0.2     # EXP E11 (#83): fraction of self-play games with one side played by a frozen gold (0 = off)
+selfplay_league_fraction: 0.0     # Fraction of self-play games with one side played by a frozen gold (0 = off). E11 (#83) measured 0.2 flat — keep off
 selfplay_league_opponents:        # League opponent checkpoints, sampled uniformly per league game
   - models/gold_v7.pth
   - models/gold_v8.pth
