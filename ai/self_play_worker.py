@@ -53,18 +53,26 @@ def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
 
 
 def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
-                         seed_pool=None, seeded_fraction=0.0):
+                         seed_pool=None, seeded_fraction=0.0,
+                         league_opponents=None, league_fraction=0.0):
     """Play one self-play game to a real terminal. Returns a trajectory dict:
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
     - `terminal_winner_white`: True if White won.
 
     When `seed_pool` is set, a `seeded_fraction` share of games starts from a
-    sampled high-residual position instead of the initial board (#83)."""
+    sampled high-residual position instead of the initial board (#83).
+    When `league_opponents` is set, a `league_fraction` share of games has one
+    randomly chosen side played by a random frozen opponent (1-ply greedy, no
+    exploration) instead of the live net (#83 league play)."""
     t0 = time.perf_counter()
     game = Game(config)
     if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
         game.board, game.player = seed_pool.sample(config)
+    opponent, opponent_color = None, 0
+    if league_opponents and league_fraction > 0.0 and random.random() < league_fraction:
+        opponent = league_opponents[random.randrange(len(league_opponents))]
+        opponent_color = WHITE if random.random() < 0.5 else -WHITE
     twoply_margin = config.get_selfplay_2ply_margin()
     twoply_max_moves = config.get_selfplay_2ply_max_moves()
 
@@ -85,10 +93,14 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         if not possible_moves:
             game.switch_turn()
         else:
-            move = select_self_play_move(agent, game.board, possible_moves, current_player,
-                                         epsilon, exploration_temperature,
-                                         twoply_margin=twoply_margin,
-                                         twoply_max_moves=twoply_max_moves)
+            if opponent is not None and current_player == opponent_color:
+                move, _ = opponent.get_best_move(game.board, possible_moves,
+                                                 current_player, lookahead_plies=1)
+            else:
+                move = select_self_play_move(agent, game.board, possible_moves, current_player,
+                                             epsilon, exploration_temperature,
+                                             twoply_margin=twoply_margin,
+                                             twoply_max_moves=twoply_max_moves)
             token = game.board.apply(move, current_player)
             game.switch_turn()
         movers.append(is_white_to_move)
@@ -128,6 +140,15 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
         from ai.seed_pool import SeedPool
         seed_pool = SeedPool(config.get_selfplay_seed_pool_path())
 
+    league_opponents = None
+    league_fraction = config.get_selfplay_league_fraction()
+    if league_fraction > 0.0:
+        from ai.checkpoint_io import load_agent_from_checkpoint
+        league_opponents = [load_agent_from_checkpoint(p, config)[0]
+                            for p in config.get_selfplay_league_opponents()]
+        if not league_opponents:
+            league_fraction = 0.0
+
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)
     np.random.seed(seed)
@@ -140,5 +161,7 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
         weights, epsilon, exploration_temperature = msg
         evaluator.load_state_dict({k: torch.from_numpy(v) for k, v in weights.items()})
         traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
-                                    seed_pool=seed_pool, seeded_fraction=seeded_fraction)
+                                    seed_pool=seed_pool, seeded_fraction=seeded_fraction,
+                                    league_opponents=league_opponents,
+                                    league_fraction=league_fraction)
         traj_q.put((worker_id, traj))

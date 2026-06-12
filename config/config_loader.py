@@ -156,6 +156,12 @@ class ConfigLoader:
     def get_selfplay_seeded_fraction(self):
         return float(self.config.get("selfplay_seeded_fraction", 0.0))
 
+    def get_selfplay_league_fraction(self):
+        return float(self.config.get("selfplay_league_fraction", 0.0))
+
+    def get_selfplay_league_opponents(self):
+        return list(self.config.get("selfplay_league_opponents", []) or [])
+
     def get_selfplay_seed_pool_path(self):
         return self.config.get("selfplay_seed_pool_path", "models/seed_pool.npz")
 

@@ -151,6 +151,14 @@ class TdLambdaTraining:
                     f"(build it with: python main.py seed-pool)")
             from ai.seed_pool import SeedPool
             self.seed_pool = SeedPool(pool_path)
+        self.selfplay_league_fraction = self.config.get_selfplay_league_fraction()
+        self.league_opponents = None
+        if self.selfplay_league_fraction > 0.0:
+            from ai.checkpoint_io import load_agent_from_checkpoint
+            paths = self.config.get_selfplay_league_opponents()
+            self.league_opponents = [load_agent_from_checkpoint(p, self.config)[0] for p in paths]
+            if not self.league_opponents:
+                self.selfplay_league_fraction = 0.0
         self.exploration_temperature = self.config.get_exploration_temperature()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
@@ -544,6 +552,10 @@ class TdLambdaTraining:
         game = Game(self.config)
         if self.seed_pool is not None and random.random() < self.selfplay_seeded_fraction:
             game.board, game.player = self.seed_pool.sample(self.config)
+        opponent, opponent_color = None, 0
+        if self.league_opponents and random.random() < self.selfplay_league_fraction:
+            opponent = self.league_opponents[random.randrange(len(self.league_opponents))]
+            opponent_color = WHITE if random.random() < 0.5 else BLACK
         log_fh = None
         if verbose_log_file:
             log_fh = open(verbose_log_file, 'w')
@@ -567,7 +579,11 @@ class TdLambdaTraining:
                     game.switch_turn()
                     move = "pass"
                 else:
-                    move, score = self._select_move_self_play(game.board, possible_moves, current_player)
+                    if opponent is not None and current_player == opponent_color:
+                        move, score = opponent.get_best_move(game.board, possible_moves,
+                                                             current_player, lookahead_plies=1)
+                    else:
+                        move, score = self._select_move_self_play(game.board, possible_moves, current_player)
                     game.board.apply(move, current_player)
                     game.switch_turn()
 
