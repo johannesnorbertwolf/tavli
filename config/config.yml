@@ -55,6 +55,10 @@ lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit a
 lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_decay: 0.999        # Decay rate for lambda per episode
 
+# Auxiliary output heads (#106): training-only side targets sharing the trunk
+aux_heads: 2               # EXP E12 (#106): 0 = off; 2 = [win-by-pin, final borne-off margin]
+aux_loss_weight: 0.3       # Weight of the aux BCE term relative to the main value loss
+
 # Optimizer + replay buffer (Adam replaces manual TD update)
 learning_rate: 0.00003         # E5-proven value; E6's further drop to 1e-5 measured flat (#81)
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables

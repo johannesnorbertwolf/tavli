@@ -162,6 +162,12 @@ class ConfigLoader:
     def get_selfplay_league_opponents(self):
         return list(self.config.get("selfplay_league_opponents", []) or [])
 
+    def get_aux_heads(self):
+        return int(self.config.get("aux_heads", 0))
+
+    def get_aux_loss_weight(self):
+        return float(self.config.get("aux_loss_weight", 0.3))
+
     def get_selfplay_seed_pool_path(self):
         return self.config.get("selfplay_seed_pool_path", "models/seed_pool.npz")
 

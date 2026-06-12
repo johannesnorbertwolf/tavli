@@ -19,7 +19,7 @@ from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from ai.checkpoint_io import ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
-from domain.constants import WHITE
+from domain.constants import WHITE, BLACK
 from domain.move_generation import legal_moves
 from game.game import Game
 
@@ -108,11 +108,15 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         exact_values.append(state_exact_value())
 
         if game.is_over():
+            winner = game.get_winner()
             return {
                 "states": states,
                 "movers": movers,
                 "exact_values": exact_values,
-                "terminal_winner_white": (game.get_winner() == WHITE),
+                "terminal_winner_white": (winner == WHITE),
+                "win_by_pin": bool(game.board.captured_starting(winner)),
+                "final_borne_off_white": int(game.board.borne_off[WHITE]),
+                "final_borne_off_black": int(game.board.borne_off[BLACK]),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,
             }
@@ -125,7 +129,10 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
     torch.set_num_threads(1)
     config = ConfigLoader(config_path)
     encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
-    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes))
+    # aux_heads must match the trainer's evaluator: workers receive its full
+    # state_dict (including aux keys) even though they never call the aux head.
+    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes),
+                               aux_heads=config.get_aux_heads())
     evaluator.eval()
     bearoff = None
     if config.get_use_bearoff_db():

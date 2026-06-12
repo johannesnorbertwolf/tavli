@@ -284,14 +284,19 @@ def train_ai(config, num_epochs_override=None):
 
     device = torch.device("cpu")
     board_encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
-    board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes()).to(device)
+    board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes(),
+                                     aux_heads=config.get_aux_heads()).to(device)
 
     model_save_path = config.get_model_save_path()
     if os.path.exists(model_save_path):
         print(f"Loading existing model from {model_save_path}...")
         try:
             state_dict, meta = load_state_dict(model_save_path, device=device)
-            board_evaluator.load_state_dict(state_dict)
+            # strict=False: a checkpoint from before aux heads existed lacks the
+            # aux_head keys — those params start fresh. Shape mismatches still raise.
+            keys = board_evaluator.load_state_dict(state_dict, strict=False)
+            if keys.missing_keys:
+                print(f"Initialized fresh (not in checkpoint): {keys.missing_keys}")
             print(
                 f"Model loaded successfully "
                 f"(checkpoint network={meta.get('network_type')}, encoder={meta.get('encoder_version')})."

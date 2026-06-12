@@ -78,6 +78,8 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `selfplay_seed_pool_path` | npz pool of high-residual pre-roll positions, built offline via `python main.py seed-pool` (gitignored) |
 | `selfplay_league_fraction` | Fraction of self-play games with one randomly-chosen side played by a frozen opponent from `selfplay_league_opponents` (1-ply greedy, no exploration); 0 disables. Diversifies the data distribution (#83) |
 | `selfplay_league_opponents` | List of opponent checkpoint paths, sampled uniformly per league game (any encoder version — each loads its own agent) |
+| `aux_heads` | Auxiliary output heads (#106): 0 = off; 2 adds [P(game ends by pinning), final borne-off margin] as side targets sharing the trunk. Training-only — eval/play/Core ML use the main head; old checkpoints load with the head initialized fresh |
+| `aux_loss_weight` | Weight of the aux BCE term added to the main value loss |
 | `model_save_path` | Live checkpoint path (default `trained_model.pth`); training resumes weights + Adam state from it. `config-test.yml` points it at a test-local file so tests never touch live artifacts |
 | `gold_model_path` | Reference model for eval |
 | `use_bearoff_db` | Exact race equity from the bear-off DB (`ai/bearoff.py`): replaces net evals at search leaves and TD bootstrap values/targets for pure-race states (no pins, all checkers home). `false` in `config-test.yml` to keep tests fast |

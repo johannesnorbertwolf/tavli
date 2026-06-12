@@ -25,27 +25,31 @@ import os
 class ReplayBuffer:
     """Ring buffer of (encoded_state, target) pairs. Pure numpy, uniform sampling."""
 
-    def __init__(self, capacity: int, state_dim: int):
+    def __init__(self, capacity: int, state_dim: int, aux_dim: int = 0):
         self.capacity = int(capacity)
         self.state_dim = int(state_dim)
+        self.aux_dim = int(aux_dim)
         self.states = np.zeros((self.capacity, self.state_dim), dtype=np.float32)
         self.targets = np.zeros(self.capacity, dtype=np.float32)
+        self.aux = np.zeros((self.capacity, self.aux_dim), dtype=np.float32) if self.aux_dim > 0 else None
         self.size = 0
         self.cursor = 0
 
     def __len__(self):
         return self.size
 
-    def push(self, state: np.ndarray, target: float):
+    def push(self, state: np.ndarray, target: float, aux: np.ndarray = None):
         self.states[self.cursor] = state
         self.targets[self.cursor] = target
+        if self.aux is not None and aux is not None:
+            self.aux[self.cursor] = aux
         self.cursor = (self.cursor + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
 
-    def push_many(self, states: np.ndarray, targets: np.ndarray):
+    def push_many(self, states: np.ndarray, targets: np.ndarray, aux: np.ndarray = None):
         n = states.shape[0]
         for i in range(n):
-            self.push(states[i], float(targets[i]))
+            self.push(states[i], float(targets[i]), None if aux is None else aux[i])
 
     def sample(self, batch_size: int):
         if self.size == 0:
@@ -53,6 +57,14 @@ class ReplayBuffer:
         k = min(batch_size, self.size)
         idx = np.random.randint(0, self.size, size=k)
         return self.states[idx], self.targets[idx]
+
+    def sample_aux(self, batch_size: int):
+        """Like sample(), but also returns the aux-target rows (requires aux_dim > 0)."""
+        if self.size == 0:
+            return None, None, None
+        k = min(batch_size, self.size)
+        idx = np.random.randint(0, self.size, size=k)
+        return self.states[idx], self.targets[idx], self.aux[idx]
 
 
 def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
@@ -159,6 +171,12 @@ class TdLambdaTraining:
             self.league_opponents = [load_agent_from_checkpoint(p, self.config)[0] for p in paths]
             if not self.league_opponents:
                 self.selfplay_league_fraction = 0.0
+        self.aux_heads_n = self.config.get_aux_heads()
+        self.aux_loss_weight = self.config.get_aux_loss_weight()
+        if self.aux_heads_n > 0 and getattr(self.board_evaluator, "aux_heads", 0) != self.aux_heads_n:
+            raise ValueError(
+                f"aux_heads={self.aux_heads_n} in config but the evaluator was built with "
+                f"aux_heads={getattr(self.board_evaluator, 'aux_heads', 0)}")
         self.exploration_temperature = self.config.get_exploration_temperature()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
@@ -192,7 +210,8 @@ class TdLambdaTraining:
         self.model_save_path = self.config.get_model_save_path()
 
         # Replay buffer + Adam optimizer
-        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size)
+        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size,
+                                   aux_dim=self.aux_heads_n)
         self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=self.learning_rate)
         self.optimizer_steps = 0
 
@@ -496,8 +515,24 @@ class TdLambdaTraining:
         if exact_mask is not None and exact_mask.any():
             targets[exact_mask] = exact_arr[exact_mask]
 
+        # Auxiliary side targets (#106), mover's perspective per state:
+        # col 0 — does this game end by pinning the start point (game-level);
+        # col 1 — final borne-off margin, normalized to [0,1].
+        aux_targets = None
+        if self.aux_heads_n > 0 and "win_by_pin" in traj:
+            persp_white = np.empty(T + 1, dtype=bool)
+            persp_white[:T] = movers_arr
+            persp_white[T] = not movers_arr[T - 1]
+            pieces = float(self.config.get_pieces_per_player())
+            bo_w = float(traj["final_borne_off_white"])
+            bo_b = float(traj["final_borne_off_black"])
+            margin_white = (bo_w - bo_b + pieces) / (2.0 * pieces)
+            aux_targets = np.empty((T + 1, self.aux_heads_n), dtype=np.float32)
+            aux_targets[:, 0] = 1.0 if traj["win_by_pin"] else 0.0
+            aux_targets[:, 1] = np.where(persp_white, margin_white, 1.0 - margin_white)
+
         # Push all T+1 (state, target) pairs into replay buffer.
-        self.replay.push_many(states_np, targets)
+        self.replay.push_many(states_np, targets, aux_targets)
 
         td_abs_sum = float(np.sum(np.abs(targets - values)))
         td_count = T + 1
@@ -515,8 +550,12 @@ class TdLambdaTraining:
             return
         if len(self.replay) < max(1, self.min_buffer_to_train):
             return
+        use_aux = self.aux_heads_n > 0
         for _ in range(self.updates_per_game):
-            states_np, targets_np = self.replay.sample(self.minibatch_size)
+            if use_aux:
+                states_np, targets_np, aux_np = self.replay.sample_aux(self.minibatch_size)
+            else:
+                states_np, targets_np = self.replay.sample(self.minibatch_size)
             if states_np is None:
                 return
             states_t = torch.from_numpy(states_np).float().to(self.device)
@@ -524,8 +563,14 @@ class TdLambdaTraining:
 
             self._set_lr(self._current_lr())
             self.optimizer.zero_grad()
-            logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
-            loss = F.binary_cross_entropy_with_logits(logits, targets_t)
+            if use_aux:
+                logits, aux_logits = self.board_evaluator.forward_aux_logits(states_t)
+                loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), targets_t)
+                aux_t = torch.from_numpy(aux_np).float().to(self.device)
+                loss = loss + self.aux_loss_weight * F.binary_cross_entropy_with_logits(aux_logits, aux_t)
+            else:
+                logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
+                loss = F.binary_cross_entropy_with_logits(logits, targets_t)
             loss.backward()
             if self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.board_evaluator.parameters(), self.max_grad_norm)
@@ -605,11 +650,15 @@ class TdLambdaTraining:
                 if game.is_over():
                     if log_fh:
                         log_fh.write(f"Game over. Winner is {game.get_winner()}.\n")
+                    winner = game.get_winner()
                     return {
                         "states": states,
                         "movers": movers,
                         "exact_values": exact_values,
-                        "terminal_winner_white": (game.get_winner() == WHITE),
+                        "terminal_winner_white": (winner == WHITE),
+                        "win_by_pin": bool(game.board.captured_starting(winner)),
+                        "final_borne_off_white": int(game.board.borne_off[WHITE]),
+                        "final_borne_off_black": int(game.board.borne_off[BLACK]),
                         "plies": len(movers),
                         "game_seconds": time.perf_counter() - game_start_time,
                     }

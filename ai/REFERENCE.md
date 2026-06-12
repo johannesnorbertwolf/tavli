@@ -83,6 +83,12 @@ Smart features are computed in a single pass over the board slots, using running
 
 ## board_evaluator.py
 
+### Auxiliary heads (#106)
+
+`BoardEvaluator(input_size, hidden_sizes, aux_heads=0)`: with `aux_heads > 0`, an extra `Linear(last_hidden, aux_heads)` (`self.aux_head`, deliberately NOT in `self.layers` so legacy layer-name migration and the Core ML trace of `forward` are untouched) predicts side targets from the shared trunk. `forward_aux_logits(x)` returns `(main_logit, aux_logits)` in one trunk pass; `forward` / `forward_logits` are unchanged and ignore the head. Targets (computed in `_ingest_trajectory` from end-of-game fields in the trajectory dict, mover's perspective): col 0 = does the game end by pinning the start point; col 1 = final borne-off margin normalized to [0,1]. Loss adds `aux_loss_weight × BCE(aux)`. Checkpoints store `aux_heads` in metadata; `load_agent_from_checkpoint` rebuilds the head, and `main.py train` loads older checkpoints with `strict=False` (head starts fresh; the Adam group mismatch makes the optimizer start fresh too).
+
+
+
 `BoardEvaluator(input_size, hidden_sizes)` is a simple feed-forward neural network (MLP) that outputs a single win-probability scalar in [0, 1].
 
 **Architecture**: fully-connected layers with ReLU activations on all hidden layers, no activation on the output layer. Layers are stored in `self.layers` as an `nn.ModuleList`. The final layer has output size 1.
