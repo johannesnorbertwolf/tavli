@@ -50,7 +50,7 @@ lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit a
 lambda_decay: 0.999        # Decay rate for lambda per episode
 
 # Optimizer + replay buffer (Adam replaces manual TD update)
-learning_rate: 0.0001          # EXP E10 (#96): E2-proven retraining rate after capacity change; drop back to 3e-5 after consolidation
+learning_rate: 0.00003         # EXP E10b (#96): consolidation drop after the 1e-4 retraining block (mirrors the E5 staircase step)
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
 replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
