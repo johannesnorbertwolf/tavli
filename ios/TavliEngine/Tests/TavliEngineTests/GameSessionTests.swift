@@ -479,7 +479,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// legal move synchronously; undo reverses whatever it did, so the assertion on
     /// the restored position holds regardless of the AI's choice.)
     func testUndoStepsBackHumanDecisionRestoringBoardAndDice() {
-        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .white,
+                            animationTimings: .off)        // human = Black, opens
         s.start()
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -508,7 +509,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// When the AI opens and the human hasn't moved, there is no decision to rewind —
     /// undo is disabled and a no-op.
     func testUndoDisabledWhenAIOpenedAndHumanHasNotMoved() {
-        let s = GameSession(startingPlayer: .black, aiColor: .black)  // AI = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .black,
+                            animationTimings: .off)        // AI = Black, opens
         s.start()
         XCTAssertEqual(s.currentPlayer, .white)                       // human = White, to move
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -525,7 +527,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// Two human decisions, then two sequential undos, walk all the way back to the
     /// opening position; once there, undo is disabled again.
     func testMultipleSequentialUndos() {
-        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .white,
+                            animationTimings: .off)        // human = Black, opens
         s.start()
         let start = signature(s.game.board)
 

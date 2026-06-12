@@ -50,7 +50,8 @@ final class GameSessionAITests: XCTestCase {
         // maxDepth: 1 keeps the AI at 1-ply so full-game tests stay fast; the
         // multi-ply search itself is covered by AgentSearchTests.
         let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black,
-                            searchConfig: SearchConfig(maxDepth: 1))
+                            searchConfig: SearchConfig(maxDepth: 1),
+                            animationTimings: .off)
         s.start()
         await waitForAI(s)
 
@@ -93,7 +94,8 @@ final class GameSessionAITests: XCTestCase {
         // maxDepth: 1 keeps the AI at 1-ply so full-game tests stay fast; the
         // multi-ply search itself is covered by AgentSearchTests.
         let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black,
-                            searchConfig: SearchConfig(maxDepth: 1))
+                            searchConfig: SearchConfig(maxDepth: 1),
+                            animationTimings: .off)
         s.start()
         await waitForAI(s)
 
@@ -138,7 +140,8 @@ final class GameSessionAITests: XCTestCase {
         // maxDepth: 1 keeps the AI at 1-ply so full-game tests stay fast; the
         // multi-ply search itself is covered by AgentSearchTests.
         let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black,
-                            searchConfig: SearchConfig(maxDepth: 1))
+                            searchConfig: SearchConfig(maxDepth: 1),
+                            animationTimings: .off)
         s.start()                                             // human (white) to move
         XCTAssertEqual(s.winProbability, 0.5, accuracy: 1e-9) // not yet evaluated
         s.setManualDice(3, 5)                                 // beginTurn → refreshEvaluation
@@ -149,7 +152,8 @@ final class GameSessionAITests: XCTestCase {
     /// Missing model: AI turns fall back to random legal moves, the game still
     /// terminates, and `winProbability` stays at its 0.5 default (never scored).
     func testMissingModelFallsBackToRandom() throws {
-        let s = GameSession(startingPlayer: .white, agent: nil, aiColor: .black)
+        let s = GameSession(startingPlayer: .white, agent: nil, aiColor: .black,
+                            animationTimings: .off)
         s.start()
 
         var turns = 0

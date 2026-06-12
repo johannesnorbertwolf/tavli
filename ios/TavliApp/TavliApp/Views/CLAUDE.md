@@ -12,9 +12,9 @@ neither depends on views.
 | File | What it is |
 |---|---|
 | `BoardView.swift` | T3 — static empty Caramel board (frame, surface, triangles, diamonds, wordmark, bear-off trays). Single `Canvas`. Defines `CaramelPalette` + `Color(hex:)`. |
-| `CheckersView.swift` | T4 — checker stacks; pure function of a `[[Color]]` snapshot. Also `DraggedCheckerView`, `drawCheckerDisc`, `CheckerStyle`. |
-| `DiceView.swift` | T8/#46 — `DieFace`/`DiceRow`, the center-bar `BoardDiceView`, `ManualDiceControl`, `usedDiceFlags`. |
-| `PlayableBoardView.swift` | T7 — interactive board; tap/drag → `GameSession` intents; `TargetHighlightView`, `SourceRingView`, `HighlightStyle`. |
+| `CheckersView.swift` | T4 — checker stacks; pure function of a `[[Color]]` snapshot. Also `DraggedCheckerView`, `AIFlightCheckerView` (the AI's arcing checker, #93), `drawCheckerDisc`, `CheckerStyle`. |
+| `DiceView.swift` | T8/#46 — `DieFace`/`DiceRow`, the center-bar `BoardDiceView` (tumbles + masks the AI's roll while `aiDiceRolling`, #93), `ManualDiceControl`, `usedDiceFlags`. |
+| `PlayableBoardView.swift` | T7 — interactive board; tap/drag → `GameSession` intents; `TargetHighlightView`, `SourceRingView`, `HighlightStyle`; overlays the AI flight (#93). |
 | `GameView.swift` | T9/T10 — responsive game chrome + assembly; turn indicator, controls, win overlay, history sheet, save dialog. Defines `ChromeTheme`. |
 | `GameReviewView.swift` | #62 — **full-screen** post-game blunder review (from the win overlay). `GameReviewModel` runs `GameReview.analyze` off the main actor and **streams** blunders in; the view is board-centric, one blunder at a time (big board + Prev/Next/swipe), with a Best/Yours/None move overlay and played→best + win-prob gap. Pure presentation. |
 | `DrillView.swift` | #63 — **full-screen** interactive post-game drill (from the win overlay + the review screen). Per blunder, seeds a live board via `GameSession.drill` and grades the player's attempt (`onMoveAttempt` → `Agent.scoreCandidate`) as correct/close/wrong; "Show solution" reuses `SourceRingView`/`TargetHighlightView`. Responsive board-centric card; `DrillModel` drives it. |

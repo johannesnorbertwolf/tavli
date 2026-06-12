@@ -53,8 +53,9 @@ so the game flow is validated without a simulator.
 
 - **`GameSession`** (`@MainActor`, `ObservableObject`) owns the `Game` and drives the turn state
   machine. Phases: `awaitingRoll / picking / moving / aiThinking / animating / gameOver(winner:)`
-  — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
-  of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
+  — the four human-move phases plus `aiThinking` (the off-main search) and `animating` (the
+  presentational replay of the AI's turn, #93); both AI phases block human input through the
+  same guards the intents already use. Intents: `roll` / `setManualDice(_:_:)`
   (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
   `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
   `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
@@ -62,7 +63,39 @@ so the game flow is validated without a simulator.
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
   ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
-  `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+  `winProbability`, plus `aiDiceRolling`/`aiHopInFlight` for the AI-turn animation, #93) is the
+  view contract. No rendering lives here.
+
+- **AI-turn animation (#93).** Driven entirely by the session so the view layer stays passive;
+  knobs live in **`AnimationTimings`** (`aiDiceRollDuration` / `aiMoveAnimationDuration`, both
+  0.6 s in `.standard` for a ~1.8 s two-move turn; settings UI lands with #77). The struct is a
+  mutable `var animationTimings` on the session (init parameter, default `.standard`, also
+  threaded through `resume(from:)`); `.off` (both zero) restores the fully synchronous
+  pre-animation behavior — headless tests pass it — and `isAnimated` is the gate `takeAITurn`
+  checks. Animated flow:
+  1. `takeAITurn` rolls (values are set up front — the search needs them), computes legal moves,
+     and sets `aiDiceRolling = true` (when `aiDiceRollDuration > 0`). With a model it enters
+     `aiThinking` and the search runs **concurrently with the dice tumble**; the random fallback
+     and the forced pass skip straight to `animating`.
+  2. Once the move is chosen, `animateAITurn` (phase → `animating`) sleeps out the *remainder* of
+     the tumble window, then clears `aiDiceRolling` — the dice settle on the real values.
+  3. For each half-move in stored order it publishes an **`AIAnimatedHop`** (`id` = ordinal —
+     distinguishes consecutive hops with identical endpoints on a Pasch — plus `from`/`to`/
+     `color`/`duration`), sleeps `aiMoveAnimationDuration`, then **lands** it: `applyHalfMove` on
+     the live board, `moveBuilder.commit` (so the dice grey die-by-die), `aiHopInFlight = nil`.
+     The board advances point by point; all four hops of a Pasch are individually visible.
+  4. After the last hop: a fresh empty `MoveBuilder` (a stale `built` would re-enable the
+     within-turn Undo for the human), the `winProbability` update, `recordTurn`, `finishTurn`.
+     A forced pass (`move == nil`) still tumbles and settles the dice, holds them for a short
+     beat (`passBeat` — 0.45 s at standard timings, scaled down with the knobs so near-zero test
+     timings stay near-instant), then records the pass.
+  **Cancellation.** The driver task is stored (`aiAnimationTask`) and re-validates
+  `[weak self] + !Task.isCancelled + aiTurnEpoch` after every suspension; `newGame()` bumps the
+  epoch, cancels the task, and resets the published animation state, so neither a half-played
+  animation nor a stale search result (the search's `MainActor.run` completion checks the epoch
+  too) can mutate the fresh game. Covered by `GameSessionAnimationTests` (sequential hops match
+  the recorded ply, point-by-point landings, `.off` synchronous escape, `newGame` cancellation,
+  full animated game terminates with checkers conserved).
 - **Undo — two intents, two surfaces (#59).** Every committed ply (human or AI move, or a forced
   pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
   `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
@@ -86,15 +119,17 @@ so the game flow is validated without a simulator.
   `GameSession.makeAgent()` loads the app-bundled `PlakotoValue.mlmodelc` (returns `nil` if absent →
   random fallback). Call `start()` once after construction so the AI moves first if it owns the
   starting player. When `finishTurn` (or `start`/`newGame`) lands on the AI's turn, `takeAITurn`
-  rolls, computes legal moves (empty = forced pass), then: with no model it applies a random legal
-  move synchronously; with a model it enters `aiThinking` and runs the **multi-ply expectimax
-  search** (`agent.getBestMove`) on a detached task **off the main actor**, hopping back via
-  `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure falls
-  back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
-  updates only from a real model score and stays at its `0.5` default under the random fallback.
+  rolls, computes legal moves (empty = forced pass), then: with no model it picks a random legal
+  move (applied synchronously under `.off` timings); with a model it enters `aiThinking` and runs
+  the **multi-ply expectimax search** (`agent.getBestMove`) on a detached task **off the main
+  actor**, hopping back via `MainActor.run` to apply the move — directly, or through the animated
+  replay when `animationTimings.isAnimated` (see *AI-turn animation* above). `Agent` calls are
+  wrapped in `try?` so a Core ML failure falls back to a random move. `winProbability` (WHITE's
+  view: `mover == .white ? score : 1 - score`) updates only from a real model score and stays at
+  its `0.5` default under the random fallback.
   Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
-  `searchConfig: SearchConfig(maxDepth: 1)` so full-game tests stay fast — the search itself is
-  covered by `AgentSearchTests`).
+  `searchConfig: SearchConfig(maxDepth: 1)` and `animationTimings: .off` so full-game tests stay
+  fast and synchronous — the search itself is covered by `AgentSearchTests`).
 
   **Board-copy isolation.** The search must not race the live `game.board`: the main actor keeps
   reading/scoring it (UI render, debug overlay) while the search applies/undoes thousands of times,
@@ -349,7 +384,8 @@ ios/
 │   │                            GameSave, SaveStore
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
 │                                FixtureSupport, MoveBuilderTests, GameSessionTests,
-│                                GameSessionAITests, GameSavePersistenceTests
+│                                GameSessionAITests, GameSessionAnimationTests,
+│                                GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,

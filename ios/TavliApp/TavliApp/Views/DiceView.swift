@@ -160,15 +160,28 @@ struct DiceView: View {
 /// the human is awaiting a roll (`allowsHitTesting`); otherwise the dice display
 /// and the board beneath stays interactive. Each committed half-move greys the
 /// die actually used. (Roll-feel polish is tracked separately in #24.)
+///
+/// On the AI's turn (#93) the engine sets the dice values up front (the search
+/// needs them) and publishes `aiDiceRolling` for `aiDiceRollDuration`; while it
+/// is true the view spins the row and cycles random masking faces so the real
+/// roll stays hidden until the engine settles it.
 struct BoardDiceView: View {
     @ObservedObject var session: GameSession
 
     @State private var tumbling = false
     @State private var spin: Double = 0
 
+    /// Masking faces cycled while the AI's dice tumble (#93); `nil` outside an
+    /// AI roll. Replaces the displayed values so the settled roll is a reveal.
+    @State private var aiMaskFaces: [Int]? = nil
+    @State private var aiMaskTask: Task<Void, Never>? = nil
+
     /// A pasch shows four dice; otherwise the two rolled values.
     /// Pre-roll (value == 0) always shows two dice regardless of isPasch.
+    /// While the AI's dice tumble, the cycling mask faces replace the values
+    /// (always two — a pasch reveals its four dice on settle).
     private var values: [Int] {
+        if let aiMaskFaces { return aiMaskFaces }
         let d = session.game.dice
         if d.isPasch && d.die1.value != 0 { return Array(repeating: d.die1.value, count: 4) }
         return [d.die1.value, d.die2.value]
@@ -190,11 +203,20 @@ struct BoardDiceView: View {
                         .position(centers[idx])
                 }
             }
-            .rotationEffect(.degrees(tumbling ? spin : 0))
+            // Plain `spin` (not gated on `tumbling`): both tumbles end on a
+            // multiple of 360°, so the settled row renders unrotated and no
+            // gate-flip can play a backward unwind.
+            .rotationEffect(.degrees(spin))
             .scaleEffect(tumbling ? 0.92 : 1.0)
         }
         .aspectRatio(1, contentMode: .fit)
         .allowsHitTesting(canRoll)
+        // `initial: true` catches a session whose AI opens the game — its
+        // tumble starts before this view appears.
+        .onChange(of: session.aiDiceRolling, initial: true) { _, rolling in
+            if rolling { beginAITumble() } else { settleAITumble() }
+        }
+        .onDisappear { aiMaskTask?.cancel() }
     }
 
     private func roll() {
@@ -207,6 +229,34 @@ struct BoardDiceView: View {
             tumbling = false
             session.roll()
         }
+    }
+
+    // ── AI dice-roll animation (#93) ────────────────────────────────────────
+
+    /// Two slow rotations easing out over the engine's tumble window, with
+    /// random faces cycling underneath until the engine settles the roll.
+    private func beginAITumble() {
+        let duration = max(session.animationTimings.aiDiceRollDuration, 0.05)
+        withAnimation(.easeOut(duration: duration)) {
+            spin += 720
+            tumbling = true
+        }
+        aiMaskTask?.cancel()
+        aiMaskTask = Task { @MainActor in
+            while !Task.isCancelled {
+                aiMaskFaces = [Int.random(in: 1...6), Int.random(in: 1...6)]
+                try? await Task.sleep(nanoseconds: 90_000_000)
+            }
+        }
+    }
+
+    /// Reveal the real roll: stop the face cycling and ease the scale back.
+    private func settleAITumble() {
+        aiMaskTask?.cancel()
+        aiMaskTask = nil
+        guard aiMaskFaces != nil || tumbling else { return }
+        aiMaskFaces = nil
+        withAnimation(.easeOut(duration: 0.15)) { tumbling = false }
     }
 }
 
