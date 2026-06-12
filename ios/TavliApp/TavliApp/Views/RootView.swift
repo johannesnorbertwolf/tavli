@@ -169,9 +169,10 @@ struct RootView: View {
     }
 }
 
-/// Caramel start screen: "Tavli" wordmark, two "Play vs AI" choices, and (since
-/// #61) a list of saved games to resume or delete. The AI-vs-AI watch mode from
-/// the design reference is deferred.
+/// Caramel start screen (#101): "Tavli" wordmark, one primary "Play vs AI" card
+/// holding the color choice (tapping a color starts the opening roll), a quiet
+/// "My Record" row, and (since #61) a list of saved games to resume or delete.
+/// The AI-vs-AI watch mode from the design reference is deferred.
 private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
@@ -185,40 +186,86 @@ private struct ModePickerView: View {
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            VStack(spacing: 40) {
+            VStack(spacing: 28) {
                 Text("Tavli")
                     .font(ChromeType.wordmark)
                     .foregroundStyle(CaramelPalette.frameText)
 
-                VStack(spacing: 20) {
-                    ModeButton(title: "Play vs AI", subtitle: "You play White") {
-                        onSelect(.white)
-                    }
-                    ModeButton(title: "Play vs AI", subtitle: "You play Black") {
-                        onSelect(.black)
-                    }
-                    ModeButton(title: "My Record", subtitle: recordSubtitle) {
-                        showStats = true
-                    }
-                }
+                playCard
+                recordRow
 
                 if !saves.isEmpty {
                     SavedGamesList(saves: saves,
                                    onResume: onResume,
                                    onDelete: delete)
-                        .frame(maxWidth: 420)
+                        .frame(maxWidth: 440)
                 }
             }
             .padding(40)
         }
         .onAppear { reload() }
-        .sheet(isPresented: $showStats) {
-            ZStack {
-                SColor(hex: 0xece6dc).ignoresSafeArea()
-                StatsPanelView(stats: stats)
-                    .padding(40)
+        .sheet(isPresented: $showStats) { statsSheet }
+    }
+
+    /// The one primary action: pick a color, start playing. Both choices carry
+    /// the checker disc they map to on the board (engine black renders as Red).
+    private var playCard: some View {
+        VStack(spacing: 18) {
+            Text("Play vs AI")
+                .font(ChromeType.title2.bold())
+                .foregroundStyle(ChromeTheme.ink)
+            HStack(spacing: 14) {
+                ColorChoiceButton(color: .white) { onSelect(.white) }
+                ColorChoiceButton(color: .black) { onSelect(.black) }
             }
         }
+        .frame(maxWidth: 392)
+        .chromeCard(padding: 24)
+    }
+
+    /// Quiet secondary row: current W–L at a glance, full panel on tap.
+    private var recordRow: some View {
+        Button {
+            showStats = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "chart.bar.fill")
+                Text("My Record")
+                Spacer(minLength: 24)
+                Text(recordSubtitle)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
+        }
+        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
+        .frame(maxWidth: 440)
+    }
+
+    /// Fitted stats sheet (#101): explicit Done affordance, sized to the card
+    /// rather than the near-fullscreen system default.
+    private var statsSheet: some View {
+        ZStack {
+            SColor(hex: 0xece6dc).ignoresSafeArea()
+            VStack(spacing: 16) {
+                HStack {
+                    Text("My Record")
+                        .font(ChromeType.title3.bold())
+                        .foregroundStyle(ChromeTheme.ink)
+                    Spacer()
+                    Button("Done") { showStats = false }
+                        .buttonStyle(ChromeButton(role: .secondary))
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                Spacer(minLength: 0)
+                StatsPanelView(stats: stats)
+                    .padding(.horizontal, 24)
+                Spacer(minLength: 0)
+            }
+        }
+        .presentationDetents([.height(480)])
+        .presentationDragIndicator(.visible)
     }
 
     private var recordSubtitle: String {
@@ -232,6 +279,29 @@ private struct ModePickerView: View {
     private func delete(_ meta: SaveMetadata) {
         try? store.delete(filename: meta.filename)
         reload()
+    }
+}
+
+/// One side of the play card: the checker disc the player would command plus a
+/// "Play <Name>" label. Tapping starts the opening roll for that color.
+private struct ColorChoiceButton: View {
+    let color: EngineColor
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Circle()
+                    .fill(ChromeTheme.checkerColor(color))
+                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1.5))
+                    .frame(width: 44, height: 44)
+                Text("Play \(ChromeTheme.displayName(color))")
+                    .foregroundStyle(ChromeTheme.ink)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(ChromeButton(role: .secondary))
     }
 }
 
@@ -294,7 +364,7 @@ private struct SavedGameRow: View {
                             .foregroundStyle(CaramelPalette.frameText)
                         Text(subtitle)
                             .font(ChromeType.caption)
-                            .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                            .foregroundStyle(ChromeKit.inkSecondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -305,16 +375,16 @@ private struct SavedGameRow: View {
             Button(action: onDelete) {
                 Image(systemName: "trash")
                     .font(ChromeType.body)
-                    .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    .padding(8)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(SColor.white.opacity(0.35))
-        .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12)
-            .stroke(CaramelPalette.frameBot.opacity(0.4), lineWidth: 1))
+        .background(ChromeKit.cardColor)
+        .cornerRadius(ChromeKit.buttonRadius)
+        .shadow(color: ChromeKit.cardShadow, radius: 5, x: 0, y: 2)
     }
 
     private var subtitle: String {
@@ -329,45 +399,6 @@ private struct SavedGameRow: View {
         f.timeStyle = .short
         return f
     }()
-}
-
-/// A caramel wood pill matching the board frame palette.
-private struct ModeButton: View {
-    let title: String
-    let subtitle: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Text(title).font(ChromeType.title2.bold())
-                Text(subtitle).font(ChromeType.callout).opacity(0.75)
-            }
-            .frame(maxWidth: 320)
-            .padding(.horizontal, 48)
-            .padding(.vertical, 18)
-            .foregroundStyle(CaramelPalette.frameText)
-        }
-        .buttonStyle(ModeButtonStyle())
-    }
-}
-
-private struct ModeButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                LinearGradient(
-                    colors: [CaramelPalette.frameTop, CaramelPalette.frameMid],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(CaramelPalette.frameBot, lineWidth: 1.5)
-            )
-            .brightness(configuration.isPressed ? -0.05 : 0)
-    }
 }
 
 #Preview {
