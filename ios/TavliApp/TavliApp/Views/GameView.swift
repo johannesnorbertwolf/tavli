@@ -92,6 +92,11 @@ struct GameView: View {
                     VStack(spacing: 12) {
                         topBar
                             .padding(.horizontal, 16)
+                            // Drop below the floating Back/Save/Resign row: at #92's
+                            // larger type the centered group no longer clears the
+                            // corner pills on the narrowest iPad. Mirrors the
+                            // landscape sidePanel's top padding.
+                            .padding(.top, 44)
                         Spacer(minLength: 0)
                         ControlsView(session: session)
                             .padding(.horizontal, 16)
@@ -257,7 +262,7 @@ private struct BackButton: View {
                 Image(systemName: "chevron.left")
                 Text("Back")
             }
-            .font(.callout.bold())
+            .font(ChromeType.callout.bold())
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(ChromeTheme.undoTint.opacity(0.22))
@@ -279,7 +284,7 @@ private struct SaveButton: View {
                 Image(systemName: "square.and.arrow.down")
                 Text("Save")
             }
-            .font(.callout.bold())
+            .font(ChromeType.callout.bold())
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(ChromeTheme.doneTint.opacity(0.22))
@@ -302,7 +307,7 @@ private struct SurrenderButton: View {
                 Image(systemName: "flag.fill")
                 Text("Resign")
             }
-            .font(.callout.bold())
+            .font(ChromeType.callout.bold())
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(ChromeTheme.surrenderTint.opacity(0.22))
@@ -324,12 +329,12 @@ private struct TurnIndicatorView: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(label)
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(ChromeTheme.ink)
                 .multilineTextAlignment(.center)
             if case .awaitingRoll = session.phase {
                 Text("Tap dice to roll")
-                    .font(.caption)
+                    .font(ChromeType.caption)
                     .foregroundStyle(ChromeTheme.ink.opacity(0.6))
             }
         }
@@ -368,10 +373,10 @@ private struct BorneOffView: View {
                 .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
                 .frame(width: 28, height: 28)
             Text("\(count)")
-                .font(.caption.bold())
+                .font(ChromeType.caption.bold())
                 .foregroundStyle(ChromeTheme.ink)
             Text(ChromeTheme.displayName(color))
-                .font(.caption2)
+                .font(ChromeType.caption2)
                 .foregroundStyle(ChromeTheme.ink.opacity(0.6))
         }
     }
@@ -412,7 +417,7 @@ private struct ControlButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.callout.bold())
+            .font(ChromeType.callout.bold())
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(tint.opacity(configuration.isPressed ? 0.45 : 0.22))
@@ -437,11 +442,11 @@ private struct WinOverlayView: View {
             SColor.black.opacity(0.55).ignoresSafeArea()
             VStack(spacing: 24) {
                 Text("\(ChromeTheme.displayName(winner)) wins!")
-                    .font(.system(size: 48, weight: .bold, design: .serif))
+                    .font(ChromeType.winTitle)
                     .foregroundStyle(.white)
                 StatsPanelView(stats: stats)
                 Button("Play Again", action: onNewGame)
-                    .font(.title3.bold())
+                    .font(ChromeType.title3.bold())
                     .padding(.horizontal, 32)
                     .padding(.vertical, 14)
                     .background(.white.opacity(0.15))
@@ -457,7 +462,7 @@ private struct WinOverlayView: View {
                     Button("History", action: onHistory)
                         .buttonStyle(.plain)
                 }
-                .font(.body.bold())
+                .font(ChromeType.body.bold())
                 .foregroundStyle(.white.opacity(0.85))
             }
         }
@@ -482,7 +487,7 @@ private struct HistoryView: View {
             if session.history.isEmpty {
                 Spacer()
                 Text("No moves yet")
-                    .font(.callout)
+                    .font(ChromeType.callout)
                     .foregroundStyle(ChromeTheme.ink.opacity(0.6))
                 Spacer()
             } else {
@@ -513,11 +518,11 @@ private struct HistoryView: View {
     private var header: some View {
         HStack {
             Text("Move history")
-                .font(.title3.bold())
+                .font(ChromeType.title3.bold())
                 .foregroundStyle(ChromeTheme.ink)
             Spacer()
             Button("Done") { dismiss() }
-                .font(.callout.bold())
+                .font(ChromeType.callout.bold())
                 .foregroundStyle(ChromeTheme.ink)
                 .buttonStyle(.plain)
         }
@@ -542,19 +547,19 @@ private struct HistoryRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text("\(index).")
-                .font(.callout.monospacedDigit())
+                .font(ChromeType.callout.monospacedDigit())
                 .foregroundStyle(ChromeTheme.ink.opacity(0.5))
-                .frame(width: 34, alignment: .trailing)
+                .frame(width: 48, alignment: .trailing)
             Circle()
                 .fill(ChromeTheme.checkerColor(mover))
                 .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
                 .frame(width: 18, height: 18)
             Text("d=\(ply.die1) \(ply.die2)")
-                .font(.callout.monospaced())
+                .font(ChromeType.callout.monospaced())
                 .foregroundStyle(ChromeTheme.ink.opacity(0.75))
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 78, alignment: .leading)
             Text(moveText)
-                .font(.callout.monospaced())
+                .font(ChromeType.callout.monospaced())
                 .foregroundStyle(ply.halfMoves.isEmpty ? ChromeTheme.ink.opacity(0.5) : ChromeTheme.ink)
             Spacer(minLength: 0)
         }
@@ -568,6 +573,33 @@ private struct HistoryRow: View {
             return "\(pair[0])→\(pair[1])"
         }.joined(separator: ", ")
     }
+}
+
+/// Centralizes the game chrome's typography (#92). The app targets older players
+/// reading at arm's length, so every role sits roughly one step above the SwiftUI
+/// text style the chrome originally used. Names mirror the system styles they
+/// replace so the hierarchy stays legible; weight/design variants are applied at
+/// the use site (`.bold()`, `.monospaced()`), as before. Sizes are fixed —
+/// Dynamic Type is a deliberate non-goal for now. Internal, like `ChromeTheme`:
+/// the chrome views live in separate files.
+enum ChromeType {
+    static let title2 = Font.system(size: 26)                       // was .title2 (22)
+    static let title3 = Font.system(size: 24)                       // was .title3 (20)
+    static let headline = Font.system(size: 22, weight: .semibold)  // was .headline (17)
+    static let body = Font.system(size: 20)                         // was .body (17)
+    static let callout = Font.system(size: 19)                      // was .callout (16)
+    static let subheadline = Font.system(size: 18)                  // was .subheadline (15)
+    static let caption = Font.system(size: 16)                      // was .caption (12)
+    static let caption2 = Font.system(size: 14)                     // was .caption2 (11)
+
+    // Display faces with bespoke sizes.
+    static let winTitle = Font.system(size: 54, weight: .bold, design: .serif)
+    static let statsTitle = Font.custom("Cormorant Garamond", size: 38)
+    static let wordmark = Font.custom("Cormorant Garamond", size: 96)
+
+    // Debug overlay (developer chrome, but it was 9–10 pt — illegible on device).
+    static let debugMono = Font.system(size: 12, design: .monospaced)
+    static let debugLabel = Font.system(size: 13)
 }
 
 /// Centralizes the engine-`Color` → display mappings (name + checker color) so a
@@ -593,16 +625,15 @@ enum ChromeTheme {
 
 // MARK: - Previews
 
-#Preview("Landscape") {
+#Preview("Landscape", traits: .landscapeLeft) {
     GameView(session: GameSession())
-        .previewInterfaceOrientation(.landscapeLeft)
 }
 
 #Preview("Portrait") {
     GameView(session: GameSession())
 }
 
-#Preview("Undo/Done") {
+#Preview("Undo/Done", traits: .landscapeLeft) {
     let session = GameSession()
     session.setManualDice(3, 5)
     if let source = session.selectableSources.sorted().first,
@@ -610,7 +641,6 @@ enum ChromeTheme {
         session.commitHalfMove(from: source, to: target)
     }
     return GameView(session: session)
-        .previewInterfaceOrientation(.landscapeLeft)
 }
 
 #Preview("History") {

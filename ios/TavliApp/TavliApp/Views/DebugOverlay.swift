@@ -12,7 +12,7 @@ struct DebugOverlayToggle: View {
         VStack(alignment: .trailing, spacing: 8) {
             Button { isOn.toggle() } label: {
                 Image(systemName: "ladybug.fill")
-                    .font(.title2)
+                    .font(ChromeType.title2)
                     .foregroundStyle(isOn ? .yellow : .white.opacity(0.5))
                     .padding(8)
                     .background(.black.opacity(0.5), in: Circle())
@@ -39,11 +39,11 @@ struct DebugOverlay: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Debug").font(.caption.bold()).foregroundStyle(.yellow)
+            Text("Debug").font(ChromeType.caption.bold()).foregroundStyle(.yellow)
 
             // Win probability (WHITE's view), straight from the session.
             HStack(spacing: 6) {
-                Text("W").font(.caption2).foregroundStyle(.white.opacity(0.7))
+                Text("W").font(ChromeType.caption2).foregroundStyle(.white.opacity(0.7))
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.black.opacity(0.5))
@@ -54,27 +54,27 @@ struct DebugOverlay: View {
                 }
                 .frame(height: 8)
                 Text(String(format: "%.0f%%", session.winProbability * 100))
-                    .font(.caption2.monospacedDigit())
+                    .font(ChromeType.caption2.monospacedDigit())
                     .foregroundStyle(.white)
             }
 
             Divider().background(Color.white.opacity(0.2))
 
-            Text("Top moves").font(.caption2).foregroundStyle(.white.opacity(0.7))
+            Text("Top moves").font(ChromeType.caption2).foregroundStyle(.white.opacity(0.7))
             if candidates.isEmpty {
                 Text("—")
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(ChromeType.debugMono)
                     .foregroundStyle(.white.opacity(0.4))
             } else {
                 ForEach(Array(candidates.enumerated()), id: \.offset) { _, c in
                     HStack {
                         Text(c.label)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(ChromeType.debugMono)
                             .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
                         Spacer()
                         Text(String(format: "%.1f%%", c.score * 100))
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(ChromeType.debugMono)
                             .foregroundStyle(.green.opacity(0.9))
                     }
                 }
@@ -83,7 +83,7 @@ struct DebugOverlay: View {
             Divider().background(Color.white.opacity(0.2))
 
             Text("Turn: \(session.currentPlayer.rawValue)  Dice: \(session.game.dice.die1.value),\(session.game.dice.die2.value)")
-                .font(.system(size: 9, design: .monospaced))
+                .font(ChromeType.debugMono)
                 .foregroundStyle(.white.opacity(0.6))
 
             Divider().background(Color.white.opacity(0.2))
@@ -93,17 +93,17 @@ struct DebugOverlay: View {
                     Image(systemName: "clock.arrow.circlepath")
                     Text("Move history")
                 }
-                .font(.system(size: 10, design: .default))
+                .font(ChromeType.debugLabel)
                 .foregroundStyle(.white.opacity(0.85))
             }
             .buttonStyle(.plain)
             Button("↩ Undo decision") { session.undoLastDecision() }
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .font(ChromeType.debugMono.weight(.semibold))
                 .foregroundStyle(session.canUndoLastDecision ? .yellow : .white.opacity(0.3))
                 .disabled(!session.canUndoLastDecision)
         }
         .padding(10)
-        .frame(width: 200, alignment: .leading)
+        .frame(width: 240, alignment: .leading)
         .background(.black.opacity(0.75))
         .cornerRadius(10)
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.15), lineWidth: 1))
