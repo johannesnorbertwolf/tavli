@@ -164,6 +164,99 @@ struct DraggedCheckerView: View {
     }
 }
 
+/// The AI's checker arcing from `hop.from` to `hop.to` (#93). Rendered above
+/// all board layers while `GameSession` publishes a hop in flight; the source
+/// stack shows one fewer checker meanwhile (see `PlayableBoardView`). The
+/// flight follows a quadratic Bézier lifted above both endpoints, eased
+/// in-out, with a subtle mid-flight scale-up to sell the lift. Landing is the
+/// engine's job — it applies the half-move (and clears the hop) when the
+/// flight time elapses, so this view never touches game state.
+struct AIFlightCheckerView: View {
+    let hop: AIAnimatedHop
+    let geo: BoardGeometry
+    /// Pre-hop stacks (the flying checker is still counted at `hop.from`),
+    /// used to derive the lift-off and landing slots.
+    let stacks: [[TavliEngine.Color]]
+
+    @State private var progress: CGFloat = 0
+
+    var body: some View {
+        // Lift off from the top visible checker of the source stack; land on
+        // the next visible slot of the destination (capped at the 5-stack).
+        let start = geo.checkerCenter(point: hop.from,
+                                      slot: max(0, min(stacks[hop.from].count, 5) - 1))
+        let end = geo.checkerCenter(point: hop.to,
+                                    slot: min(stacks[hop.to].count, 4))
+        // Control point above both endpoints ("up" in screen space, whatever
+        // the board orientation): a slight arc for short hops, capped so a
+        // cross-board move doesn't balloon.
+        let s = geo.scale
+        let span = hypot(end.x - start.x, end.y - start.y)
+        let lift = min(24 * s + 0.22 * span, 130 * s)
+        let control = CGPoint(x: (start.x + end.x) / 2,
+                              y: min(start.y, end.y) - lift)
+
+        FlightDisc(geo: geo, color: hop.color)
+            .modifier(ArcFlightEffect(progress: progress,
+                                      start: start, control: control, end: end))
+            .position(x: 0, y: 0)   // anchor at the board origin; the effect translates
+            .allowsHitTesting(false)
+            .onAppear {
+                guard hop.duration > 0 else { progress = 1; return }
+                withAnimation(.easeInOut(duration: hop.duration)) { progress = 1 }
+            }
+    }
+}
+
+/// Moves its content's center along the quadratic Bézier `start → control →
+/// end` as `progress` animates 0 → 1, scaling up slightly as the arc crests.
+/// A `GeometryEffect` so a plain `withAnimation` interpolates `progress` (the
+/// ease comes from the animation curve), rendered without view re-layout.
+private struct ArcFlightEffect: GeometryEffect {
+    var progress: CGFloat
+    let start: CGPoint
+    let control: CGPoint
+    let end: CGPoint
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let t = progress
+        let u = 1 - t
+        let x = u * u * start.x + 2 * u * t * control.x + t * t * end.x
+        let y = u * u * start.y + 2 * u * t * control.y + t * t * end.y
+        let crest = 1 + 0.10 * sin(.pi * t)
+        // Translate the content center to the curve point, scaling about it.
+        var m = CGAffineTransform(translationX: x, y: y)
+        m = m.translatedBy(x: size.width / 2, y: size.height / 2)
+        m = m.scaledBy(x: crest, y: crest)
+        m = m.translatedBy(x: -size.width / 2, y: -size.height / 2)
+        return ProjectionTransform(m)
+    }
+}
+
+/// The flying disc itself: the lifted (deep-shadow) checker in a small canvas
+/// padded so the shadow isn't clipped at the frame edge.
+private struct FlightDisc: View {
+    let geo: BoardGeometry
+    let color: TavliEngine.Color
+
+    var body: some View {
+        let r = geo.checkerRadius
+        let s = geo.scale
+        let side = 2 * (r + 16 * s)
+        Canvas { context, size in
+            drawCheckerDisc(in: &context,
+                            center: CGPoint(x: size.width / 2, y: size.height / 2),
+                            r: r, s: s, color: color, lifted: true)
+        }
+        .frame(width: side, height: side)
+    }
+}
+
 /// Maps an engine `Color` to its Caramel checker palette. Engine `.black` → red.
 fileprivate struct CheckerStyle {
     let fill: SwiftUI.Color

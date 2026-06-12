@@ -107,6 +107,28 @@ fit and the checkers register with the triangles.
   drawn at an arbitrary `location` in board coordinate space, using the lifted
   shadow variant. Rendered above all board layers (including dice) during a drag
   gesture, and again during the snap-back animation after a failed drop.
+- **`AIFlightCheckerView`** (#93) — the AI's checker arcing `hop.from → hop.to`
+  while `GameSession` publishes an `AIAnimatedHop`. Purely presentational: it
+  never touches game state — the engine applies the half-move (and clears the
+  hop) when the flight time elapses. Takes the **pre-hop** stacks (the flying
+  checker still counted at `from`) and derives the endpoints from
+  `geo.checkerCenter`: lift-off at the source's top visible slot
+  (`min(count, 5) − 1`), landing at the destination's next visible slot
+  (`min(count, 4)`, merging into the 5-stack cap). The path is a quadratic
+  Bézier whose control point sits above both endpoints in *screen* space
+  (upward whatever the board orientation): `lift = min(24·s + 0.22·span,
+  130·s)` over the midpoint. `onAppear` runs `withAnimation(.easeInOut(duration:
+  hop.duration)) { progress = 1 }`; a zero duration snaps to the end.
+- **`ArcFlightEffect`** (private, #93) — a `GeometryEffect` whose
+  `animatableData` is the flight progress: it evaluates the Bézier at `t` and
+  builds a `ProjectionTransform` translating the content's center to the curve
+  point, scaled about that center by `1 + 0.10·sin(π·t)` so the checker swells
+  slightly as the arc crests. A `GeometryEffect` (not an `Animatable` view) so
+  the interpolation is guaranteed to drive rendering without re-layout.
+- **`FlightDisc`** (private, #93) — the flying disc itself: a small `Canvas`
+  (side `2·(r + 16·s)`, padded so the lifted shadow isn't clipped) drawing
+  `drawCheckerDisc(lifted: true)` at its center. Anchored at the board origin
+  via `.position(x: 0, y: 0)`; `ArcFlightEffect` does all the moving.
 - **`CheckerStyle`** maps `TavliEngine.Color → (fill, hi, ring, edge, text)` from
   `CaramelPalette`; engine `.black` → red. `fileprivate` — used by `CheckersView`
   and `DraggedCheckerView` (both in the same file).
@@ -146,6 +168,19 @@ session-bound hosts.
   `.allowsHitTesting(canRoll)` so it claims taps only while awaiting a roll and
   otherwise passes them through to the board beneath — see `PlayableBoardView`
   for why it's a **sibling** of the gesture stack, not inside it.
+  **AI dice roll (#93):** the engine sets the AI's dice values up front (the
+  search needs them) and publishes `aiDiceRolling` for `aiDiceRollDuration`.
+  `.onChange(of: session.aiDiceRolling, initial: true)` — `initial: true`
+  because an AI that opens the game starts tumbling before the view appears —
+  drives `beginAITumble` / `settleAITumble`: two full rotations easing out over
+  the engine's window (`spin += 720`) plus the 0.92 scale dip, while a
+  `Task` cycles **random masking faces** (`aiMaskFaces`, two dice, swapped every
+  90 ms) so the real roll stays hidden until settle; a pasch reveals its four
+  dice only then. The row's rotation is plain `.degrees(spin)` (not gated on
+  `tumbling`): both tumbles end on a multiple of 360°, so the settled row
+  renders unrotated and no gate-flip can animate a backward unwind. Greying
+  still works during the AI's moves because the engine commits each landed hop
+  into `moveBuilder` — `usedDiceFlags` greys the used die as each hop lands.
 - **`ManualDiceControl`** — two 1…6 steppers + "Set dice" →
   `session.setManualDice(d1, d2)`; only active while awaiting a roll.
 - `#Preview`s: a "Dice — states" matrix over `DiceRow` (normal, each side
@@ -166,10 +201,23 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   the ring haloes the selected stack), carrying the `.contentShape` + board
   `.gesture`; then **`BoardDiceView(session:)` as a sibling above it** (#46 — the
   center-bar dice); then **`DraggedCheckerView`** (floating checker during drag,
-  #40) and the snap-back overlay, both above the dice. All layers rebuild an
-  identical `BoardGeometry` from the same square fit, so they register exactly;
-  the gesture geometry is built from the same `GeometryReader` size. The
-  container is `.aspectRatio(1, .fit)`.
+  #40), the snap-back overlay, and **`AIFlightCheckerView`** (the AI's arcing
+  checker, #93), all above the dice. All layers rebuild an identical
+  `BoardGeometry` from the same square fit, so they register exactly; the
+  gesture geometry is built from the same `GeometryReader` size. The container
+  is `.aspectRatio(1, .fit)`.
+- **AI flight (#93)** — while `session.aiHopInFlight` is non-nil,
+  `displayStacks` drops the top checker at `hop.from` (same trick as the drag
+  source) and `AIFlightCheckerView` renders it arcing to `hop.to`, fed the
+  **pre-hop** `boardStacks` so the lift-off/landing slots match what
+  `CheckersView` shows. `.id(hop.id)` forces a fresh view per hop so the flight
+  restarts even when consecutive hops share endpoints (a Pasch moving two
+  checkers along the same route — the engine publishes `nil` between hops, but
+  the two assignments land in one main-actor turn, so identity must come from
+  the ordinal). No input gating is needed here: the engine keeps
+  `selectableSources` empty and the phase guards reject intents during
+  `aiThinking`/`animating`, and the dice ignore taps via
+  `.allowsHitTesting(canRoll)`.
 - **Why the dice are a sibling, not inside the gesture stack** (#46): the dice
   own a tap-to-roll gesture and the board owns tap/drag. Nesting them would make
   the two contend; keeping `BoardDiceView` a sibling with

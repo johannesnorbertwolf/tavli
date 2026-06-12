@@ -4,10 +4,10 @@ import CoreML
 
 /// The phase of the current turn. The contract all views build against.
 ///
-/// `GameSession` itself only drives the human-move-centric phases
-/// (`awaitingRoll`/`picking`/`moving`/`gameOver`). `aiThinking` and `animating`
-/// are part of the shared vocabulary for the AI/animation layers (later
-/// tickets) and are not entered by the session on its own.
+/// `awaitingRoll`/`picking`/`moving`/`gameOver` are the human-move phases.
+/// `aiThinking` covers the AI's off-main search; `animating` covers the
+/// presentational replay of the AI's turn (#93) — both block human input
+/// through the same phase guards the human intents already use.
 public enum TurnPhase: Equatable {
     case awaitingRoll
     case picking                 // dice rolled, no source selected yet
@@ -15,6 +15,50 @@ public enum TurnPhase: Equatable {
     case aiThinking
     case animating
     case gameOver(winner: Color)
+}
+
+/// Presentation timings for the AI's turn (#93). Purely visual — they never
+/// affect which move is played, only how it is replayed for the viewer. A zero
+/// duration disables that animation; `.off` (both zero) restores the fully
+/// synchronous pre-animation behavior (the board snaps as soon as the move is
+/// chosen), which headless tests rely on. The defaults give a ~1.8 s two-move
+/// turn (0.6 s dice + 2 × 0.6 s moves). Surfaced in the settings screen once
+/// #77 lands.
+public struct AnimationTimings: Equatable, Sendable {
+    /// Time the AI's dice visibly tumble before settling on the rolled values.
+    public var aiDiceRollDuration: TimeInterval
+    /// Time each half-move's checker spends arcing between points.
+    public var aiMoveAnimationDuration: TimeInterval
+
+    public init(aiDiceRollDuration: TimeInterval = 0.6,
+                aiMoveAnimationDuration: TimeInterval = 0.6) {
+        self.aiDiceRollDuration = aiDiceRollDuration
+        self.aiMoveAnimationDuration = aiMoveAnimationDuration
+    }
+
+    public static let standard = AnimationTimings()
+    public static let off = AnimationTimings(aiDiceRollDuration: 0, aiMoveAnimationDuration: 0)
+
+    /// Whether the AI turn plays any animation at all.
+    public var isAnimated: Bool { aiDiceRollDuration > 0 || aiMoveAnimationDuration > 0 }
+}
+
+/// One AI half-move in flight (#93). While published, the view layer renders
+/// this checker arcing `from → to` (and shows one fewer checker at `from`);
+/// the committed board still holds the pre-hop position. The session applies
+/// the half-move and clears this when the flight time elapses, so the board
+/// visibly advances point by point.
+public struct AIAnimatedHop: Equatable, Sendable {
+    /// Ordinal of the hop within the turn (0-based). Distinguishes consecutive
+    /// hops with identical endpoints (a Pasch moving two checkers the same way)
+    /// so the view restarts its flight animation per hop.
+    public let id: Int
+    public let from: Int
+    public let to: Int
+    public let color: Color
+    /// Flight time, copied from `AnimationTimings.aiMoveAnimationDuration` so
+    /// the view needs no second source of truth.
+    public let duration: TimeInterval
 }
 
 /// Headless, UI-agnostic controller for a single game.
@@ -48,8 +92,30 @@ public final class GameSession: ObservableObject {
     /// Knobs for the AI's iterative-deepening search (defaults match the CLI).
     public let searchConfig: SearchConfig
 
+    /// Presentation timings for the AI turn (#93). Mutable so the settings
+    /// screen (#77) can adjust them; consulted afresh at each AI turn.
+    public var animationTimings: AnimationTimings
+
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
+
+    /// True while the AI's dice visibly tumble (#93). The dice values are
+    /// already set (the engine needs them to pick a move); the view masks them
+    /// until this flips back to false.
+    @Published public private(set) var aiDiceRolling = false
+
+    /// The AI half-move currently animating (#93), or `nil` outside an AI
+    /// flight. Hops of one turn are published strictly one at a time; the
+    /// board mutates only as each one lands.
+    @Published public private(set) var aiHopInFlight: AIAnimatedHop? = nil
+
+    /// The in-progress AI turn animation, kept so `newGame()` can cancel it.
+    private var aiAnimationTask: Task<Void, Never>? = nil
+
+    /// Bumped whenever a new game interrupts a pending AI turn, so a stale
+    /// search result or animation continuation detects it and bails instead of
+    /// mutating the fresh game.
+    private var aiTurnEpoch = 0
 
     /// Latest win probability for WHITE (∈ [0, 1]), updated after each AI move.
     @Published public private(set) var winProbability: Double = 0.5
@@ -97,12 +163,14 @@ public final class GameSession: ObservableObject {
                 config: GameConfig = .standard,
                 agent: Agent? = nil,
                 aiColor: Color? = nil,
-                searchConfig: SearchConfig = .standard) {
+                searchConfig: SearchConfig = .standard,
+                animationTimings: AnimationTimings = .standard) {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
         self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor)
         self.searchConfig = searchConfig
+        self.animationTimings = animationTimings
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
@@ -276,8 +344,15 @@ public final class GameSession: ObservableObject {
         onGameOver?(aiColor)
     }
 
-    /// Reset to a fresh game, current player rolling first.
+    /// Reset to a fresh game, current player rolling first. Interrupts any
+    /// pending AI turn: the animation task is cancelled and the epoch bumped so
+    /// a still-running search cannot apply a stale move to the fresh board.
     public func newGame(startingPlayer: Color = .black) {
+        aiTurnEpoch += 1
+        aiAnimationTask?.cancel()
+        aiAnimationTask = nil
+        aiDiceRolling = false
+        aiHopInFlight = nil
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
@@ -441,6 +516,12 @@ public final class GameSession: ObservableObject {
 
     /// Roll for the AI, then either play a random move (no model) or compute the
     /// best move off the main actor and apply it back on the main actor.
+    ///
+    /// With `animationTimings.isAnimated` (#93) the turn is additionally
+    /// *presented*: the dice tumble for `aiDiceRollDuration` (concurrently with
+    /// the search, which already knows the values), then `animateAITurn` replays
+    /// the chosen half-moves one at a time. With `.off` everything below is
+    /// synchronous exactly as before.
     private func takeAITurn() {
         rollDice()
         legalMoves = PossibleMoves(
@@ -449,10 +530,20 @@ public final class GameSession: ObservableObject {
             dice: game.dice
         ).findMoves()
 
+        let timings = animationTimings
+        let epoch = aiTurnEpoch
+        let diceRollStarted = Date()
+        if timings.isAnimated { aiDiceRolling = timings.aiDiceRollDuration > 0 }
+
         guard !legalMoves.isEmpty else {
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            recordTurn(mover: game.currentPlayer, move: nil)
-            finishTurn()
+            guard timings.isAnimated else {
+                recordTurn(mover: game.currentPlayer, move: nil)
+                finishTurn()
+                return
+            }
+            // Forced pass: still show the roll the AI could not play.
+            animateAITurn(move: nil, score: nil, diceRollStarted: diceRollStarted, epoch: epoch)
             return
         }
         moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
@@ -460,7 +551,12 @@ public final class GameSession: ObservableObject {
 
         guard let agent else {
             // No model available — fall back to a random legal move.
-            applyAIMove(legalMoves.randomElement()!, score: nil)
+            let move = legalMoves.randomElement()!
+            guard timings.isAnimated else {
+                applyAIMove(move, score: nil)
+                return
+            }
+            animateAITurn(move: move, score: nil, diceRollStarted: diceRollStarted, epoch: epoch)
             return
         }
 
@@ -504,14 +600,19 @@ public final class GameSession: ObservableObject {
             let chosenScore = result?.score
 
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, self.aiTurnEpoch == epoch else { return }
                 let chosen: Move
                 if let chosenIndex, chosenIndex < liveMoves.count {
                     chosen = liveMoves[chosenIndex]
                 } else {
                     chosen = liveMoves.randomElement()!
                 }
-                self.applyAIMove(chosen, score: chosenScore)
+                if self.animationTimings.isAnimated {
+                    self.animateAITurn(move: chosen, score: chosenScore,
+                                       diceRollStarted: diceRollStarted, epoch: epoch)
+                } else {
+                    self.applyAIMove(chosen, score: chosenScore)
+                }
             }
         }
     }
@@ -525,6 +626,82 @@ public final class GameSession: ObservableObject {
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
         }
         finishTurn()
+    }
+
+    /// How long the settled dice of a forced pass stay on screen before the
+    /// turn passes, so the player registers the roll the AI could not play.
+    /// Scales down with the configured timings so near-zero test timings keep
+    /// the whole animated turn near-instant; 0.45 s at the standard timings.
+    private var passBeat: TimeInterval {
+        min(0.45, 2 * max(animationTimings.aiDiceRollDuration,
+                          animationTimings.aiMoveAnimationDuration))
+    }
+
+    /// Replay the AI's already-chosen turn visually (#93): wait out the rest of
+    /// the dice tumble, then for each half-move publish it as in flight, wait
+    /// its flight time, and only then land it on the board — so every
+    /// intermediate position (all four hops of a Pasch included) is visible.
+    /// Recording and `finishTurn` happen after the last hop lands, keeping the
+    /// usual ordering guarantees; phase guards block human input throughout.
+    /// `move == nil` is a forced pass (dice settle, short beat, turn passes).
+    private func animateAITurn(move: Move?, score: Float?, diceRollStarted: Date, epoch: Int) {
+        phase = .animating
+        let timings = animationTimings
+        let beat = passBeat
+        let mover = game.currentPlayer
+        aiAnimationTask = Task { @MainActor [weak self] in
+            // Re-validate after every suspension: the session may be gone, the
+            // task cancelled, or a new game started (epoch bumped) meanwhile.
+            @MainActor func live() -> GameSession? {
+                guard let self, !Task.isCancelled, self.aiTurnEpoch == epoch else { return nil }
+                return self
+            }
+
+            // The search ran concurrently with the tumble — sleep only the rest.
+            let elapsed = Date().timeIntervalSince(diceRollStarted)
+            await Self.sleep(timings.aiDiceRollDuration - elapsed)
+            guard let settled = live() else { return }
+            settled.aiDiceRolling = false
+
+            guard let move else {
+                await Self.sleep(beat)
+                guard let s = live() else { return }
+                s.recordTurn(mover: mover, move: nil)
+                s.finishTurn()
+                return
+            }
+
+            for (i, hop) in move.halfMoves.enumerated() {
+                guard let s = live() else { return }
+                s.aiHopInFlight = AIAnimatedHop(id: i,
+                                                from: hop.from.position,
+                                                to: hop.to.position,
+                                                color: mover,
+                                                duration: timings.aiMoveAnimationDuration)
+                await Self.sleep(timings.aiMoveAnimationDuration)
+                guard let landed = live() else { return }
+                landed.game.board.applyHalfMove(hop)
+                landed.moveBuilder.commit(halfMove: hop)
+                landed.aiHopInFlight = nil
+            }
+
+            guard let s = live() else { return }
+            // Fresh builder so the finished turn leaves no built half-moves
+            // behind (a stale `built` would re-enable the within-turn Undo).
+            s.moveBuilder = MoveBuilder(legalMoves: [], board: s.game.board)
+            if let score {
+                s.winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
+            }
+            s.recordTurn(mover: mover, move: move)
+            s.finishTurn()
+        }
+    }
+
+    /// Sleep helper for the animation driver; a non-positive duration returns
+    /// immediately, so zeroed timings degrade to back-to-back publishes.
+    private static func sleep(_ seconds: TimeInterval) async {
+        guard seconds > 0 else { return }
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
     // ── Dice rolling ─────────────────────────────────────────────────────────
@@ -587,13 +764,15 @@ public final class GameSession: ObservableObject {
     /// — exactly as for a new game — so the AI takes its turn if it owns the move.
     public static func resume(from save: GameSave,
                               config: GameConfig = .standard,
-                              agent: Agent? = nil) -> GameSession {
+                              agent: Agent? = nil,
+                              animationTimings: AnimationTimings = .standard) -> GameSession {
         let starting = Color(rawValue: save.startingPlayer) ?? .black
         let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
         let session = GameSession(startingPlayer: starting,
                                   config: config,
                                   agent: agent,
-                                  aiColor: aiColor)
+                                  aiColor: aiColor,
+                                  animationTimings: animationTimings)
         session.replay(save.history)
         return session
     }
