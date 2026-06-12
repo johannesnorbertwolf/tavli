@@ -1,30 +1,23 @@
 import SwiftUI
 import TavliEngine
 
-/// Bug-icon toggle plus the eval panel. Off by default. Drop onto any screen as a
-/// top-trailing overlay (the game screen in T10 will host it).
-struct DebugOverlayToggle: View {
-    @ObservedObject var session: GameSession
-    @State private var isOn = false
-    var onHistory: () -> Void = {}
+/// The ladybug button that shows/hides the eval pane. Off by default. The pane's
+/// visibility state lives in `GameView` (#101) so each orientation can place the
+/// open pane where it fits: floating under the button in portrait, docked into
+/// the side panel flow in landscape (never covering other chrome).
+struct DebugToggleButton: View {
+    @Binding var isOn: Bool
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            Button { isOn.toggle() } label: {
-                Image(systemName: "ladybug.fill")
-                    .font(ChromeType.title2)
-                    .foregroundStyle(isOn ? .yellow : .white.opacity(0.5))
-                    .padding(8)
-                    .background(.black.opacity(0.5), in: Circle())
-            }
-            .accessibilityLabel("Toggle debug overlay")
-
-            if isOn {
-                DebugOverlay(session: session, onHistory: onHistory)
-                    .transition(.opacity)
-            }
+        Button { isOn.toggle() } label: {
+            Image(systemName: "ladybug.fill")
+                .font(ChromeType.title2)
+                .foregroundStyle(isOn ? ChromeTheme.undoTint : ChromeKit.inkSecondary)
+                .padding(10)
+                .background(ChromeKit.cardColor, in: Circle())
+                .shadow(color: ChromeKit.cardShadow, radius: 5, x: 0, y: 2)
         }
-        .animation(.easeInOut(duration: 0.15), value: isOn)
+        .accessibilityLabel("Toggle debug overlay")
     }
 }
 
@@ -35,58 +28,64 @@ struct DebugOverlayToggle: View {
 struct DebugOverlay: View {
     @ObservedObject var session: GameSession
     var onHistory: () -> Void = {}
+    /// Fixed pane width when floating (portrait); `nil` fills the container
+    /// (the landscape side panel, where the pane docks as a row).
+    var width: CGFloat? = 240
     @State private var candidates: [(label: String, score: Float)] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Debug").font(ChromeType.caption.bold()).foregroundStyle(.yellow)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DEBUG")
+                .font(ChromeType.caption2.weight(.bold))
+                .kerning(1.2)
+                .foregroundStyle(ChromeKit.inkSecondary)
 
             // Win probability (WHITE's view), straight from the session.
             HStack(spacing: 6) {
-                Text("W").font(ChromeType.caption2).foregroundStyle(.white.opacity(0.7))
+                Text("W").font(ChromeType.caption2).foregroundStyle(ChromeKit.inkSecondary)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.black.opacity(0.5))
+                        Capsule().fill(ChromeTheme.ink.opacity(0.12))
                         Capsule()
-                            .fill(Color.yellow.opacity(0.8))
+                            .fill(ChromeTheme.doneTint)
                             .frame(width: geo.size.width * session.winProbability)
                     }
                 }
                 .frame(height: 8)
                 Text(String(format: "%.0f%%", session.winProbability * 100))
                     .font(ChromeType.caption2.monospacedDigit())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ChromeTheme.ink)
             }
 
-            Divider().background(Color.white.opacity(0.2))
+            Divider()
 
-            Text("Top moves").font(ChromeType.caption2).foregroundStyle(.white.opacity(0.7))
+            Text("Top moves").font(ChromeType.caption2).foregroundStyle(ChromeKit.inkSecondary)
             if candidates.isEmpty {
                 Text("—")
                     .font(ChromeType.debugMono)
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(ChromeKit.inkSecondary)
             } else {
                 ForEach(Array(candidates.enumerated()), id: \.offset) { _, c in
                     HStack {
                         Text(c.label)
                             .font(ChromeType.debugMono)
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(ChromeTheme.ink)
                             .lineLimit(1)
                         Spacer()
                         Text(String(format: "%.1f%%", c.score * 100))
                             .font(ChromeType.debugMono)
-                            .foregroundStyle(.green.opacity(0.9))
+                            .foregroundStyle(ChromeTheme.doneTint)
                     }
                 }
             }
 
-            Divider().background(Color.white.opacity(0.2))
+            Divider()
 
             Text("Turn: \(session.currentPlayer.rawValue)  Dice: \(session.game.dice.die1.value),\(session.game.dice.die2.value)")
                 .font(ChromeType.debugMono)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(ChromeKit.inkSecondary)
 
-            Divider().background(Color.white.opacity(0.2))
+            Divider()
 
             Button(action: onHistory) {
                 HStack(spacing: 4) {
@@ -94,19 +93,21 @@ struct DebugOverlay: View {
                     Text("Move history")
                 }
                 .font(ChromeType.debugLabel)
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(ChromeTheme.ink)
             }
             .buttonStyle(.plain)
             Button("↩ Undo decision") { session.undoLastDecision() }
                 .font(ChromeType.debugMono.weight(.semibold))
-                .foregroundStyle(session.canUndoLastDecision ? .yellow : .white.opacity(0.3))
+                .foregroundStyle(session.canUndoLastDecision
+                                 ? ChromeTheme.undoTint
+                                 : ChromeTheme.ink.opacity(0.35))
                 .disabled(!session.canUndoLastDecision)
         }
-        .padding(10)
-        .frame(width: 240, alignment: .leading)
-        .background(.black.opacity(0.75))
-        .cornerRadius(10)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.15), lineWidth: 1))
+        .padding(12)
+        .frame(maxWidth: width ?? .infinity, alignment: .leading)
+        .background(ChromeKit.cardColor)
+        .cornerRadius(ChromeKit.buttonRadius)
+        .shadow(color: ChromeKit.cardShadow, radius: 8, x: 0, y: 3)
         .onAppear { recomputeCandidates() }
         .onChange(of: positionSignature) { recomputeCandidates() }
     }

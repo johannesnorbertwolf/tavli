@@ -253,44 +253,44 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   `onAutosave: () -> Void = {}` (#61) — writes the single autosave slot; all non-session args
   default to no-ops so `#Preview`s compile). A `GeometryReader`
   switches layout on `width >= height`:
-  - **Landscape:** `HStack` with `PlayableBoardView(session:)` filling the height and
+  - **Landscape (#101):** `HStack` with `PlayableBoardView(session:)` filling the height and
     **bound to the leading edge** (`.frame(maxWidth:.infinity, maxHeight:.infinity,
-    alignment: .leading)`, `8pt` pad) and a fixed 260pt `sidePanel` on the trailing edge
-    (turn indicator + the two borne-off counters on top, controls anchored at the bottom;
-    top-padded `44` so the indicator clears the corner Back/debug overlays). **The board
-    owns the leftover width via that frame, not `Spacer`s** (#46): two flanking spacers and
-    the equally-flexible aspect-fit board split the width three ways, shrinking the board to
-    a third of the height — the spacers are gone. `.leading` pins the square to the left so
-    the slack between board and panel sits on the right and the board never shifts as the
-    panel chrome changes. (The board *frame* art is unchanged; only the surrounding empty
-    space shrank.)
-  - **Portrait:** `VStack(spacing: 12)` — the `topBar` (counters + turn indicator as a
-    **centered** group, top-padded `44` so it drops below the floating Back/Save/Resign
-    row: at #92's larger type the centered group no longer clears the corner pills on the
-    narrowest iPad; mirrors the landscape `sidePanel` padding) pinned to the top, a flexible
-    `Spacer(minLength: 0)`, then the controls row and the board (`8pt` horizontal pad),
-    with the `VStack` filling the height (`.frame(maxWidth:.infinity, maxHeight:.infinity)`
-    + `12pt` vertical pad). A square board can't fill a tall screen, so some vertical margin
-    is unavoidable; #46 controls **where** it goes. The board is **bound to the bottom edge**:
-    the chrome pins to the top, the `Spacer` pools the slack into the middle, and the board
-    sits at the bottom with the contextual controls hugging just above it. Anchoring the
-    board this way stops it from jumping — the earlier *centered* group re-centred on every
-    turn/phase change (the "Tap dice to roll" caption, the Undo/Done row), visibly shifting
-    the board. `.layoutPriority(1)` on the board lets it claim its full-width square first so
-    the `Spacer` (not the board) absorbs the slack; without it two equally-flexible children
-    (Spacer + aspect-fit board) split the height and the board shrinks below full width.
+    alignment: .leading)`, `8pt` pad) and a fixed 280pt `sidePanel` on the trailing edge.
+    **The board owns the leftover width via that frame, not `Spacer`s** (#46): two flanking
+    spacers and the equally-flexible aspect-fit board split the width three ways, shrinking
+    the board to a third of the height — the spacers are gone. `.leading` pins the square to
+    the left so the slack between board and panel sits on the right and the board never
+    shifts as the panel chrome changes. The panel is a card stack holding ALL the chrome
+    (nothing floats over the board's frame): a `Back` + `DebugToggleButton` row, the docked
+    `DebugOverlay` when open, the status card (`TurnIndicatorView` + the two `BorneOffView`
+    chips in a `.chromeCard`), a `Spacer`, then — hidden once `session.isTerminal` — the
+    Save/Resign row and `ControlsView` anchored at the bottom.
+  - **Portrait (#101):** `VStack(spacing: 12)` — the `portraitTopBar` (one organized bar:
+    Back/Save/Resign leading, the two `BorneOffView` chips trailing) pinned to the top, a
+    flexible `Spacer(minLength: 0)`, then the turn status (`TurnIndicatorView`) stacked with
+    `ControlsView` just above the board (near where the player looks; both hidden/reduced
+    once terminal), and the board (`8pt` horizontal pad), with the `VStack` filling the
+    height (`.frame(maxWidth:.infinity, maxHeight:.infinity)` + `12pt` vertical pad). A
+    square board can't fill a tall screen, so some vertical margin is unavoidable; #46
+    controls **where** it goes. The board is **bound to the bottom edge**: the chrome pins
+    to the top, the `Spacer` pools the slack into the middle. `.layoutPriority(1)` on the
+    board lets it claim its full-width square first so the `Spacer` (not the board) absorbs
+    the slack; without it two equally-flexible children (Spacer + aspect-fit board) split
+    the height and the board shrinks below full width. The debug toggle + pane float
+    top-trailing (`.padding(.top, 64)` clears the top bar), over the empty band.
     Verified by rotating the sim headlessly with `XCUIDevice.orientation` in a throwaway UI
-    test and inspecting the screenshot attachment.
-  - Floating chrome in the `ZStack`: a top-leading `HStack { BackButton; SaveButton; SurrenderButton }`
-    and a top-trailing `DebugOverlayToggle(session:, onHistory:)` (see `DebugOverlay.swift`), each
-    pinned via `.frame(maxWidth/Height: .infinity, alignment:)`. The `SaveButton` and `SurrenderButton`
-    are hidden once `session.isTerminal` (finished games aren't saved/resigned, #61/#74). The
-    `SurrenderButton` (a brick-red "Resign" pill) is additionally `.disabled`/dimmed when
-    `!session.canSurrender`, so it greys out — rather than vanishing — while the AI is thinking.
-  - **Move-history sheet (#60):** `DebugOverlayToggle` is passed `onHistory: { showHistory = true }`,
-    which threads through to `DebugOverlay`'s "Move history" button. The `.sheet(isPresented: $showHistory)`
-    is attached to the `ZStack`; `WinOverlayView` also carries its own History button so the log
-    stays reachable after the game when the scrim covers the debug pane.
+    test and inspecting screenshots (portrait via XCTAttachment; landscape via host-side
+    `simctl io screenshot` polling — attachments garble during rotation on current runtimes).
+  - The `SaveButton` and `SurrenderButton` are hidden once `session.isTerminal` (finished
+    games aren't saved/resigned, #61/#74). The `SurrenderButton` (destructive brick "Resign")
+    is additionally `.disabled`/dimmed when `!session.canSurrender`, so it greys out — rather
+    than vanishing — while the AI is thinking. All buttons use `ChromeButton` roles
+    (`ChromeKit.swift`, #101).
+  - **Move-history sheet (#60):** `DebugOverlay` is passed `onHistory: { showHistory = true }`
+    for its "Move history" button. The `.sheet(isPresented: $showHistory)` is attached to the
+    `ZStack` with `.presentationDetents([.medium, .large])` + a drag indicator (#101);
+    `WinOverlayView` also carries its own History button so the log stays reachable after the
+    game when the scrim covers the debug pane.
   - **Manual save (#61):** tapping Save runs `presentSaveDialog` — seeds `saveName` with a
     timestamped default (`"Game · <date>"`) and flips `showingSaveDialog`. A `.alert("Save
     game", isPresented:)` hosts a `TextField` + "Save"/"Cancel"; "Save" trims the field and
@@ -310,38 +310,45 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
     otherwise race). "Give up" calls `session.surrender()` then `onAutosave()` — surrender records no
     ply, so the per-move auto-save hook never fires; this clears the now-terminal game's auto-save
     slot, matching a played-out loss.
-  - `WinOverlayView` is layered **last** (above Back/Save/debug) whenever `session.phase` is
-    `.gameOver`.
+  - The game-over takeover is layered **last** whenever `session.phase` is `.gameOver`
+    (#101): a `black.opacity(0.65)` scrim as a **direct ZStack child** (hosting it inside
+    `WinOverlayView` sized it to the board column in landscape, leaving the panel bright),
+    then `WinOverlayView` above it.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
-- **`BackButton`** — a caramel pill (chevron + "Back") tinted from `ChromeTheme`,
-  calling the injected `onBack`.
-- **`SaveButton`** (#61) — a caramel pill (download glyph + "Save") tinted from
-  `ChromeTheme.doneTint`, calling the injected open-dialog action.
+- **`BackButton`** — chevron + "Back", `ChromeButton(role: .secondary)`, calling the
+  injected `onBack`.
+- **`SaveButton`** (#61) — download glyph + "Save", `ChromeButton(role: .secondary)`,
+  calling the injected open-dialog action.
+- **`SurrenderButton`** (#74) — flag + "Resign", `ChromeButton(role: .destructive)`.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
   "`<Name>` moving…"; `.gameOver(w)` → "`<Name>` wins!". `<Name>` and the player come
   from `ChromeTheme` + `session.currentPlayer`.
-- **`BorneOffView(session:color:)`** — a checker-colored disc + count + label. Counts
-  read straight off the board on each session publish: white =
+- **`BorneOffView(session:color:)`** — a horizontal chip (#101): checker-colored disc,
+  `displayName` in secondary ink, bold monospaced-digit count, on an `ink.opacity(0.06)`
+  rounded fill. Counts read straight off the board on each session publish: white =
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
-- **`ControlsView`** — **Undo** is persistent (#59): always rendered, calling
-  `session.undo()`, greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is
-  false. It peels the last committed half-move within the current turn only; it
-  greys out when nothing has been built yet (between turns, AI thinking, game over).
-  **Done** (`session.confirm()`) is still contextual: shown only when
-  `moveBuilder.canFinishNow && !built.isEmpty`. Both styled by `ControlButtonStyle`
-  (palette pill). The dice no longer live here — they moved to the board's center bar
+- **`ControlsView`** — **Undo** is persistent (#59): always rendered (while the game is
+  live; the call sites hide the whole row once terminal, #101), calling `session.undo()`,
+  greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is false. It peels the last
+  committed half-move within the current turn only. **Done** (`session.confirm()`) is still
+  contextual: shown only when `moveBuilder.canFinishNow && !built.isEmpty`, and carries
+  `ChromeButton(role: .primary)` — the one solid button on the board screen — while Undo is
+  `.secondary`. The dice no longer live here — they moved to the board's center bar
   (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
-- **`WinOverlayView(winner:stats:onNewGame:onHistory:)`** — dimmed scrim, serif "`<Name>` wins!",
-  the `StatsPanelView(stats:)` (so the human's record is **auto-shown after every game**, #64), a
-  "Play Again" button calling the injected `onNewGame` closure (provided by `RootView`
-  to replace the finished session with a fresh one — see `RootView.swift`), and a secondary
-  "History" button (`onHistory`) so the log stays reachable after the game, when the scrim
-  covers the in-chrome `HistoryButton`. The just-finished game is already counted:
-  `session.onGameOver` records into `RootView`'s store, whose `@Published` change re-renders
-  `RootView` → passes fresh `stats` down before the overlay paints.
+- **`WinOverlayView(title:stats:onNewGame:onHistory:onReview:onDrill:)`** (#101) — the
+  game-over takeover content (the scrim lives in `GameView`, see above): a serif verdict
+  (`title` is pre-formatted by `GameView.verdict(_:)` — "You win!" when the human won, else
+  "`<Name>` wins"), the `StatsPanelView(stats:)` (so the human's record is **auto-shown
+  after every game**, #64), a solid `primary` "Play Again" button calling the injected
+  `onNewGame` closure (provided by `RootView` to replace the finished session with a fresh
+  one — see `RootView.swift`), and a row of `scrim`-role icon buttons — "Review game"
+  (#62), "Drill blunders" (#63), "History" — so the log stays reachable after the game.
+  The just-finished game is already counted: `session.onGameOver` records into `RootView`'s
+  store, whose `@Published` change re-renders `RootView` → passes fresh `stats` down before
+  the overlay paints.
 - **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
   button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
   one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
@@ -354,7 +361,8 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   - **`HistoryRow(index:mover:ply:)`** — a row showing the 1-based `index`, a
     `ChromeTheme.checkerColor(mover)` disc, the dice (`d=<d1> <d2>`), and the move text
     (`ply.halfMoves` formatted as `from→to` pairs joined by `, `; or a dimmed "(pass)" when
-    `halfMoves` is empty). Monospaced so the columns align.
+    `halfMoves` is empty). Monospaced so the columns align. Rows zebra-stripe (#101): odd
+    offsets get an `ink.opacity(0.04)` rounded background instead of divider lines.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
@@ -374,19 +382,44 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   contextual buttons without T7, and `"History"` which scripts a ply and shows
   `HistoryView` directly.
 
+## ChromeKit.swift (#101 — chrome component kit)
+
+The chrome's shared visual language: flat tinted surfaces, soft shadows, one button
+system, one card style. Everything outside the board (picker, game chrome, overlays,
+sheets, debug pane) builds on it; the board, dice and checkers keep their own Canvas
+styling. Sized for older players: every button renders ≥ 44 pt tall and secondary text
+never drops below 0.72 ink opacity.
+
+- **`ChromeKit`** — tokens: `cardRadius` 16, `buttonRadius` 12, `cardColor` `#f6f0e3`
+  (a touch brighter than the `#ece6dc` page so cards lift without borders), `cardShadow`
+  (black @ 0.10), and `inkSecondary` (`ChromeTheme.ink.opacity(0.72)`) — the single
+  allowed dimmed text color (replaces the scattered 0.5/0.6 opacities).
+- **`.chromeCard(padding:)`** (View extension) — pads content (default 20), card fill,
+  `cardRadius` corners, soft drop shadow (radius 10, y 3).
+- **`ChromeButton(role:fullWidth:)`** — the one button `ButtonStyle`: `ChromeType.callout`
+  bold label, 12 pt vertical padding (≥ 44 pt total), `buttonRadius` corners, whole-shape
+  hit area. Roles map to **intent, not screen**: `.primary` solid amber fill + white label
+  (the single most important action on a surface — e.g. Done, Play Again); `.secondary`
+  flat caramel tint + ink (everyday actions); `.destructive` flat brick tint + brick label
+  (Resign); `.quiet` no fill + secondary ink; `.scrim` white tint + white label (secondary
+  actions on the dark game-over scrim). Pressed states deepen the fill.
+
 ## DebugOverlay.swift (T11 — debug eval overlay)
 
 A toggleable, off-by-default panel exposing the AI's evaluation of the current
-position. Two `View`s, both bound to a `GameSession` (`@ObservedObject`), read-only
-with **no effect on gameplay**. `GameView` (T10) hosts `DebugOverlayToggle` as a
-top-trailing overlay on the game screen.
+position. Read-only with **no effect on gameplay**. The open/closed state lives in
+`GameView` (`@State showDebugPane`, #101) so each orientation places the open pane
+where it fits: floating under the button in portrait, docked into the side panel
+flow in landscape (never covering other chrome).
 
-- **`DebugOverlayToggle`** — the drop-in any screen hosts. A `ladybug.fill` bug-icon
-  button with `@State isOn = false` (off by default): tinted yellow when on, dim white
-  when off. When on it reveals `DebugOverlay` below it with a 0.15s opacity transition.
-- **`DebugOverlay`** — a ~200pt translucent-black panel with four rows:
-  1. **Win-probability meter** — a yellow `Capsule` fill over a black track, width =
-     `geo.size.width * session.winProbability` (always WHITE's view), plus the numeric `%`.
+- **`DebugToggleButton(isOn:)`** — a `ladybug.fill` bug-icon button on a card-colored
+  circle: amber when on, secondary ink when off.
+- **`DebugOverlay(session:onHistory:width:)`** — a caramel card (`ChromeKit.cardColor`,
+  ink text; `width` 240 fixed when floating, `nil` = fill the container when docked)
+  with these rows:
+  1. **Win-probability meter** — an olive (`doneTint`) `Capsule` fill over an
+     `ink.opacity(0.12)` track, width = `geo.size.width * session.winProbability`
+     (always WHITE's view), plus the numeric `%`.
   2. **Top moves** — the top-3 candidate moves. `agent.evaluateMoves(board, legalMoves,
      color:)` zipped with `legalMoves` → `(move.description, score)`, sorted desc,
      `prefix(3)`. Cached in `@State`; recomputed on `onAppear` and
@@ -398,14 +431,11 @@ top-trailing overlay on the game screen.
      (the same actor that owns the board), leaving it unchanged.
   3. **Status line** — `session.currentPlayer` + the two dice values.
   4. **"Move history"** (#60) — a clock-icon button calling the `onHistory` closure
-     (injected via `DebugOverlayToggle(session:onHistory:)` from `GameView`); opens the
-     move-log sheet. Replaces the former standalone bottom-leading `HistoryButton`.
-  5. **"↩ Undo decision"** — calls `session.undoLastDecision()`; yellow when
+     (injected from `GameView`); opens the move-log sheet. Replaces the former
+     standalone bottom-leading `HistoryButton`.
+  5. **"↩ Undo decision"** — calls `session.undoLastDecision()`; amber when
      `session.canUndoLastDecision`, dim otherwise. This is the only surface for
      decision-level undo (stepped back from `ControlsView` which now only peels half-moves).
-
-  Uses plain SwiftUI `Color` (`.black`/`.yellow`/`.white`); unlike the other views it does
-  not need `Color(hex:)` or `ChromeTheme`.
 
 ## OpeningRollView.swift (#33 — opening roll ceremony)
 
@@ -444,12 +474,16 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
   gets its own `.rotationEffect` / `.scaleEffect` so it tumbles around its own center.
   The human die reuses `DieFace.isHighlighted` (the same `CaramelPalette.hl` gold ring that the
   game dice show during `awaitingRoll`) rather than a bespoke overlay.
-- **Chrome text** (`statusBlock`) — `ChromeType.headline` + `ChromeType.caption` layout matching
-  `TurnIndicatorView` exactly: `CaramelPalette.frameText` ink at full and 0.6 opacity.
-- **`manualRow`** — `@ViewBuilder`; shows "You start" / "AI starts" (amber tint) while not
-  resolved; hidden (`EmptyView`) once resolved (game is auto-starting).
-- **`ORButton`** — pill `ButtonStyle` matching `GameView`'s `ControlButtonStyle`: tinted
-  `.opacity(0.22/0.45)` background, `.opacity(0.6)` stroke, `CaramelPalette.frameText` foreground.
+- **Chrome text** (`statusBlock`) — `ChromeType.headline` title plus the roll prompt at
+  `ChromeType.body` in **full ink** (#101): "Tap the board to roll" is the screen's call to
+  action, not a dimmed caption.
+- **`manualRow`** — `@ViewBuilder`; "Or choose manually:" caption + "You start" / "AI starts"
+  (`ChromeButton(role: .secondary)`) while not resolved; hidden (`EmptyView`) once resolved
+  (game is auto-starting).
+- **Layout (#101)** mirrors `GameView`: landscape = board leading + a 280pt panel (Back row,
+  then the `statusBlock` in a `.chromeCard`, then `manualRow` directly beneath — nothing
+  pinned to a far corner); portrait = a top bar (Back leading, `statusBlock` centered via
+  `ZStack`) with `manualRow` right below, then the bottom-anchored board.
 
 ## RootView.swift (T10 — root navigation + mode picker; #61 save/load)
 
@@ -501,13 +535,20 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
   (no `await`) well before any game can end, so the hook is always armed in time. Observing
   `statsStore` re-renders `RootView` when a game is recorded, so the win overlay and picker read
   fresh `stats`.
-- **`ModePickerView(store:stats:onSelect:onResume:)`** — `#ece6dc` background, a large Cormorant
-  Garamond "Tavli" wordmark, two caramel `ModeButton`s ("Play vs AI / You play White|Black"), a
-  third **"My Record"** button (#64; subtitle = current `Ws – Ls`, or "No games yet") that presents
-  `StatsPanelView(stats:)` in a `.sheet`, and (#61) a **`SavedGamesList`** below them when any saves
-  exist. Loads `store.list()` in `@State saves` on `onAppear` (`reload`); `delete` removes a save
-  and reloads. `onSelect` sets `pendingHumanColor` (routes through the opening roll). The design
-  reference's "Watch AI vs AI" mode is **deferred** (out of scope).
+- **`ModePickerView(store:stats:onSelect:onResume:)`** (#101) — `#ece6dc` background, a large
+  Cormorant Garamond "Tavli" wordmark, then **one primary `playCard`** (a `.chromeCard` titled
+  "Play vs AI" holding two `ColorChoiceButton`s side by side — tapping a color starts that
+  game), a quiet **`recordRow`** (#64; chart icon + "My Record" + current `Ws – Ls` or "No
+  games yet" + chevron; full-width `secondary` button) that presents the **`statsSheet`** — a
+  fitted sheet (`.presentationDetents([.height(480)])`, drag indicator) with a "My Record"
+  header + explicit **Done** button around `StatsPanelView(stats:)` — and (#61) a
+  **`SavedGamesList`** below when any saves exist. Loads `store.list()` in `@State saves` on
+  `onAppear` (`reload`); `delete` removes a save and reloads. `onSelect` sets
+  `pendingHumanColor` (routes through the opening roll). The design reference's "Watch AI vs
+  AI" mode is **deferred** (out of scope).
+- **`ColorChoiceButton(color:action:)`** (#101) — one side of the play card: the checker disc
+  the player would command (`ChromeTheme.checkerColor`) over "Play `<displayName>`" (engine
+  black renders as **Red**), equal-width `secondary` buttons.
 - **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
   scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
 - **`SavedGameRow(meta:onResume:onDelete:)`** (#61) — one row: an icon (autosave →
@@ -516,9 +557,7 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
   `meta.savedAt` / `meta.plyCount`), and a trailing trash button. The autosave row adds a small
   uppercase **"Continue last game"** capsule badge **above** the name (marking the resumable
   last game without replacing its identity). Tapping the body resumes; the trash button deletes.
-  Caramel-tinted card (white @ 0.35 fill, `frameBot` hairline).
-- **`ModeButton` / `ModeButtonStyle`** — a caramel wood pill (frame-palette top→mid
-  gradient, `frameBot` border, `frameText` ink, press-dim via `.brightness`).
+  Flat card row (#101): `ChromeKit.cardColor` fill, small shadow, no border.
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
   `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
 
@@ -529,7 +568,7 @@ The iPad analogue of the CLI's post-game summary box. A **pure** view of a
 `RootView`. Hosted in two places: inside `WinOverlayView` (auto-shown after every game) and
 from the mode picker's "My Record" sheet.
 
-- **`StatsPanelView(stats:)`** — a parchment card (`#f3ecdf` fill, `frameBot` border) with a
+- **`StatsPanelView(stats:)`** — a flat `.chromeCard` (#101; max content width 352) with a
   Cormorant Garamond "Human vs AI" header. When `stats.total == 0` it shows a "No games yet"
   empty state; otherwise three sections:
   1. **Overall** — `{wins}W – {losses}L (NN%)` over a thin win-rate `Capsule` bar
