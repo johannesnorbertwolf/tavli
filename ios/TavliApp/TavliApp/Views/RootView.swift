@@ -187,7 +187,7 @@ private struct ModePickerView: View {
             SColor(hex: 0xece6dc).ignoresSafeArea()
             VStack(spacing: 40) {
                 Text("Tavli")
-                    .font(.custom("Cormorant Garamond", size: 96))
+                    .font(ChromeType.wordmark)
                     .foregroundStyle(CaramelPalette.frameText)
 
                 VStack(spacing: 20) {
@@ -244,7 +244,7 @@ private struct SavedGamesList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Saved games")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(CaramelPalette.frameText.opacity(0.8))
 
             ScrollView {
@@ -273,14 +273,14 @@ private struct SavedGameRow: View {
             Button(action: onResume) {
                 HStack(spacing: 12) {
                     Image(systemName: meta.isAutosave ? "arrow.clockwise.circle.fill" : "doc.fill")
-                        .font(.title3)
+                        .font(ChromeType.title3)
                         .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                     VStack(alignment: .leading, spacing: 2) {
                         if meta.isAutosave {
                             // The auto-save's own name follows the manual convention;
                             // this badge sits on top of it to mark the last game (#61).
                             Text("Continue last game")
-                                .font(.caption2.weight(.bold))
+                                .font(ChromeType.caption2.weight(.bold))
                                 .textCase(.uppercase)
                                 .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                                 .padding(.horizontal, 8)
@@ -290,10 +290,10 @@ private struct SavedGameRow: View {
                                 .padding(.bottom, 2)
                         }
                         Text(meta.name)
-                            .font(.body.weight(.semibold))
+                            .font(ChromeType.body.weight(.semibold))
                             .foregroundStyle(CaramelPalette.frameText)
                         Text(subtitle)
-                            .font(.caption)
+                            .font(ChromeType.caption)
                             .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
                     }
                     Spacer(minLength: 0)
@@ -304,6 +304,7 @@ private struct SavedGameRow: View {
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
+                    .font(ChromeType.body)
                     .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
             }
             .buttonStyle(.plain)
@@ -339,8 +340,8 @@ private struct ModeButton: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                Text(title).font(.title2.bold())
-                Text(subtitle).font(.callout).opacity(0.75)
+                Text(title).font(ChromeType.title2.bold())
+                Text(subtitle).font(ChromeType.callout).opacity(0.75)
             }
             .frame(maxWidth: 320)
             .padding(.horizontal, 48)

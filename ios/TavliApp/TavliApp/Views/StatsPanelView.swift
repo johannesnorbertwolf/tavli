@@ -14,7 +14,7 @@ struct StatsPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Human vs AI")
-                .font(.custom("Cormorant Garamond", size: 32))
+                .font(ChromeType.statsTitle)
                 .foregroundStyle(Palette.ink)
 
             if stats.total == 0 {
@@ -26,7 +26,7 @@ struct StatsPanelView: View {
             }
         }
         .padding(24)
-        .frame(maxWidth: 360)
+        .frame(maxWidth: 400)
         .background(Palette.card)
         .cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.border, lineWidth: 1.5))
@@ -38,10 +38,10 @@ struct StatsPanelView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No games yet")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(Palette.ink)
             Text("Play a game to start your record.")
-                .font(.subheadline)
+                .font(ChromeType.subheadline)
                 .foregroundStyle(Palette.ink.opacity(0.65))
         }
     }
@@ -50,10 +50,10 @@ struct StatsPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(stats.wins)W – \(stats.losses)L")
-                    .font(.title2.bold())
+                    .font(ChromeType.title2.bold())
                     .foregroundStyle(Palette.ink)
                 Text("(\(percentString))")
-                    .font(.title3)
+                    .font(ChromeType.title3)
                     .foregroundStyle(Palette.ink.opacity(0.65))
             }
             GeometryReader { proxy in
@@ -71,7 +71,7 @@ struct StatsPanelView: View {
     private var sparkline: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(stats.total <= 20 ? "All \(stats.total)" : "Last 20")
-                .font(.caption.bold())
+                .font(ChromeType.caption.bold())
                 .foregroundStyle(Palette.ink.opacity(0.65))
             HStack(spacing: 4) {
                 ForEach(Array(stats.recent.enumerated()), id: \.offset) { _, won in
@@ -86,10 +86,10 @@ struct StatsPanelView: View {
     private var streak: some View {
         HStack(spacing: 6) {
             Text("Streak")
-                .font(.caption.bold())
+                .font(ChromeType.caption.bold())
                 .foregroundStyle(Palette.ink.opacity(0.65))
             Text(streakString)
-                .font(.subheadline.weight(.semibold))
+                .font(ChromeType.subheadline.weight(.semibold))
                 .foregroundStyle(stats.streakIsWin ? Palette.win : Palette.loss)
         }
     }

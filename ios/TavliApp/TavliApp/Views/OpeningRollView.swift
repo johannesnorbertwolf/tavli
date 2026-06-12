@@ -45,7 +45,7 @@ struct OpeningRollView: View {
                         Image(systemName: "chevron.left")
                         Text("Back")
                     }
-                    .font(.callout.bold())
+                    .font(ChromeType.callout.bold())
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(SColor(hex: 0xa87a3e).opacity(0.22))
@@ -144,10 +144,10 @@ struct OpeningRollView: View {
     private var statusBlock: some View {
         VStack(spacing: 4) {
             Text("Opening Roll")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(CaramelPalette.frameText)
             Text(statusCaption)
-                .font(.caption)
+                .font(ChromeType.caption)
                 .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
                 .multilineTextAlignment(.center)
         }
@@ -169,7 +169,7 @@ struct OpeningRollView: View {
         } else {
             VStack(spacing: 8) {
                 Text("Or choose manually:")
-                    .font(.caption)
+                    .font(ChromeType.caption)
                     .foregroundStyle(CaramelPalette.frameText.opacity(0.5))
                 HStack(spacing: 12) {
                     Button("You start") { startGame(humanColor) }
@@ -250,7 +250,7 @@ private struct ORButton: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.callout.bold())
+            .font(ChromeType.callout.bold())
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(tint.opacity(configuration.isPressed ? 0.45 : 0.22))
