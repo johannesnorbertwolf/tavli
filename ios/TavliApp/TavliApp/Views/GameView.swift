@@ -53,11 +53,24 @@ struct GameView: View {
     @State private var showSurrenderConfirm = false
     @State private var surrenderWinPct = 0
 
+    /// Drives the settings sheet (#77).
+    @State private var showSettings = false
+
+    /// Live settings (#77), bound here so the chrome reacts immediately to changes.
+    @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
+    @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
+    @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
+
     /// Above this human win probability, resigning first shows the preliminary
     /// "you can still win" alert before the standard confirmation (#74).
     private let surrenderWarningThreshold = 0.10
 
     private var flipped: Bool { humanColor == .black }
+
+    /// Manual dice entry is offered only while the human is awaiting a roll (#77).
+    private var manualDiceActive: Bool {
+        diceMode == .manual && session.phase == .awaitingRoll
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -77,7 +90,8 @@ struct GameView: View {
                     // status, counters, actions, debug — lives in the panel (#101), so
                     // nothing floats over the board's frame.
                     HStack(spacing: 0) {
-                        PlayableBoardView(session: session, flipped: flipped)
+                        PlayableBoardView(session: session, flipped: flipped,
+                                          manualDiceEntry: diceMode == .manual)
                             .padding(8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         sidePanel
@@ -101,12 +115,19 @@ struct GameView: View {
                         Spacer(minLength: 0)
                         VStack(spacing: 12) {
                             TurnIndicatorView(session: session)
+                            if showWinProbability && !session.isTerminal {
+                                WinProbabilityBar(session: session)
+                            }
+                            if manualDiceActive {
+                                ManualDiceControl(session: session)
+                            }
                             if !session.isTerminal {
                                 ControlsView(session: session)
                             }
                         }
                         .padding(.horizontal, 16)
-                        PlayableBoardView(session: session, flipped: flipped)
+                        PlayableBoardView(session: session, flipped: flipped,
+                                          manualDiceEntry: diceMode == .manual)
                             .padding(.horizontal, 8)
                             .layoutPriority(1)
                     }
@@ -145,6 +166,9 @@ struct GameView: View {
                 HistoryView(session: session)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
             }
             .fullScreenCover(isPresented: $showReview) {
                 GameReviewView(record: session.record,
@@ -193,6 +217,13 @@ struct GameView: View {
             // handler overwrites the single autosave slot (or clears it once the
             // game is over), so only the last in-progress game is ever kept.
             .onChange(of: session.history.count) { _, _ in onAutosave() }
+            // Keep the live session in sync with the AI-animation setting (#77):
+            // apply it on entry and whenever it's toggled, so the change lands on
+            // the next AI turn without restarting the game.
+            .onAppear { session.animationTimings = AppSettings.animationTimings }
+            .onChange(of: aiAnimation) { _, on in
+                session.animationTimings = on ? .standard : .off
+            }
         }
     }
 
@@ -242,6 +273,7 @@ struct GameView: View {
         VStack(spacing: 14) {
             HStack {
                 BackButton(action: onBack)
+                SettingsButton { showSettings = true }
                 Spacer(minLength: 0)
                 DebugToggleButton(isOn: $showDebugPane)
             }
@@ -259,7 +291,13 @@ struct GameView: View {
             }
             .frame(maxWidth: .infinity)
             .chromeCard(padding: 16)
+            if showWinProbability && !session.isTerminal {
+                WinProbabilityBar(session: session)
+            }
             Spacer(minLength: 0)
+            if manualDiceActive {
+                ManualDiceControl(session: session)
+            }
             if !session.isTerminal {
                 HStack(spacing: 12) {
                     SaveButton(action: presentSaveDialog)
@@ -280,6 +318,7 @@ struct GameView: View {
     private var portraitTopBar: some View {
         HStack(spacing: 8) {
             BackButton(action: onBack)
+            SettingsButton { showSettings = true }
             if !session.isTerminal {
                 SaveButton(action: presentSaveDialog)
                 SurrenderButton(action: onSurrenderTapped)
@@ -339,12 +378,59 @@ private struct SurrenderButton: View {
     }
 }
 
+/// Gear button that opens the settings sheet (#77). Uses the kit's secondary
+/// `ChromeButton` role (#101) so it matches Back/Save and keeps a ≥44pt target.
+private struct SettingsButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "gearshape.fill")
+        }
+        .buttonStyle(ChromeButton(role: .secondary))
+        .accessibilityLabel("Settings")
+    }
+}
+
 // ── Sub-views ───────────────────────────────────────────────────────────────
+
+/// Live win-probability bar for the human (#77), shown in-game when enabled in
+/// Settings. Reads `humanWinProbability` (the human's chance), falling back to
+/// WHITE's `winProbability` in a human-vs-human session.
+private struct WinProbabilityBar: View {
+    @ObservedObject var session: GameSession
+
+    private var p: Double { session.humanWinProbability ?? session.winProbability }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Text("Win chance")
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Spacer()
+                Text(String(format: "%.0f%%", p * 100))
+                    .font(ChromeType.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(ChromeTheme.ink)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(ChromeTheme.ink.opacity(0.12))
+                    Capsule().fill(ChromeTheme.doneTint.opacity(0.85))
+                        .frame(width: geo.size.width * p)
+                }
+            }
+            .frame(height: 10)
+        }
+        .animation(.easeInOut(duration: 0.25), value: p)
+    }
+}
 
 /// Reflects the current turn phase. Binds to `session.phase` and
 /// `session.currentPlayer`.
 private struct TurnIndicatorView: View {
     @ObservedObject var session: GameSession
+    @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
 
     var body: some View {
         VStack(spacing: 4) {
@@ -353,7 +439,7 @@ private struct TurnIndicatorView: View {
                 .foregroundStyle(ChromeTheme.ink)
                 .multilineTextAlignment(.center)
             if case .awaitingRoll = session.phase {
-                Text("Tap dice to roll")
+                Text(diceMode == .manual ? "Enter your dice" : "Tap dice to roll")
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
             }

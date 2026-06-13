@@ -57,9 +57,10 @@ struct RootView: View {
                         self.session = nil
                     },
                     onNewGame: {
-                        // "Play Again" returns to the opening roll so every game picks a starter.
+                        // "Play Again" keeps the same color and re-runs the starting-player
+                        // flow: the opening-roll ceremony, or a forced starter per Settings (#77).
                         self.session = nil
-                        self.pendingHumanColor = self.humanColor
+                        self.beginGame(humanColor: self.humanColor)
                     },
                     onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
                     onAutosave: persistAutosave
@@ -76,9 +77,7 @@ struct RootView: View {
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
-                               onSelect: { color in
-                                   pendingHumanColor = color
-                               },
+                               onSelect: beginGame,
                                onResume: resume)
             }
         }
@@ -117,13 +116,26 @@ struct RootView: View {
         }
     }
 
+    /// Start a new game as `color`. The starting-player setting decides whether to
+    /// run the opening-roll ceremony (#33) or seed the starter directly (#77).
+    private func beginGame(humanColor color: EngineColor) {
+        if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
+            humanColor = color
+            autosaveName = Self.newAutosaveName()
+            session = Self.makeSession(humanColor: color, startingPlayer: starter)
+        } else {
+            pendingHumanColor = color   // run the opening-roll ceremony
+        }
+    }
+
     /// Load a saved game (from the picker list) and switch into it, carrying its
     /// name forward so the auto-save keeps the same identity.
     private func resume(_ meta: SaveMetadata) {
         guard let save = try? store.load(filename: meta.filename) else { return }
         humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
         autosaveName = save.name
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
+        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   animationTimings: AppSettings.animationTimings)
         s.start()
         session = s
     }
@@ -133,7 +145,8 @@ struct RootView: View {
     private static func autoResume() -> (session: GameSession, humanColor: EngineColor, name: String)? {
         let store = SaveStore.default()
         guard let save = store.loadAutosave() else { return nil }
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
+        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   animationTimings: AppSettings.animationTimings)
         guard !s.isTerminal else {
             store.clearAutosave()
             return nil
@@ -162,7 +175,8 @@ struct RootView: View {
         let session = GameSession(
             startingPlayer: startingPlayer,
             agent: GameSession.makeAgent(),
-            aiColor: humanColor.opponent
+            aiColor: humanColor.opponent,
+            animationTimings: AppSettings.animationTimings
         )
         session.start()
         return session
@@ -182,6 +196,10 @@ private struct ModePickerView: View {
     @State private var saves: [SaveMetadata] = []
 
     @State private var showStats = false
+    @State private var showSettings = false
+
+    /// A fixed preferred color skips the per-game White/Red choice (#77).
+    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
 
     var body: some View {
         ZStack {
@@ -202,9 +220,23 @@ private struct ModePickerView: View {
                 }
             }
             .padding(40)
+
+            // Settings gear in the top-trailing corner (#77).
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(ChromeType.title2)
+                    .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
+                    .padding(12)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
         }
         .onAppear { reload() }
         .sheet(isPresented: $showStats) { statsSheet }
+        .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
     /// The one primary action: pick a color, start playing. Both choices carry
@@ -214,9 +246,14 @@ private struct ModePickerView: View {
             Text("Play vs AI")
                 .font(ChromeType.title2.bold())
                 .foregroundStyle(ChromeTheme.ink)
-            HStack(spacing: 14) {
-                ColorChoiceButton(color: .white) { onSelect(.white) }
-                ColorChoiceButton(color: .black) { onSelect(.black) }
+            // A pinned preferred color collapses the choice to a single button (#77).
+            if let fixed = preferredColor.engineColor {
+                ColorChoiceButton(color: fixed) { onSelect(fixed) }
+            } else {
+                HStack(spacing: 14) {
+                    ColorChoiceButton(color: .white) { onSelect(.white) }
+                    ColorChoiceButton(color: .black) { onSelect(.black) }
+                }
             }
         }
         .frame(maxWidth: 392)
