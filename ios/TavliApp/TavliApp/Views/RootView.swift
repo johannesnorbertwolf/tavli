@@ -239,25 +239,37 @@ private struct ModePickerView: View {
         .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
-    /// The one primary action: pick a color, start playing. Both choices carry
-    /// the checker disc they map to on the board (engine black renders as Red).
+    /// The one primary action: start playing. With a pinned preferred color (#77)
+    /// it's a single flat "Play vs AI" button (the action is the focus; the color is
+    /// just a small swatch). Otherwise it's the color-choice card — pick White/Red,
+    /// which carry the checker disc they map to on the board (engine black = Red).
+    @ViewBuilder
     private var playCard: some View {
-        VStack(spacing: 18) {
-            Text("Play vs AI")
-                .font(ChromeType.title2.bold())
-                .foregroundStyle(ChromeTheme.ink)
-            // A pinned preferred color collapses the choice to a single button (#77).
-            if let fixed = preferredColor.engineColor {
-                ColorChoiceButton(color: fixed) { onSelect(fixed) }
-            } else {
+        if let fixed = preferredColor.engineColor {
+            Button { onSelect(fixed) } label: {
+                HStack(spacing: 10) {
+                    Text("Play vs AI")
+                    Circle()
+                        .fill(ChromeTheme.checkerColor(fixed))
+                        .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1))
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
+            .frame(maxWidth: 392)
+        } else {
+            VStack(spacing: 18) {
+                Text("Play vs AI")
+                    .font(ChromeType.title2.bold())
+                    .foregroundStyle(ChromeTheme.ink)
                 HStack(spacing: 14) {
                     ColorChoiceButton(color: .white) { onSelect(.white) }
                     ColorChoiceButton(color: .black) { onSelect(.black) }
                 }
             }
+            .frame(maxWidth: 392)
+            .chromeCard(padding: 24)
         }
-        .frame(maxWidth: 392)
-        .chromeCard(padding: 24)
     }
 
     /// Quiet secondary row: current W–L at a glance, full panel on tap.
