@@ -16,12 +16,13 @@ neither depends on views.
 | `DiceView.swift` | T8/#46 — `DieFace`/`DiceRow`, the center-bar `BoardDiceView` (tumbles + masks the AI's roll while `aiDiceRolling`, #93), `ManualDiceControl`, `usedDiceFlags`. |
 | `PlayableBoardView.swift` | T7 — interactive board; tap/drag → `GameSession` intents; `TargetHighlightView`, `SourceRingView`, `HighlightStyle`; overlays the AI flight (#93). |
 | `ChromeKit.swift` | #101 — chrome component kit: flat `ChromeButton` roles (primary/secondary/destructive/quiet/scrim, ≥44pt), `.chromeCard()`, radius/shadow/`inkSecondary` tokens. |
-| `GameView.swift` | T9/T10 — responsive game chrome + assembly; turn indicator, controls, win overlay, history sheet, save dialog. Defines `ChromeTheme` + `ChromeType` (chrome typography, #92). |
+| `GameView.swift` | T9/T10 — responsive game chrome + assembly; turn indicator, controls, win overlay, history sheet, save dialog. Defines `ChromeTheme` + `ChromeType` (chrome typography, #92). #77 adds the settings gear (`SettingsButton`), the optional `WinProbabilityBar`, and the manual-dice control + gating. |
+| `SettingsView.swift` | #77 — in-app settings sheet (from the start screen gear + the in-game gear). Caramel-styled segmented choices (preferred color, first move, dice mode) + toggles (animate AI moves, win-probability bar), each bound to `@AppStorage`. Options/keys/defaults live in `AppSettings.swift` (target root). |
 | `GameReviewView.swift` | #62 — **full-screen** post-game blunder review (from the win overlay). `GameReviewModel` runs `GameReview.analyze` off the main actor and **streams** blunders in; the view is board-centric, one blunder at a time (big board + Prev/Next/swipe), with a Best/Yours/None move overlay and played→best + win-prob gap. Pure presentation. |
 | `DrillView.swift` | #63 — **full-screen** interactive post-game drill (from the win overlay + the review screen). Per blunder, seeds a live board via `GameSession.drill` and grades the player's attempt (`onMoveAttempt` → `Agent.scoreCandidate`) as correct/close/wrong; "Show solution" reuses `SourceRingView`/`TargetHighlightView`. Responsive board-centric card; `DrillModel` drives it. |
 | `DebugOverlay.swift` | T11 — off-by-default eval panel (win-prob meter, top-3 moves, decision undo). Read-only. Caramel card; floats in portrait, docks into the landscape panel (#101). |
 | `OpeningRollView.swift` | #33 — opening-roll ceremony resolving the starting player. |
-| `RootView.swift` | T10/#61 — app root: mode picker ↔ opening roll ↔ game; owns all save/load + stats wiring. |
+| `RootView.swift` | T10/#61 — app root: mode picker ↔ opening roll ↔ game; owns all save/load + stats wiring. #77: start-screen settings gear; a pinned preferred color collapses the per-game color pick; the starting-player setting can skip the opening roll; new/resumed sessions take their animation timings from settings. |
 | `StatsPanelView.swift` | #64 — pure human W/L panel (overall, sparkline, streak). |
 | `App.swift` | `@main` — `WindowGroup { RootView() }`. |
 
@@ -45,3 +46,7 @@ neither depends on views.
   lower.
 - **All metrics scale by `geo.scale`** off the 900-unit design reference, so any board size
   reproduces the reference 1:1. Each view rebuilds an identical `BoardGeometry` so layers register.
+- **Persisted settings (#77) live in `AppSettings.swift`** (one level up, the target root): the
+  option enums + the `SettingsKey` UserDefaults keys + static accessors for non-view contexts.
+  Views bind via `@AppStorage` (keep each declaration's default equal to the matching accessor).
+  Defaults reproduce the pre-settings behaviour, so the screen is purely additive.

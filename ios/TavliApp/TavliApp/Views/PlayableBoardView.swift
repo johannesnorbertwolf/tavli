@@ -54,6 +54,10 @@ struct PlayableBoardView: View {
     /// Logical point indices are unchanged; only the visual layout rotates.
     var flipped: Bool = false
 
+    /// When true (manual-dice mode, #77), the on-board dice don't roll on tap;
+    /// the human enters the dice via the chrome's `ManualDiceControl` instead.
+    var manualDiceEntry: Bool = false
+
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
@@ -112,7 +116,7 @@ struct PlayableBoardView: View {
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))
 
-                BoardDiceView(session: session)
+                BoardDiceView(session: session, manualEntry: manualDiceEntry)
 
                 // Floating checker follows the finger above all board layers.
                 if let drag = liveDrag, let topColor = boardStacks[drag.sourcePoint].last {

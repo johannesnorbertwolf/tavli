@@ -168,6 +168,11 @@ struct DiceView: View {
 struct BoardDiceView: View {
     @ObservedObject var session: GameSession
 
+    /// When true (manual-dice mode, #77), tap-to-roll is suppressed — the human
+    /// enters the dice via `ManualDiceControl` instead. The AI is unaffected (it
+    /// rolls its own dice internally).
+    var manualEntry: Bool = false
+
     @State private var tumbling = false
     @State private var spin: Double = 0
 
@@ -189,7 +194,7 @@ struct BoardDiceView: View {
 
     private var used: [Bool] { usedDiceFlags(values: values, built: session.moveBuilder.built) }
 
-    private var canRoll: Bool { session.phase == .awaitingRoll }
+    private var canRoll: Bool { session.phase == .awaitingRoll && !manualEntry }
 
     var body: some View {
         GeometryReader { proxy in
