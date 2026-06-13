@@ -25,11 +25,8 @@ struct StatsPanelView: View {
                 streak
             }
         }
-        .padding(24)
-        .frame(maxWidth: 400)
-        .background(Palette.card)
-        .cornerRadius(18)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.border, lineWidth: 1.5))
+        .frame(maxWidth: 352)
+        .chromeCard(padding: 24)
         .accessibilityIdentifier("statsPanel")
     }
 
@@ -42,7 +39,7 @@ struct StatsPanelView: View {
                 .foregroundStyle(Palette.ink)
             Text("Play a game to start your record.")
                 .font(ChromeType.subheadline)
-                .foregroundStyle(Palette.ink.opacity(0.65))
+                .foregroundStyle(ChromeKit.inkSecondary)
         }
     }
 
@@ -54,7 +51,7 @@ struct StatsPanelView: View {
                     .foregroundStyle(Palette.ink)
                 Text("(\(percentString))")
                     .font(ChromeType.title3)
-                    .foregroundStyle(Palette.ink.opacity(0.65))
+                    .foregroundStyle(ChromeKit.inkSecondary)
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
@@ -72,12 +69,12 @@ struct StatsPanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(stats.total <= 20 ? "All \(stats.total)" : "Last 20")
                 .font(ChromeType.caption.bold())
-                .foregroundStyle(Palette.ink.opacity(0.65))
-            HStack(spacing: 4) {
+                .foregroundStyle(ChromeKit.inkSecondary)
+            HStack(spacing: 5) {
                 ForEach(Array(stats.recent.enumerated()), id: \.offset) { _, won in
                     Circle()
                         .fill(won ? Palette.win : Palette.loss)
-                        .frame(width: 11, height: 11)
+                        .frame(width: 14, height: 14)
                 }
             }
         }
@@ -87,7 +84,7 @@ struct StatsPanelView: View {
         HStack(spacing: 6) {
             Text("Streak")
                 .font(ChromeType.caption.bold())
-                .foregroundStyle(Palette.ink.opacity(0.65))
+                .foregroundStyle(ChromeKit.inkSecondary)
             Text(streakString)
                 .font(ChromeType.subheadline.weight(.semibold))
                 .foregroundStyle(stats.streakIsWin ? Palette.win : Palette.loss)
@@ -108,9 +105,7 @@ struct StatsPanelView: View {
     }
 
     private enum Palette {
-        static let card = SColor(hex: 0xf3ecdf)
         static let ink = CaramelPalette.frameText
-        static let border = CaramelPalette.frameBot
         static let win = SColor(hex: 0x6a8a4a)   // muted olive-green
         static let loss = SColor(hex: 0xb0563f)  // muted brick-red
     }

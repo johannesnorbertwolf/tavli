@@ -35,6 +35,10 @@ struct GameView: View {
     /// Drives the move-history sheet (#60).
     @State private var showHistory = false
 
+    /// Whether the debug eval pane is open (#101). Owned here so each
+    /// orientation can place the open pane where it fits.
+    @State private var showDebugPane = false
+
     /// Drives the post-game review sheet (#62).
     @State private var showReview = false
 
@@ -69,70 +73,69 @@ struct GameView: View {
                     // board split the width three ways, shrinking it to a third) and the
                     // `.leading` alignment pins the square to the left edge, so any slack
                     // between the board and the panel sits on the right and the board
-                    // never shifts as the panel chrome changes.
+                    // never shifts as the panel chrome changes. All chrome — navigation,
+                    // status, counters, actions, debug — lives in the panel (#101), so
+                    // nothing floats over the board's frame.
                     HStack(spacing: 0) {
                         PlayableBoardView(session: session, flipped: flipped)
                             .padding(8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         sidePanel
-                            .frame(width: 260)
+                            .frame(width: 280)
                             .padding(.vertical, 12)
                             .padding(.trailing, 12)
                     }
                 } else {
-                    // Board bound to the BOTTOM, the turn/counter chrome pinned to the
-                    // TOP, and the unavoidable slack (a square can't fill a tall screen)
-                    // pooled into the flexible `Spacer` between them. Anchoring the board
-                    // to the bottom edge keeps it from shifting as the chrome above it
-                    // grows or shrinks — the earlier centered group re-centred on every
-                    // turn/phase change (the "Tap dice to roll" caption, the Undo/Done
-                    // row), so the board visibly jumped. `layoutPriority(1)` lets the
-                    // board claim its full-width square first, so the `Spacer` (not the
-                    // board) absorbs the slack; the contextual controls hug it just above.
+                    // Board bound to the BOTTOM, the navigation/counter bar pinned to
+                    // the TOP, and the unavoidable slack (a square can't fill a tall
+                    // screen) pooled into the flexible `Spacer` between them. Anchoring
+                    // the board to the bottom edge keeps it from shifting as the chrome
+                    // changes. The turn status sits WITH the contextual controls just
+                    // above the board (#101) — near where the player is looking — so
+                    // the top holds exactly one organized bar. `layoutPriority(1)` lets
+                    // the board claim its full-width square first, so the `Spacer` (not
+                    // the board) absorbs the slack.
                     VStack(spacing: 12) {
-                        topBar
+                        portraitTopBar
                             .padding(.horizontal, 16)
-                            // Drop below the floating Back/Save/Resign row: at #92's
-                            // larger type the centered group no longer clears the
-                            // corner pills on the narrowest iPad. Mirrors the
-                            // landscape sidePanel's top padding.
-                            .padding(.top, 44)
                         Spacer(minLength: 0)
-                        ControlsView(session: session)
-                            .padding(.horizontal, 16)
+                        VStack(spacing: 12) {
+                            TurnIndicatorView(session: session)
+                            if !session.isTerminal {
+                                ControlsView(session: session)
+                            }
+                        }
+                        .padding(.horizontal, 16)
                         PlayableBoardView(session: session, flipped: flipped)
                             .padding(.horizontal, 8)
                             .layoutPriority(1)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
-                }
 
-                // Floating chrome: Back + Save (top-leading) + debug toggle
-                // (top-trailing). The portrait `topBar` keeps its counters centered so
-                // these corners stay clear; in landscape the corners overlay the board /
-                // panel head. Save hides once the game is over (finished games aren't saved).
-                HStack(spacing: 8) {
-                    BackButton(action: onBack)
-                    if !session.isTerminal {
-                        SaveButton(action: presentSaveDialog)
-                        // Disabled (not hidden) while the AI thinks so the row layout
-                        // stays put; `canSurrender` gates both the button and the intent.
-                        SurrenderButton(action: onSurrenderTapped)
-                            .disabled(!session.canSurrender)
-                            .opacity(session.canSurrender ? 1 : 0.4)
+                    // Portrait keeps the debug toggle floating top-trailing — it sits
+                    // over the empty band, clear of the single top bar. (Landscape
+                    // docks it inside the panel so it can't cover the chrome, #101.)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        DebugToggleButton(isOn: $showDebugPane)
+                        if showDebugPane {
+                            DebugOverlay(session: session,
+                                         onHistory: { showHistory = true })
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                DebugOverlayToggle(session: session, onHistory: { showHistory = true })
+                    .animation(.easeInOut(duration: 0.15), value: showDebugPane)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(.horizontal, 16)
-                    .padding(.top, 12)
+                    .padding(.top, 64)
+                }
 
                 if case .gameOver(let winner) = session.phase {
-                    WinOverlayView(winner: winner, stats: stats, onNewGame: onNewGame,
+                    // The scrim is a direct ZStack child (like the page background)
+                    // so it provably spans the whole screen in both orientations —
+                    // hosted inside the overlay it sized itself to the board column
+                    // in landscape, leaving the panel bright.
+                    SColor.black.opacity(0.65).ignoresSafeArea()
+                    WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
                                    onDrill: { showDrill = true })
@@ -140,6 +143,8 @@ struct GameView: View {
             }
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             }
             .fullScreenCover(isPresented: $showReview) {
                 GameReviewView(record: session.record,
@@ -191,6 +196,12 @@ struct GameView: View {
         }
     }
 
+    /// Game-over verdict from the human's perspective (#101): the human's own
+    /// win is celebrated directly; an AI win names the winning color.
+    private func verdict(_ winner: TavliEngine.Color) -> String {
+        winner == humanColor ? "You win!" : "\(ChromeTheme.displayName(winner)) wins"
+    }
+
     /// Seed the field with a timestamped default and open the naming dialog.
     private func presentSaveDialog() {
         saveName = Self.defaultSaveName()
@@ -223,36 +234,66 @@ struct GameView: View {
         return f
     }()
 
-    // Landscape: turn indicator + counters on top, controls anchored at the bottom.
-    // Top-padded so the turn indicator clears the corner Back/debug overlays.
+    // Landscape: a structured card stack (#101). Navigation + debug toggle on the
+    // top row, then the turn-status card with the borne-off counters, the docked
+    // debug pane when open, and the action buttons anchored at the bottom. Save/
+    // Resign live here (not floating over the board), with Undo/Done beneath them.
     private var sidePanel: some View {
-        VStack(spacing: 24) {
-            TurnIndicatorView(session: session)
-            HStack(spacing: 24) {
-                BorneOffView(session: session, color: .white)
-                BorneOffView(session: session, color: .black)
+        VStack(spacing: 14) {
+            HStack {
+                BackButton(action: onBack)
+                Spacer(minLength: 0)
+                DebugToggleButton(isOn: $showDebugPane)
             }
+            if showDebugPane {
+                DebugOverlay(session: session,
+                             onHistory: { showHistory = true },
+                             width: nil)
+            }
+            VStack(spacing: 16) {
+                TurnIndicatorView(session: session)
+                HStack(spacing: 12) {
+                    BorneOffView(session: session, color: .white)
+                    BorneOffView(session: session, color: .black)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .chromeCard(padding: 16)
             Spacer(minLength: 0)
-            ControlsView(session: session)
+            if !session.isTerminal {
+                HStack(spacing: 12) {
+                    SaveButton(action: presentSaveDialog)
+                    // Disabled (not hidden) while the AI thinks so the row layout
+                    // stays put; `canSurrender` gates both the button and the intent.
+                    SurrenderButton(action: onSurrenderTapped)
+                        .disabled(!session.canSurrender)
+                        .opacity(session.canSurrender ? 1 : 0.4)
+                }
+                ControlsView(session: session)
+            }
         }
-        .padding(.top, 44)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    // Portrait: counters flank the turn indicator as a centered group, leaving the
-    // top corners free for the Back button and debug toggle.
-    private var topBar: some View {
-        HStack(alignment: .top, spacing: 24) {
-            Spacer(minLength: 0)
+    // Portrait: one organized bar (#101) — navigation/actions leading, borne-off
+    // counters trailing. The turn status lives down by the board, not here.
+    private var portraitTopBar: some View {
+        HStack(spacing: 8) {
+            BackButton(action: onBack)
+            if !session.isTerminal {
+                SaveButton(action: presentSaveDialog)
+                SurrenderButton(action: onSurrenderTapped)
+                    .disabled(!session.canSurrender)
+                    .opacity(session.canSurrender ? 1 : 0.4)
+            }
+            Spacer(minLength: 16)
             BorneOffView(session: session, color: .white)
-            TurnIndicatorView(session: session)
             BorneOffView(session: session, color: .black)
-            Spacer(minLength: 0)
         }
     }
 }
 
-/// Caramel pill that returns to the mode picker.
+/// Returns to the mode picker.
 private struct BackButton: View {
     let action: () -> Void
 
@@ -262,19 +303,12 @@ private struct BackButton: View {
                 Image(systemName: "chevron.left")
                 Text("Back")
             }
-            .font(ChromeType.callout.bold())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(ChromeTheme.undoTint.opacity(0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.undoTint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(ChromeTheme.ink)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButton(role: .secondary))
     }
 }
 
-/// Caramel pill that opens the manual-save naming dialog (#61).
+/// Opens the manual-save naming dialog (#61).
 private struct SaveButton: View {
     let action: () -> Void
 
@@ -284,20 +318,13 @@ private struct SaveButton: View {
                 Image(systemName: "square.and.arrow.down")
                 Text("Save")
             }
-            .font(ChromeType.callout.bold())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(ChromeTheme.doneTint.opacity(0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.doneTint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(ChromeTheme.ink)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButton(role: .secondary))
     }
 }
 
-/// Caramel pill that opens the resign confirmation flow (#74). Tinted apart from
-/// Back/Save with a muted brick red to read as the one game-ending action.
+/// Opens the resign confirmation flow (#74) — the one game-ending action, so it
+/// carries the kit's destructive (brick) role.
 private struct SurrenderButton: View {
     let action: () -> Void
 
@@ -307,15 +334,8 @@ private struct SurrenderButton: View {
                 Image(systemName: "flag.fill")
                 Text("Resign")
             }
-            .font(ChromeType.callout.bold())
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(ChromeTheme.surrenderTint.opacity(0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(ChromeTheme.surrenderTint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(ChromeTheme.ink)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButton(role: .destructive))
     }
 }
 
@@ -335,7 +355,7 @@ private struct TurnIndicatorView: View {
             if case .awaitingRoll = session.phase {
                 Text("Tap dice to roll")
                     .font(ChromeType.caption)
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    .foregroundStyle(ChromeKit.inkSecondary)
             }
         }
     }
@@ -353,8 +373,9 @@ private struct TurnIndicatorView: View {
     }
 }
 
-/// One side's borne-off count: a checker-colored disc, the count, and a label.
-/// Reads the count straight off the board on each session publish.
+/// One side's borne-off count as a horizontal chip (#101): checker-colored disc,
+/// name, and bold count. Reads the count straight off the board on each session
+/// publish.
 private struct BorneOffView: View {
     @ObservedObject var session: GameSession
     let color: TavliEngine.Color
@@ -367,18 +388,23 @@ private struct BorneOffView: View {
     }
 
     var body: some View {
-        VStack(spacing: 4) {
+        HStack(spacing: 8) {
             Circle()
                 .fill(ChromeTheme.checkerColor(color))
                 .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
-                .frame(width: 28, height: 28)
-            Text("\(count)")
-                .font(ChromeType.caption.bold())
-                .foregroundStyle(ChromeTheme.ink)
+                .frame(width: 20, height: 20)
             Text(ChromeTheme.displayName(color))
-                .font(ChromeType.caption2)
-                .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+            Text("\(count)")
+                .font(ChromeType.callout.bold())
+                .monospacedDigit()
+                .foregroundStyle(ChromeTheme.ink)
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(ChromeTheme.ink.opacity(0.06))
+        .cornerRadius(ChromeKit.buttonRadius)
     }
 }
 
@@ -397,40 +423,42 @@ private struct ControlsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            Button("Undo") { session.undo() }
-                .buttonStyle(ControlButtonStyle(tint: ChromeTheme.undoTint))
-                .disabled(!session.canUndo)
-                .opacity(session.canUndo ? 1 : 0.4)
+        HStack(spacing: 12) {
+            Button {
+                session.undo()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.uturn.backward")
+                    Text("Undo")
+                }
+            }
+            .buttonStyle(ChromeButton(role: .secondary))
+            .disabled(!session.canUndo)
+            .opacity(session.canUndo ? 1 : 0.4)
             if canFinish {
-                Button("Done") { session.confirm() }
-                    .buttonStyle(ControlButtonStyle(tint: ChromeTheme.doneTint))
+                Button {
+                    session.confirm()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                        Text("Done")
+                    }
+                }
+                .buttonStyle(ChromeButton(role: .primary))
             }
         }
         .frame(maxWidth: .infinity)
     }
 }
 
-/// Pill button tinted to the palette; adapted from the reference GameView.
-private struct ControlButtonStyle: ButtonStyle {
-    let tint: SColor
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(ChromeType.callout.bold())
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(tint.opacity(configuration.isPressed ? 0.45 : 0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(ChromeTheme.ink)
-    }
-}
-
-/// Dimmed scrim announcing the winner with a Play Again button (plus a History
-/// opener, since the scrim covers the in-chrome `HistoryButton`).
+/// Full-screen game-over takeover (#101): a scrim strong enough to retire the
+/// chrome behind it, a personalized serif verdict, the stats card, a solid
+/// primary Play Again, and real secondary buttons (icons + labels) for the
+/// post-game tools.
 private struct WinOverlayView: View {
-    let winner: TavliEngine.Color
+    /// Pre-formatted verdict ("You win!" / "Red wins") — the caller knows which
+    /// side the human played; this view stays presentation-only.
+    let title: String
     let stats: HumanGameStats
     let onNewGame: () -> Void
     let onHistory: () -> Void
@@ -438,32 +466,50 @@ private struct WinOverlayView: View {
     let onDrill: () -> Void
 
     var body: some View {
-        ZStack {
-            SColor.black.opacity(0.55).ignoresSafeArea()
-            VStack(spacing: 24) {
-                Text("\(ChromeTheme.displayName(winner)) wins!")
-                    .font(ChromeType.winTitle)
-                    .foregroundStyle(.white)
-                StatsPanelView(stats: stats)
-                Button("Play Again", action: onNewGame)
-                    .font(ChromeType.title3.bold())
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 14)
-                    .background(.white.opacity(0.15))
-                    .cornerRadius(14)
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.3), lineWidth: 1))
-                    .foregroundStyle(.white)
-                    .buttonStyle(.plain)
-                HStack(spacing: 28) {
-                    Button("Review game", action: onReview)
-                        .buttonStyle(.plain)
-                    Button("Drill blunders", action: onDrill)
-                        .buttonStyle(.plain)
-                    Button("History", action: onHistory)
-                        .buttonStyle(.plain)
+        VStack(spacing: 28) {
+            Text(title)
+                .font(ChromeType.winTitle)
+                .foregroundStyle(.white)
+            StatsPanelView(stats: stats)
+            Button {
+                onNewGame()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Play Again")
                 }
-                .font(ChromeType.body.bold())
-                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 24)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(ChromeButton(role: .primary))
+            HStack(spacing: 14) {
+                Button {
+                    onReview()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                        Text("Review game")
+                    }
+                }
+                .buttonStyle(ChromeButton(role: .scrim))
+                Button {
+                    onDrill()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "target")
+                        Text("Drill blunders")
+                    }
+                }
+                .buttonStyle(ChromeButton(role: .scrim))
+                Button {
+                    onHistory()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text("History")
+                    }
+                }
+                .buttonStyle(ChromeButton(role: .scrim))
             }
         }
     }
@@ -488,7 +534,7 @@ private struct HistoryView: View {
                 Spacer()
                 Text("No moves yet")
                     .font(ChromeType.callout)
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    .foregroundStyle(ChromeKit.inkSecondary)
                 Spacer()
             } else {
                 ScrollViewReader { proxy in
@@ -500,8 +546,11 @@ private struct HistoryView: View {
                                     ? session.startingPlayer
                                     : session.startingPlayer.opponent
                                 HistoryRow(index: index, mover: mover, ply: ply)
+                                    .background(offset % 2 == 1
+                                        ? ChromeTheme.ink.opacity(0.04)
+                                        : SColor.clear)
+                                    .cornerRadius(8)
                                     .id(offset)
-                                Divider().opacity(0.4)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -522,12 +571,10 @@ private struct HistoryView: View {
                 .foregroundStyle(ChromeTheme.ink)
             Spacer()
             Button("Done") { dismiss() }
-                .font(ChromeType.callout.bold())
-                .foregroundStyle(ChromeTheme.ink)
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeButton(role: .secondary))
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
+        .padding(.vertical, 12)
     }
 
     private func scrollToLast(_ proxy: ScrollViewProxy) {
@@ -548,7 +595,7 @@ private struct HistoryRow: View {
         HStack(spacing: 12) {
             Text("\(index).")
                 .font(ChromeType.callout.monospacedDigit())
-                .foregroundStyle(ChromeTheme.ink.opacity(0.5))
+                .foregroundStyle(ChromeKit.inkSecondary)
                 .frame(width: 48, alignment: .trailing)
             Circle()
                 .fill(ChromeTheme.checkerColor(mover))
@@ -556,14 +603,15 @@ private struct HistoryRow: View {
                 .frame(width: 18, height: 18)
             Text("d=\(ply.die1) \(ply.die2)")
                 .font(ChromeType.callout.monospaced())
-                .foregroundStyle(ChromeTheme.ink.opacity(0.75))
+                .foregroundStyle(ChromeKit.inkSecondary)
                 .frame(width: 78, alignment: .leading)
             Text(moveText)
                 .font(ChromeType.callout.monospaced())
-                .foregroundStyle(ply.halfMoves.isEmpty ? ChromeTheme.ink.opacity(0.5) : ChromeTheme.ink)
+                .foregroundStyle(ply.halfMoves.isEmpty ? ChromeKit.inkSecondary : ChromeTheme.ink)
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
     }
 
     private var moveText: String {
