@@ -62,7 +62,7 @@ aux_loss_weight: 0.3       # Weight of the aux BCE term relative to the main val
 # Optimizer + replay buffer (Adam replaces manual TD update)
 learning_rate: 0.00003         # E5-proven value; E6's further drop to 1e-5 measured flat (#81)
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
-ema_decay: 0.0                 # EMA/Polyak shadow weights (E13, #81): 0 disables. Measured FLAT (EMA vs raw 50.59%, z=1.18 over 10k games) — keep off; machinery stays for a future signal change
+ema_decay: 0.0                 # EMA/Polyak shadow weights (E13, #81): 0 disables. Confirmed FLAT by a high-power paired gate — EMA 50.03% over 40k duplicate-dice games (z=0.21, true edge bounded to ±0.3pp). The earlier 50.59% (z=1.18) was noise. Machinery kept for a future signal change
 replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
 updates_per_game: 5            # Adam SGD steps run per ingested trajectory
