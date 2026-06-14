@@ -850,6 +850,20 @@ def main():
                 return
         gold_model_path = sys.argv[3] if len(sys.argv) >= 4 and not sys.argv[3].startswith("--") else None
         evaluate_against_gold(config, games_per_color=games_per_color, gold_model_path=gold_model_path)
+    elif mode == 'eval-paired':
+        # eval-paired <model_a> <model_b> [num_pairs] [--workers N]
+        from ai.paired_eval import evaluate_paired
+        args = sys.argv[2:]
+        positional = [a for a in args if not a.startswith("--")]
+        if len(positional) < 2:
+            print("Usage: eval-paired <model_a> <model_b> [num_pairs] [--workers N]")
+            return
+        model_a, model_b = positional[0], positional[1]
+        num_pairs = int(positional[2]) if len(positional) >= 3 else 5000
+        num_workers = None
+        if "--workers" in args:
+            num_workers = int(args[args.index("--workers") + 1])
+        evaluate_paired(config, model_a, model_b, num_pairs=num_pairs, num_workers=num_workers)
     elif mode in ('eval-gold-stats', 'analyze-gold'):
         last_x = 50
         if len(sys.argv) >= 3:
