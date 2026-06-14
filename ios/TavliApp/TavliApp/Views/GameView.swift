@@ -67,7 +67,9 @@ struct GameView: View {
 
     private var flipped: Bool { humanColor == .black }
 
-    /// Manual dice entry is offered only while the human is awaiting a roll (#77).
+    /// Manual dice entry is offered whenever a roll is awaited (#77). In manual
+    /// mode the session also pauses on the AI's turn (#110), so this is true for
+    /// both players' rolls — the human enters the AI's dice too.
     private var manualDiceActive: Bool {
         diceMode == .manual && session.phase == .awaitingRoll
     }
@@ -223,6 +225,16 @@ struct GameView: View {
             .onAppear { session.animationTimings = AppSettings.animationTimings }
             .onChange(of: aiAnimation) { _, on in
                 session.animationTimings = on ? .standard : .off
+            }
+            // Manual-dice mode (#110) applies to both players: keep the session's
+            // flag in sync so it pauses for the human to enter the AI's dice too.
+            // Applied on entry and whenever the setting is toggled mid-game.
+            .onAppear { session.manualDiceEntry = diceMode == .manual }
+            .onChange(of: diceMode) { _, mode in
+                session.manualDiceEntry = mode == .manual
+                // Leaving manual mode while the AI sits paused for its dice:
+                // let it roll automatically again (no-op on the human's turn).
+                if mode != .manual { session.start() }
             }
         }
     }
@@ -439,7 +451,7 @@ private struct TurnIndicatorView: View {
                 .foregroundStyle(ChromeTheme.ink)
                 .multilineTextAlignment(.center)
             if case .awaitingRoll = session.phase {
-                Text(diceMode == .manual ? "Enter your dice" : "Tap dice to roll")
+                Text(diceSubtitle)
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
             }
@@ -456,6 +468,14 @@ private struct TurnIndicatorView: View {
         case .animating:         return "\(name) moving…"
         case .gameOver(let w):   return "\(ChromeTheme.displayName(w)) wins!"
         }
+    }
+
+    /// Subtitle while a roll is awaited. In manual mode the human enters the dice
+    /// for whichever side is on roll — their own or the AI's (#110).
+    private var diceSubtitle: String {
+        guard diceMode == .manual else { return "Tap dice to roll" }
+        let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
+        return isAITurn ? "Enter the AI's dice" : "Enter your dice"
     }
 }
 
@@ -511,7 +531,7 @@ private struct ControlsView: View {
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                session.undo()
+                session.undoOrStepBack()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.uturn.backward")
@@ -519,8 +539,8 @@ private struct ControlsView: View {
                 }
             }
             .buttonStyle(ChromeButton(role: .secondary))
-            .disabled(!session.canUndo)
-            .opacity(session.canUndo ? 1 : 0.4)
+            .disabled(!session.canUndoOrStepBack)
+            .opacity(session.canUndoOrStepBack ? 1 : 0.4)
             if canFinish {
                 Button {
                     session.confirm()

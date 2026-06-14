@@ -177,4 +177,116 @@ final class GameSessionAITests: XCTestCase {
         XCTAssertTrue(s.game.isOver())
         XCTAssertEqual(s.winProbability, 0.5, accuracy: 1e-9)
     }
+
+    /// `start()` must not auto-roll the AI in manual-dice mode (#110): when the AI
+    /// is the starting player the session has to pause in `.awaitingRoll` so the
+    /// human can enter the AI's dice.
+    func testManualDiceModeDoesNotAutoRollAIOnStart() {
+        let s = GameSession(startingPlayer: .black, agent: nil, aiColor: .black,
+                            animationTimings: .off, manualDiceEntry: true)
+        s.start()
+        XCTAssertEqual(s.phase, .awaitingRoll, "AI must pause for manual dice, not auto-roll")
+        XCTAssertEqual(s.currentPlayer, .black)
+        let before = s.history.count
+        s.setManualDice(3, 4)   // human enters the AI's dice → AI plays them
+        XCTAssertGreaterThan(s.history.count, before, "AI did not play the entered dice")
+    }
+
+    /// Manual-dice mode (#110) applies to both players: the session also pauses in
+    /// `.awaitingRoll` on the AI's turn, and the human-entered dice drive the AI's
+    /// move. Drives a full random-fallback game entirely through `setManualDice`
+    /// and asserts the AI side really did pause for its dice (without the flag it
+    /// would auto-roll and `.awaitingRoll` would never fire on black's turn).
+    func testManualDiceDrivesBothPlayers() {
+        let s = GameSession(startingPlayer: .white, agent: nil, aiColor: .black,
+                            animationTimings: .off, manualDiceEntry: true)
+        s.start()
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.currentPlayer, .white, "start() must not auto-roll the AI here")
+
+        var sawAIRoll = false
+        var turns = 0
+        loop: while true {
+            switch s.phase {
+            case .gameOver:
+                break loop
+            case .awaitingRoll:
+                turns += 1
+                XCTAssertLessThan(turns, 100_000, "game failed to terminate")
+                if s.currentPlayer == .black { sawAIRoll = true }   // AI paused for its dice
+                s.setManualDice(Int.random(in: 1...6), Int.random(in: 1...6))
+            case .picking, .moving:
+                playHumanTurn(s)
+            case .aiThinking, .animating:
+                XCTFail("random fallback is synchronous; manual entry adds no async")
+                break loop
+            }
+        }
+
+        guard case .gameOver = s.phase else { return XCTFail("game did not finish") }
+        XCTAssertTrue(s.game.isOver())
+        XCTAssertTrue(sawAIRoll, "AI never paused in awaitingRoll for manual dice")
+    }
+
+    /// Manual mode (#110): the Undo button "unrolls" the current, not-yet-played
+    /// turn — rolling, then undoing with nothing built, returns to `.awaitingRoll`
+    /// for the *same* player so they can choose different dice.
+    func testManualUndoUnrollsCurrentTurn() {
+        let s = GameSession(startingPlayer: .white, agent: nil, aiColor: .black,
+                            animationTimings: .off, manualDiceEntry: true)
+        s.start()
+        s.setManualDice(3, 4)
+        XCTAssertTrue(s.phase == .picking || s.phase == .moving, "rolled → ready to move")
+        XCTAssertFalse(s.canUndo, "nothing built yet")
+        XCTAssertTrue(s.canUndoOrStepBack, "manual mode can unroll the current turn")
+
+        s.undoOrStepBack()
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.currentPlayer, .white, "same player re-rolls")
+        XCTAssertTrue(s.history.isEmpty, "unrolling an unplayed turn records nothing")
+
+        s.setManualDice(6, 6)   // a different roll is now accepted
+        XCTAssertEqual(s.game.dice.die1.value, 6)
+    }
+
+    /// Manual mode (#110): once nothing is left to peel in the current turn, Undo
+    /// steps back one *recorded* ply at a time to its dice entry, so a sequence
+    /// played with one set of dice can be rewound and re-rolled. Walks back a
+    /// human ply + the AI's reply and asserts the player/phase/history at each step.
+    func testManualStepBackWalksPliesToReroll() {
+        let s = GameSession(startingPlayer: .white, agent: nil, aiColor: .black,
+                            animationTimings: .off, manualDiceEntry: true)
+        s.start()
+
+        // White plays a full turn, then the human enters the AI's dice and it plays.
+        s.setManualDice(3, 4)
+        playHumanTurn(s)
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.currentPlayer, .black, "AI pauses for its manual dice")
+        XCTAssertEqual(s.history.count, 1)
+        s.setManualDice(5, 2)
+        XCTAssertEqual(s.currentPlayer, .white)
+        XCTAssertEqual(s.history.count, 2)
+
+        let pieces = 2 * s.game.board.numberOfPieces
+
+        // Step back the AI's reply → AI's dice entry.
+        XCTAssertTrue(s.canUndoOrStepBack)
+        s.undoOrStepBack()
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.currentPlayer, .black)
+        XCTAssertEqual(s.history.count, 1)
+
+        // Step back the human's move → human's dice entry, board back to the start.
+        s.undoOrStepBack()
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.currentPlayer, .white)
+        XCTAssertTrue(s.history.isEmpty)
+        XCTAssertEqual(s.game.board.points.reduce(0) { $0 + $1.count }, pieces,
+                       "checkers conserved after stepping all the way back")
+
+        // Re-play from the start with a different roll.
+        s.setManualDice(6, 6)
+        XCTAssertEqual(s.game.dice.die1.value, 6)
+    }
 }

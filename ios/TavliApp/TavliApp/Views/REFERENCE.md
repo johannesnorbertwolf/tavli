@@ -181,8 +181,14 @@ session-bound hosts.
   renders unrotated and no gate-flip can animate a backward unwind. Greying
   still works during the AI's moves because the engine commits each landed hop
   into `moveBuilder` — `usedDiceFlags` greys the used die as each hop lands.
-- **`ManualDiceControl`** — two 1…6 steppers + "Set dice" →
-  `session.setManualDice(d1, d2)`; only active while awaiting a roll.
+- **`ManualDiceControl`** (#110) — a tap-grid: two rows of six `DieFace`s
+  (top = first die, bottom = second die, ~36 pt). Tapping a face selects that
+  die's value (caramel highlight ring via `DieFace.isHighlighted`); when both
+  dice carry a selection it **auto-submits** `session.setManualDice(d1, d2)` and
+  resets — entering a roll is two taps, no confirm button. Selection is
+  order-independent. Active only while awaiting a roll (`phase == .awaitingRoll`):
+  otherwise dimmed (opacity 0.4) and non-interactive, clearing any half-finished
+  pick on the way out.
 - `#Preview`s: a "Dice — states" matrix over `DiceRow` (normal, each side
   consumed, pasch, partially/fully consumed — including a right-die-consumed
   case demonstrating the #46 fix) and the manual control.
@@ -379,9 +385,12 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
 - **`ControlsView`** — **Undo** is persistent (#59): always rendered (while the game is
-  live; the call sites hide the whole row once terminal, #101), calling `session.undo()`,
-  greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is false. It peels the last
-  committed half-move within the current turn only. **Done** (`session.confirm()`) is still
+  live; the call sites hide the whole row once terminal, #101), calling `session.undoOrStepBack()`,
+  greyed (`.disabled` + `0.4` opacity) when `session.canUndoOrStepBack` is false. It peels the last
+  committed half-move within the current turn; in **manual-dice mode** (#110), once nothing is left
+  to peel it steps the game back one ply to that ply's dice entry (`.awaitingRoll`), so a sequence
+  can be rewound and re-rolled with different dice. (Auto mode is unchanged — within-turn only;
+  whole-decision rewind stays in the debug overlay's `undoLastDecision`.) **Done** (`session.confirm()`) is still
   contextual: shown only when `moveBuilder.canFinishNow && !built.isEmpty`, and carries
   `ChromeButton(role: .primary)` — the one solid button on the board screen — while Undo is
   `.secondary`. The dice no longer live here — they moved to the board's center bar

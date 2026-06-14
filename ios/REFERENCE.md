@@ -56,7 +56,8 @@ so the game flow is validated without a simulator.
   — the four human-move phases plus `aiThinking` (the off-main search) and `animating` (the
   presentational replay of the AI's turn, #93); both AI phases block human input through the
   same guards the intents already use. Intents: `roll` / `setManualDice(_:_:)`
-  (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
+  (deterministic dice for scripted/manual play — on the AI's turn in manual mode it hands the
+  entered dice straight to `playAITurn`, #110) / `selectPoint` / `commitHalfMove(from:to:)` /
   `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
   `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
   applies the half-move to the board and auto-finishes when the move is complete or the only
@@ -66,6 +67,14 @@ so the game flow is validated without a simulator.
   `winProbability`, plus `aiDiceRolling`/`aiHopInFlight` for the AI-turn animation, #93) is the
   view contract. No rendering lives here.
 
+- **Manual-dice mode for both players (#110).** The `manualDiceEntry` flag (init parameter,
+  default `false`, threaded through `resume(from:)`; the view keeps it in sync with the dice-mode
+  setting) makes the human enter the AI's dice too. When set, `maybeStartAITurn` does **not**
+  auto-roll: the session pauses in `.awaitingRoll` on the AI's turn. The human's `setManualDice`
+  then detects `isAITurn` and calls `playAITurn(animateDiceRoll: false)` — the AI searches/plays
+  the entered dice with the normal move animation but no dice tumble (the values are already
+  shown). `takeAITurn` is now just `rollDice()` + `playAITurn(animateDiceRoll: true)`.
+
 - **AI-turn animation (#93).** Driven entirely by the session so the view layer stays passive;
   knobs live in **`AnimationTimings`** (`aiDiceRollDuration` / `aiMoveAnimationDuration`, both
   0.6 s in `.standard` for a ~1.8 s two-move turn; settings UI lands with #77). The struct is a
@@ -73,12 +82,15 @@ so the game flow is validated without a simulator.
   threaded through `resume(from:)`); `.off` (both zero) restores the fully synchronous
   pre-animation behavior — headless tests pass it — and `isAnimated` is the gate `takeAITurn`
   checks. Animated flow:
-  1. `takeAITurn` rolls (values are set up front — the search needs them), computes legal moves,
-     and sets `aiDiceRolling = true` (when `aiDiceRollDuration > 0`). With a model it enters
-     `aiThinking` and the search runs **concurrently with the dice tumble**; the random fallback
-     and the forced pass skip straight to `animating`.
+  1. `takeAITurn` rolls (values are set up front — the search needs them), then `playAITurn`
+     computes legal moves and sets `aiDiceRolling = true` (when the effective roll window > 0).
+     With a model it enters `aiThinking` and the search runs **concurrently with the dice tumble**;
+     the random fallback and the forced pass skip straight to `animating`. (In manual-dice mode,
+     #110, `setManualDice` calls `playAITurn(animateDiceRoll: false)` so the roll window is 0 — no
+     tumble, since the human already entered the dice.)
   2. Once the move is chosen, `animateAITurn` (phase → `animating`) sleeps out the *remainder* of
-     the tumble window, then clears `aiDiceRolling` — the dice settle on the real values.
+     the tumble window (`rollDuration`, 0 for manual entry), then clears `aiDiceRolling` — the dice
+     settle on the real values.
   3. For each half-move in stored order it publishes an **`AIAnimatedHop`** (`id` = ordinal —
      distinguishes consecutive hops with identical endpoints on a Pasch — plus `from`/`to`/
      `color`/`duration`), sleeps `aiMoveAnimationDuration`, then **lands** it: `applyHalfMove` on
@@ -102,8 +114,15 @@ so the game flow is validated without a simulator.
   `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
   - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
     half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
-    true only while `moveBuilder.built` is non-empty. Wired to the persistent **Undo** button in
-    `ControlsView`.
+    true only while `moveBuilder.built` is non-empty.
+  - `undoOrStepBack()` / `canUndoOrStepBack` — what the persistent **Undo** button in `ControlsView`
+    actually calls. It is `undo()` plus, in **manual-dice mode** (#110), a step back when nothing is
+    left to peel: `stepBackToManualRoll()` either *unrolls* the current rolled-but-unrecorded turn
+    (same mover) or pops the last recorded ply (reversing it on the board, trimming `undoHistory` +
+    `record.plies`, clearing `diceReplays`), landing in `.awaitingRoll` for that ply's mover via
+    `enterManualRoll(for:)` — so a sequence played at one set of dice can be rewound a ply at a time
+    and re-rolled with different dice. Unlike `undoLastDecision` it steps a single ply (the human
+    drives both sides here) and lands *before* the roll. In auto mode it is exactly `undo()`.
   - `undoLastDecision()` — **decision-point rewind** (debug pane only): pops every ply from the
     human's last real move forward (reversing each on the board), restores that ply's player +
     dice, and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be
@@ -119,7 +138,9 @@ so the game flow is validated without a simulator.
   `GameSession.makeAgent()` loads the app-bundled `PlakotoValue.mlmodelc` (returns `nil` if absent →
   random fallback). Call `start()` once after construction so the AI moves first if it owns the
   starting player. When `finishTurn` (or `start`/`newGame`) lands on the AI's turn, `takeAITurn`
-  rolls, computes legal moves (empty = forced pass), then: with no model it picks a random legal
+  rolls and `playAITurn` computes legal moves (empty = forced pass) — except in manual-dice mode
+  (#110), where it pauses for the human to enter the AI's dice (see *Manual-dice mode* above) —
+  then: with no model it picks a random legal
   move (applied synchronously under `.off` timings); with a model it enters `aiThinking` and runs
   the **multi-ply expectimax search** (`agent.getBestMove`) on a detached task **off the main
   actor**, hopping back via `MainActor.run` to apply the move — directly, or through the animated
@@ -127,9 +148,10 @@ so the game flow is validated without a simulator.
   wrapped in `try?` so a Core ML failure falls back to a random move. `winProbability` (WHITE's
   view: `mover == .white ? score : 1 - score`) updates only from a real model score and stays at
   its `0.5` default under the random fallback.
-  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
-  `searchConfig: SearchConfig(maxDepth: 1)` and `animationTimings: .off` so full-game tests stay
-  fast and synchronous — the search itself is covered by `AgentSearchTests`).
+  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback + the #110
+  manual-dice both-players path; these pin `searchConfig: SearchConfig(maxDepth: 1)` and
+  `animationTimings: .off` so full-game tests stay fast and synchronous — the search itself is
+  covered by `AgentSearchTests`).
 
   **Board-copy isolation.** The search must not race the live `game.board`: the main actor keeps
   reading/scoring it (UI render, debug overlay) while the search applies/undoes thousands of times,
