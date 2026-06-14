@@ -215,6 +215,16 @@ class TdLambdaTraining:
         self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=self.learning_rate)
         self.optimizer_steps = 0
 
+        # EMA / Polyak weights (E13): a shadow copy of the parameters tracked as an
+        # exponential moving average, saved alongside the raw checkpoint for eval/deploy.
+        # ema_decay = 0 disables it (raw weights only). Self-play workers always use the
+        # raw weights, so EMA only changes what we deploy, not the data distribution.
+        self.ema_decay = float(self.config.get_ema_decay())
+        self.ema_params = None
+        if self.ema_decay > 0.0:
+            self.ema_params = {n: p.detach().clone()
+                               for n, p in self.board_evaluator.named_parameters()}
+
         self._try_load_gold_agent()
         self._try_load_optimizer_state()
         self._load_training_state()
@@ -576,6 +586,36 @@ class TdLambdaTraining:
                 torch.nn.utils.clip_grad_norm_(self.board_evaluator.parameters(), self.max_grad_norm)
             self.optimizer.step()
             self.optimizer_steps += 1
+            self._update_ema()
+
+    def _update_ema(self):
+        """Blend the current parameters into the EMA shadow (no-op if EMA is off)."""
+        if self.ema_params is None:
+            return
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                self.ema_params[n].mul_(self.ema_decay).add_(p.detach(), alpha=1.0 - self.ema_decay)
+
+    def _ema_save_path(self):
+        root, ext = os.path.splitext(self.model_save_path)
+        return root + "_ema" + ext
+
+    def _save_ema_checkpoint(self):
+        """Swap the EMA weights into the evaluator, checkpoint them, then restore raw weights."""
+        backup = {n: p.detach().clone() for n, p in self.board_evaluator.named_parameters()}
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                p.copy_(self.ema_params[n])
+        save_checkpoint(self._ema_save_path(), self.board_evaluator, self.config, optimizer=None)
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                p.copy_(backup[n])
+
+    def _save_checkpoint_with_ema(self):
+        """Save the raw checkpoint (with optimizer state) and, if EMA is on, the EMA shadow."""
+        save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+        if self.ema_params is not None:
+            self._save_ema_checkpoint()
 
     def _apply_trajectory(self, traj):
         """Ingest a trajectory and run a round of minibatch SGD updates."""
@@ -722,7 +762,7 @@ class TdLambdaTraining:
             self._save_training_state()
 
             if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+                self._save_checkpoint_with_ema()
                 print(f"Model checkpoint saved at epoch {epoch + 1}")
 
             if (epoch + 1) % self.eval_every_epochs == 0:
@@ -740,7 +780,7 @@ class TdLambdaTraining:
         )
         print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-        save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+        self._save_checkpoint_with_ema()
         self._save_training_state()
         print(f"Model saved to {self.model_save_path}")
 
@@ -856,7 +896,7 @@ class TdLambdaTraining:
                 self._save_training_state()
 
                 if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                    save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+                    self._save_checkpoint_with_ema()
                     print(f"Model checkpoint saved at epoch {epoch + 1}")
 
                 if (epoch + 1) % self.eval_every_epochs == 0:
@@ -874,7 +914,7 @@ class TdLambdaTraining:
             )
             print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-            save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+            self._save_checkpoint_with_ema()
             self._save_training_state()
             print(f"Model saved to {self.model_save_path}")
         finally:
