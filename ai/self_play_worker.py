@@ -54,7 +54,8 @@ def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
 
 def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
                          seed_pool=None, seeded_fraction=0.0,
-                         league_opponents=None, league_fraction=0.0):
+                         league_opponents=None, league_fraction=0.0,
+                         bootstrap_depth=1):
     """Play one self-play game to a real terminal. Returns a trajectory dict:
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
@@ -80,8 +81,15 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
         return float("nan") if v is None else float(v)
 
+    def state_bootstrap_value():
+        # Depth-2 pre-roll position value for the player to move (E14); NaN when off or terminal.
+        if bootstrap_depth < 2 or game.is_over():
+            return float("nan")
+        return agent.position_value_lookahead(game.board, game.current_player)
+
     states = [encoder.encode_board(game.board, game.current_player == WHITE)]
     exact_values = [state_exact_value()]
+    bootstrap_values = [state_bootstrap_value()]
     movers = []
 
     while True:
@@ -106,6 +114,7 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         movers.append(is_white_to_move)
         states.append(encoder.encode_board(game.board, game.current_player == WHITE))
         exact_values.append(state_exact_value())
+        bootstrap_values.append(state_bootstrap_value())
 
         if game.is_over():
             winner = game.get_winner()
@@ -113,6 +122,7 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
                 "states": states,
                 "movers": movers,
                 "exact_values": exact_values,
+                "bootstrap_values": bootstrap_values,
                 "terminal_winner_white": (winner == WHITE),
                 "win_by_pin": bool(game.board.captured_starting(winner)),
                 "final_borne_off_white": int(game.board.borne_off[WHITE]),
@@ -156,6 +166,8 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
         if not league_opponents:
             league_fraction = 0.0
 
+    bootstrap_depth = config.get_bootstrap_depth()
+
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)
     np.random.seed(seed)
@@ -170,5 +182,6 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
         traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
                                     seed_pool=seed_pool, seeded_fraction=seeded_fraction,
                                     league_opponents=league_opponents,
-                                    league_fraction=league_fraction)
+                                    league_fraction=league_fraction,
+                                    bootstrap_depth=bootstrap_depth)
         traj_q.put((worker_id, traj))

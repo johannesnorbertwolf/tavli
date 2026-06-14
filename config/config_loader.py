@@ -171,6 +171,9 @@ class ConfigLoader:
     def get_ema_decay(self):
         return float(self.config.get("ema_decay", 0.0))
 
+    def get_bootstrap_depth(self):
+        return int(self.config.get("bootstrap_depth", 1))
+
     def get_selfplay_seed_pool_path(self):
         return self.config.get("selfplay_seed_pool_path", "models/seed_pool.npz")
 

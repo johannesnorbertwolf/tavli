@@ -54,6 +54,7 @@ lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this tes
 lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_decay: 0.999        # Decay rate for lambda per episode
+bootstrap_depth: 2         # E14 (#80): 1 = raw net bootstrap; 2 = one-ply expectimax backup (avg over 21 dice) as the TD bootstrap target. ~20x slower self-play. Revert to 1 if the paired gate is flat
 
 # Auxiliary output heads (#106): training-only side targets sharing the trunk
 aux_heads: 0               # 0 = off; 2 = [win-by-pin, final borne-off margin]. E12 (#106) measured 2 flat — keep off

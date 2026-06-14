@@ -225,6 +225,10 @@ class TdLambdaTraining:
             self.ema_params = {n: p.detach().clone()
                                for n, p in self.board_evaluator.named_parameters()}
 
+        # Depth-2 TD bootstrap targets (E14): bootstrap λ-returns on a one-ply expectimax
+        # backup of the net (averaged over the 21 dice) instead of the raw net value. 1 = off.
+        self.bootstrap_depth = self.config.get_bootstrap_depth()
+
         self._try_load_gold_agent()
         self._try_load_optimizer_state()
         self._load_training_state()
@@ -260,6 +264,12 @@ class TdLambdaTraining:
         """Exact win prob of the player to move (bear-off DB), NaN outside races."""
         v = exact_value_on_roll(game.board, game.current_player == WHITE, self.bearoff)
         return float("nan") if v is None else float(v)
+
+    def _state_bootstrap_value(self, game) -> float:
+        """Depth-2 pre-roll bootstrap value for the player to move (E14); NaN when off/terminal."""
+        if self.bootstrap_depth < 2 or game.is_over():
+            return float("nan")
+        return self.agent.position_value_lookahead(game.board, game.current_player)
 
     def _select_move_self_play(self, board, possible_moves, current_player):
         from ai.self_play_worker import select_self_play_move
@@ -509,6 +519,18 @@ class TdLambdaTraining:
             values = self.board_evaluator(torch.from_numpy(states_np).float().to(self.device)).squeeze(-1).cpu().numpy()
         self.board_evaluator.train()
 
+        # Depth-2 bootstrap targets (E14): where the self-play loop computed a one-ply
+        # expectimax backup, bootstrap the λ-returns on it instead of the raw net value
+        # (NaN = terminal state or feature off → keep the net value). Exact-race values
+        # (below) still take precedence over this.
+        boot_arr = traj.get("bootstrap_values")
+        if boot_arr is not None:
+            boot_arr = np.asarray(boot_arr, dtype=np.float32)
+            boot_mask = ~np.isnan(boot_arr)
+            if boot_mask.any():
+                values = values.copy()
+                values[boot_mask] = boot_arr[boot_mask]
+
         # Exact-race states (bear-off DB): bootstrap on truth instead of the
         # net's own estimate, and train the race states toward the exact value.
         exact_mask = None
@@ -648,6 +670,7 @@ class TdLambdaTraining:
 
         states = [self.board_encoder.encode_board(game.board, game.current_player == WHITE)]
         exact_values = [self._state_exact_value(game)]
+        bootstrap_values = [self._state_bootstrap_value(game)]
         movers = []
 
         self.board_evaluator.eval()
@@ -675,6 +698,7 @@ class TdLambdaTraining:
                 movers.append(is_white_to_move)
                 states.append(self.board_encoder.encode_board(game.board, game.current_player == WHITE))
                 exact_values.append(self._state_exact_value(game))
+                bootstrap_values.append(self._state_bootstrap_value(game))
 
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
@@ -695,6 +719,7 @@ class TdLambdaTraining:
                         "states": states,
                         "movers": movers,
                         "exact_values": exact_values,
+                        "bootstrap_values": bootstrap_values,
                         "terminal_winner_white": (winner == WHITE),
                         "win_by_pin": bool(game.board.captured_starting(winner)),
                         "final_borne_off_white": int(game.board.borne_off[WHITE]),

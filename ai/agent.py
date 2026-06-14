@@ -344,6 +344,34 @@ class Agent:
             return self._evaluate_moves_2ply_batch(board, possible_moves, color)
         return self._evaluate_moves_batch(board, possible_moves, color)
 
+    def position_value_lookahead(self, board: Board, color: int) -> float:
+        """Pre-roll depth-2 expectimax value for `color` to move: average over the 21 weighted
+        dice outcomes of `color`'s best 1-ply move value (net / bear-off at the leaves). This is
+        a one-ply Bellman backup of the raw net eval — a strictly better bootstrap target than
+        net(position), used by the depth-2 TD-target experiment (E14). Returns a win-prob for
+        `color`, matching the perspective of the net's own bootstrap values."""
+        dice = Dice(_DIE_SIDES)
+        opp_is_white = (color != WHITE)
+        device = self._model_device()
+        expected = 0.0
+        for (i, j, weight) in _DICE_OUTCOMES:
+            dice.set(i, j)
+            moves = legal_moves(board, color, dice)
+            if not moves:
+                # `color` has no legal move and passes; value for `color` is 1 - opponent's static value.
+                exact = self._exact_value(board, opp_is_white)
+                if exact is not None:
+                    v = exact
+                else:
+                    enc = self.board_encoder.encode_board(board, is_whites_turn=opp_is_white)
+                    with torch.no_grad():
+                        v = float(self.board_evaluator(
+                            torch.from_numpy(enc).float().unsqueeze(0).to(device)).squeeze())
+                expected += weight * (1.0 - v)
+            else:
+                expected += weight * max(self._evaluate_moves_batch(board, moves, color))
+        return float(expected)
+
 class RandomAgent:
     """An agent that chooses a move randomly from the possible moves."""
     def get_move(self, possible_moves: List[Move]) -> Move:
