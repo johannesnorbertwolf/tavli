@@ -62,7 +62,7 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 |---|---|
 | `discount_factor` | γ — use `1.0` for terminal-reward games |
 | `lambda_start/end` | TD(λ) — forward-view weighting of n-step returns |
-| `bootstrap_depth` | 1 = bootstrap λ-returns on the raw net value (default). 2 (E14) = bootstrap on a one-ply expectimax backup of the net (averaged over the 21 dice via `Agent.position_value_lookahead`, threaded through the trajectory as `bootstrap_values`); exact-race values still take precedence. ~17× slower self-play |
+| `bootstrap_depth` | 1 = bootstrap λ-returns on the raw net value. 2 (E14, **KEPT**) = bootstrap on a one-ply expectimax backup of the net (averaged over the 21 dice via `Agent.position_value_lookahead`, threaded through the trajectory as `bootstrap_values`); exact-race values still take precedence. ~17× slower self-play. First signal change to beat the gate since gold_v10: +0.5pp at z=2.34 (p=0.0097) in a 40k-game paired duplicate-dice gate |
 | `epsilon_start/end/decay` | Exploration schedule |
 | `max_grad_norm` | Global L2 clip on gradients pre-Adam (0 = off) |
 | `hidden_sizes` | Network width list, e.g. `[128, 64]` |
