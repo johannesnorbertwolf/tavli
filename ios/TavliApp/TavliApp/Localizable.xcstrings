@@ -423,7 +423,7 @@
     },
     "Opening Roll" : {
       "localizations" : {
-        "de" : { "stringUnit" : { "state" : "translated", "value" : "Auswürfeln wer anfängt" } },
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Auswürfeln, wer anfängt" } },
         "nl" : { "stringUnit" : { "state" : "translated", "value" : "Openingsworp" } }
       }
     },
