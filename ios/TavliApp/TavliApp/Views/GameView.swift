@@ -242,7 +242,7 @@ struct GameView: View {
     /// Game-over verdict from the human's perspective (#101): the human's own
     /// win is celebrated directly; an AI win names the winning color.
     private func verdict(_ winner: TavliEngine.Color) -> String {
-        winner == humanColor ? "You win!" : "\(ChromeTheme.displayName(winner)) wins"
+        winner == humanColor ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
     }
 
     /// Seed the field with a timestamped default and open the naming dialog.
@@ -267,7 +267,7 @@ struct GameView: View {
     /// A timestamped fallback name (e.g. "Game · Jun 2, 3:04 PM") used when the
     /// player leaves the field empty.
     private static func defaultSaveName() -> String {
-        "Game · " + saveNameFormatter.string(from: Date())
+        String(localized: "Game · ") + saveNameFormatter.string(from: Date())
     }
 
     private static let saveNameFormatter: DateFormatter = {
@@ -461,21 +461,21 @@ private struct TurnIndicatorView: View {
     private var label: String {
         let name = ChromeTheme.displayName(session.currentPlayer)
         switch session.phase {
-        case .awaitingRoll:      return "\(name)'s turn"
-        case .picking:           return "Pick a checker"
-        case .moving:            return "Choose destination"
-        case .aiThinking:        return "AI thinking…"
-        case .animating:         return "\(name) moving…"
-        case .gameOver(let w):   return "\(ChromeTheme.displayName(w)) wins!"
+        case .awaitingRoll:      return String(localized: "\(name)'s turn")
+        case .picking:           return String(localized: "Pick a checker")
+        case .moving:            return String(localized: "Choose destination")
+        case .aiThinking:        return String(localized: "AI thinking…")
+        case .animating:         return String(localized: "\(name) moving…")
+        case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         }
     }
 
     /// Subtitle while a roll is awaited. In manual mode the human enters the dice
     /// for whichever side is on roll — their own or the AI's (#110).
     private var diceSubtitle: String {
-        guard diceMode == .manual else { return "Tap dice to roll" }
+        guard diceMode == .manual else { return String(localized: "Tap dice to roll") }
         let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-        return isAITurn ? "Enter the AI's dice" : "Enter your dice"
+        return isAITurn ? String(localized: "Enter the AI's dice") : String(localized: "Enter your dice")
     }
 }
 
@@ -768,7 +768,7 @@ enum ChromeTheme {
     static let surrenderTint = SwiftUI.Color(hex: 0xb05a44)  // muted brick red (resign)
 
     static func displayName(_ c: TavliEngine.Color) -> String {
-        c == .white ? "White" : "Red"
+        c == .white ? String(localized: "White") : String(localized: "Red")
     }
 
     static func checkerColor(_ c: TavliEngine.Color) -> SwiftUI.Color {
