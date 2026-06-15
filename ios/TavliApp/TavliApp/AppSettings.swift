@@ -84,6 +84,7 @@ enum SettingsKey {
     static let preferredColor     = "settings.preferredColor"
     static let startingPlayer     = "settings.startingPlayer"
     static let diceMode           = "settings.diceMode"
+    static let autoRoll           = "settings.autoRoll"
     static let aiAnimation        = "settings.aiAnimationEnabled"
     static let showWinProbability = "settings.showWinProbability"
 }
@@ -102,6 +103,12 @@ enum AppSettings {
 
     static var diceMode: DiceModeSetting {
         raw(SettingsKey.diceMode).flatMap(DiceModeSetting.init) ?? .auto
+    }
+
+    /// Whether the human's dice roll automatically at the start of their turn
+    /// (default off). Mutually exclusive with `diceMode == .manual`.
+    static var autoRoll: Bool {
+        UserDefaults.standard.object(forKey: SettingsKey.autoRoll) as? Bool ?? false
     }
 
     static var aiAnimationEnabled: Bool {

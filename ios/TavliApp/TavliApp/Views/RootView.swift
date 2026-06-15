@@ -136,7 +136,8 @@ struct RootView: View {
         autosaveName = save.name
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
                                    animationTimings: AppSettings.animationTimings,
-                                   manualDiceEntry: AppSettings.diceMode == .manual)
+                                   manualDiceEntry: AppSettings.diceMode == .manual,
+                                   autoRoll: AppSettings.autoRoll)
         s.start()
         session = s
     }
@@ -148,7 +149,8 @@ struct RootView: View {
         guard let save = store.loadAutosave() else { return nil }
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
                                    animationTimings: AppSettings.animationTimings,
-                                   manualDiceEntry: AppSettings.diceMode == .manual)
+                                   manualDiceEntry: AppSettings.diceMode == .manual,
+                                   autoRoll: AppSettings.autoRoll)
         guard !s.isTerminal else {
             store.clearAutosave()
             return nil
@@ -179,7 +181,8 @@ struct RootView: View {
             agent: GameSession.makeAgent(),
             aiColor: humanColor.opponent,
             animationTimings: AppSettings.animationTimings,
-            manualDiceEntry: AppSettings.diceMode == .manual
+            manualDiceEntry: AppSettings.diceMode == .manual,
+            autoRoll: AppSettings.autoRoll
         )
         session.start()
         return session

@@ -217,6 +217,12 @@
         "nl" : { "stringUnit" : { "state" : "translated", "value" : "Dobbelstenen %1$lld · %2$lld — vind een betere zet" } }
       }
     },
+    "Dice roll automatically at the start of your turn." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Würfel fallen automatisch zu Beginn deines Zuges." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Dobbelstenen gooien automatisch aan het begin van jouw beurt." } }
+      }
+    },
     "Display" : {
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "translated", "value" : "Anzeige" } },
@@ -395,6 +401,12 @@
       "localizations" : {
         "de" : { "stringUnit" : { "state" : "translated", "value" : "Noch keine Partien" } },
         "nl" : { "stringUnit" : { "state" : "translated", "value" : "Nog geen partijen" } }
+      }
+    },
+    "Not available with manual dice entry." : {
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nicht verfügbar bei manueller Würfeleingabe." } },
+        "nl" : { "stringUnit" : { "state" : "translated", "value" : "Niet beschikbaar bij handmatige invoer." } }
       }
     },
     "No moves to review." : {

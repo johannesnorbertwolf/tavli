@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
     @AppStorage(SettingsKey.startingPlayer) private var startingPlayer: StartingPlayerSetting = .openingRoll
     @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
 
@@ -42,6 +43,12 @@ struct SettingsView: View {
                                   options: DiceModeSetting.allCases,
                                   label: \.label,
                                   caption: "Roll automatically, or enter your own dice each turn. The AI always rolls its own.")
+                            .onChange(of: diceMode) { _, mode in
+                                // The two modes are mutually exclusive: switching to
+                                // manual dice turns off auto-roll.
+                                if mode == .manual { autoRoll = false }
+                            }
+                        autoRollRow
                     }
 
                     section("Display") {
@@ -126,6 +133,25 @@ struct SettingsView: View {
                 .font(ChromeType.caption)
                 .foregroundStyle(ChromeKit.inkSecondary)
         }
+    }
+
+    /// Auto-roll toggle (#116): disabled and annotated when manual-dice mode is on.
+    private var autoRollRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $autoRoll) {
+                Text("Auto-roll")
+                    .font(ChromeType.body.weight(.semibold))
+                    .foregroundStyle(diceMode == .manual ? ChromeKit.inkSecondary : ChromeTheme.ink)
+            }
+            .tint(ChromeTheme.doneTint)
+            .disabled(diceMode == .manual)
+            Text(diceMode == .manual
+                 ? "Not available with manual dice entry."
+                 : "Dice roll automatically at the start of your turn.")
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+        }
+        .opacity(diceMode == .manual ? 0.5 : 1)
     }
 }
 
