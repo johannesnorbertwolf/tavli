@@ -161,10 +161,10 @@ struct OpeningRollView: View {
 
     private var statusCaption: String {
         switch rollState {
-        case .idle:                     return "Tap the board to roll"
-        case .rolling:                  return "Rolling…"
-        case .tied(let h, let a):       return "Tie (\(h) vs \(a)) — rolling again…"
-        case .resolved(_, _, let w):    return w == humanColor ? "You go first!" : "AI goes first!"
+        case .idle:                     return String(localized: "Tap the board to roll")
+        case .rolling:                  return String(localized: "Rolling…")
+        case .tied(let h, let a):       return String(localized: "Tie (\(h) vs \(a)) — rolling again…")
+        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "AI goes first!")
         }
     }
 

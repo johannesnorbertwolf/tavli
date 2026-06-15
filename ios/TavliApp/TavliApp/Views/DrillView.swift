@@ -109,7 +109,7 @@ struct DrillView: View {
             Text("Drill complete")
                 .font(.system(size: 34, weight: .bold, design: .serif))
                 .foregroundStyle(ChromeTheme.ink)
-            Text("Solved \(s.solved) of \(s.total)" + (s.skipped > 0 ? " · skipped \(s.skipped)" : ""))
+            Text(drillSummary(s))
                 .font(.title3)
                 .foregroundStyle(ChromeTheme.ink.opacity(0.7))
             Button("Done") { dismiss() }
@@ -121,6 +121,14 @@ struct DrillView: View {
                 .foregroundStyle(ChromeTheme.ink)
                 .buttonStyle(.plain)
         }
+    }
+
+    private func drillSummary(_ s: DrillModel.Summary) -> String {
+        var text = String(localized: "Solved \(s.solved) of \(s.total)")
+        if s.skipped > 0 {
+            text += String(localized: " · skipped \(s.skipped)")
+        }
+        return text
     }
 
     private func centered<C: View>(@ViewBuilder _ content: () -> C) -> some View {
@@ -250,18 +258,18 @@ final class DrillModel: ObservableObject {
     }
 
     private func applyFeedback(score: Float?, best: Float) {
-        guard let score else { feedback = .wrong("Couldn’t evaluate — try again."); return }
+        guard let score else { feedback = .wrong(String(localized: "Couldn’t evaluate — try again.")); return }
         let gap = Double(best - score)
         let correctThreshold = max(correctFloor, Double(best) * correctRelative)
         let closeThreshold = max(closeFloor, Double(best) * closeRelative)
         if gap <= correctThreshold {
             if !solvedThisCard { solvedThisCard = true; solvedCount += 1 }
-            feedback = .correct(gap < 0.001 ? "Excellent — that’s the best move!"
-                                            : "Great — very close to optimal.")
+            feedback = .correct(gap < 0.001 ? String(localized: "Excellent — that’s the best move!")
+                                            : String(localized: "Great — very close to optimal."))
         } else if gap <= closeThreshold {
-            feedback = .close("Close — there’s a better move. Try again.")
+            feedback = .close(String(localized: "Close — there’s a better move. Try again."))
         } else {
-            feedback = .wrong("Not quite — think a little harder.")
+            feedback = .wrong(String(localized: "Not quite — think a little harder."))
         }
     }
 

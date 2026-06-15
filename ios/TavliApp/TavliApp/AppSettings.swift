@@ -30,9 +30,9 @@ enum PreferredColorSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .ask:   return "Ask"
-        case .white: return "White"
-        case .black: return "Red"
+        case .ask:   return String(localized: "Ask")
+        case .white: return String(localized: "White")
+        case .black: return String(localized: "Red")
         }
     }
 }
@@ -46,9 +46,9 @@ enum StartingPlayerSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .openingRoll: return "Opening roll"
-        case .human:       return "I start"
-        case .ai:          return "AI starts"
+        case .openingRoll: return String(localized: "Opening roll")
+        case .human:       return String(localized: "I start")
+        case .ai:          return String(localized: "AI starts")
         }
     }
 
@@ -73,8 +73,8 @@ enum DiceModeSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto:   return "Auto-roll"
-        case .manual: return "Manual entry"
+        case .auto:   return String(localized: "Auto-roll")
+        case .manual: return String(localized: "Manual entry")
         }
     }
 }

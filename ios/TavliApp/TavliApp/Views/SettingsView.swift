@@ -73,7 +73,7 @@ struct SettingsView: View {
         }
     }
 
-    private func section<Content: View>(_ title: String,
+    private func section<Content: View>(_ title: LocalizedStringKey,
                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(title)
@@ -89,11 +89,11 @@ struct SettingsView: View {
     // MARK: - Rows
 
     /// A titled segmented choice over a set of options, with a caption beneath.
-    private func choiceRow<T: Hashable & Identifiable>(_ title: String,
+    private func choiceRow<T: Hashable & Identifiable>(_ title: LocalizedStringKey,
                                                        selection: Binding<T>,
                                                        options: [T],
                                                        label: KeyPath<T, String>,
-                                                       caption: String) -> some View {
+                                                       caption: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(ChromeType.body.weight(.semibold))
@@ -112,9 +112,9 @@ struct SettingsView: View {
     }
 
     /// A titled on/off toggle with a caption beneath.
-    private func toggleRow(_ title: String,
+    private func toggleRow(_ title: LocalizedStringKey,
                            isOn: Binding<Bool>,
-                           caption: String) -> some View {
+                           caption: LocalizedStringKey) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Toggle(isOn: isOn) {
                 Text(title)

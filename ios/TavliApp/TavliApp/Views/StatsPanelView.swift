@@ -67,7 +67,11 @@ struct StatsPanelView: View {
 
     private var sparkline: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(stats.total <= 20 ? "All \(stats.total)" : "Last 20")
+            if stats.total <= 20 {
+                Text("All \(stats.total)")
+            } else {
+                Text("Last 20")
+            }
                 .font(ChromeType.caption.bold())
                 .foregroundStyle(ChromeKit.inkSecondary)
             HStack(spacing: 5) {
@@ -98,10 +102,15 @@ struct StatsPanelView: View {
     }
 
     private var streakString: String {
-        let word = stats.streakIsWin ? "win" : "loss"
-        let plural = stats.streakCount == 1 ? word : (stats.streakIsWin ? "wins" : "losses")
-        let arrow = stats.streakIsWin ? "↑" : "↓"
-        return "\(stats.streakCount) \(plural) in a row \(arrow)"
+        if stats.streakIsWin {
+            return stats.streakCount == 1
+                ? String(localized: "1 win in a row ↑")
+                : String(localized: "\(stats.streakCount) wins in a row ↑")
+        } else {
+            return stats.streakCount == 1
+                ? String(localized: "1 loss in a row ↓")
+                : String(localized: "\(stats.streakCount) losses in a row ↓")
+        }
     }
 
     private enum Palette {

@@ -70,8 +70,13 @@ struct GameReviewView: View {
         case .analyzing(let done, let total):
             centered {
                 ProgressView().progressViewStyle(.circular).tint(ChromeTheme.ink)
-                Text(total > 0 ? "Analyzing move \(done) of \(total)…" : "Analyzing your moves…")
-                    .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                if total > 0 {
+                    Text("Analyzing move \(done) of \(total)…")
+                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                } else {
+                    Text("Analyzing your moves…")
+                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                }
             }
         case .unavailable:
             centered {

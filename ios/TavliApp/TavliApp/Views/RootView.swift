@@ -162,7 +162,7 @@ struct RootView: View {
     /// save dialog defaults to. Generated once per game and kept stable across that
     /// game's per-move auto-saves.
     private static func newAutosaveName() -> String {
-        "Game · " + autosaveNameFormatter.string(from: Date())
+        String(localized: "Game · ") + autosaveNameFormatter.string(from: Date())
     }
 
     private static let autosaveNameFormatter: DateFormatter = {
@@ -322,7 +322,7 @@ private struct ModePickerView: View {
 
     private var recordSubtitle: String {
         stats.total == 0
-            ? "No games yet"
+            ? String(localized: "No games yet")
             : "\(stats.wins)W – \(stats.losses)L"
     }
 
