@@ -51,10 +51,12 @@ final class GameReviewTests: XCTestCase {
 
     // MARK: - Blunder flagging
 
-    /// A deliberately weak human move (the worst-scoring legal move at the opening)
-    /// is evaluated with the exact played/best scores and flagged as a blunder once
-    /// the threshold drops below its real relative gap.
-    func testWeakHumanMoveIsFlaggedAsBlunder() {
+    /// The worst-scoring legal move at the opening is scored exactly, but the opening
+    /// is so near-even that its shortfall is under one percentage point — so the
+    /// absolute floor in `isBlunder` correctly keeps it from registering as a blunder
+    /// at any relative threshold (#105 rule). The analyzer wiring (exact played/best
+    /// scores, a positive relative gap) is still verified.
+    func testNearEvenWorstMoveIsNotABlunder() {
         let (moves, scores) = openingScores(color: .white, die1: 6, die2: 5)
         XCTAssertGreaterThan(moves.count, 1, "opening 6,5 should offer a real choice")
 
@@ -76,10 +78,34 @@ final class GameReviewTests: XCTestCase {
         XCTAssertEqual(e.bestScore, bestScore, accuracy: 1e-5)
         XCTAssertGreaterThan(e.relativeGap, 0)
 
-        // Flagged just below its own gap, not flagged just above it.
-        XCTAssertTrue(e.isBlunder(threshold: e.relativeGap - 1e-6))
-        XCTAssertFalse(e.isBlunder(threshold: e.relativeGap + 1e-3))
-        XCTAssertEqual(result.blunders(threshold: e.relativeGap - 1e-6).count, 1)
+        // Near-even opening: the absolute shortfall is under a point, so it is not a
+        // blunder — even at a zero relative threshold.
+        XCTAssertLessThan(e.absoluteGap, 0.01)
+        XCTAssertFalse(e.isBlunder(threshold: 0.10))
+        XCTAssertFalse(e.isBlunder(threshold: 0.0))
+        XCTAssertTrue(result.blunders(threshold: 0.10).isEmpty)
+    }
+
+    /// A large *relative* miss on a near-even position whose *absolute* shortfall is
+    /// under one percentage point is not a blunder (the `isBlunder` absolute floor).
+    func testTinyAbsoluteGapIsNotABlunder() {
+        let e = PlyEvaluation(plyNumber: 1, die1: 1, die2: 2, boardStacks: [],
+                              mover: .white, playedMove: [], playedScore: 0.040,
+                              bestMove: [], bestScore: 0.048)
+        XCTAssertGreaterThanOrEqual(e.relativeGap, 0.10)   // 0.008 / 0.048 ≈ 17%
+        XCTAssertLessThan(e.absoluteGap, 0.01)             // 0.008 < 0.01
+        XCTAssertFalse(e.isBlunder(threshold: 0.10))
+    }
+
+    /// Meeting both the relative threshold and the one-percentage-point absolute floor
+    /// flags a blunder.
+    func testGapPastBothThresholdsIsABlunder() {
+        let e = PlyEvaluation(plyNumber: 1, die1: 1, die2: 2, boardStacks: [],
+                              mover: .white, playedMove: [], playedScore: 0.80,
+                              bestMove: [], bestScore: 0.95)
+        XCTAssertGreaterThanOrEqual(e.relativeGap, 0.10)
+        XCTAssertGreaterThanOrEqual(e.absoluteGap, 0.01)
+        XCTAssertTrue(e.isBlunder(threshold: 0.10))
     }
 
     /// Playing the AI's own best move yields a zero gap and is never flagged.

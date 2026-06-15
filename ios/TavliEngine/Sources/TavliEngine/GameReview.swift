@@ -47,9 +47,12 @@ public struct PlyEvaluation: Sendable {
     /// Absolute win-probability shortfall, in [0, 1].
     public var absoluteGap: Double { Double(max(0, bestScore - playedScore)) }
 
-    /// A blunder when the relative gap meets `threshold` (e.g. 0.10 = 10%).
+    /// A blunder when the relative gap meets `threshold` (e.g. 0.10 = 10%) **and**
+    /// the played move is at least one percentage point (absolute) below the best —
+    /// so a large *relative* miss on a near-even position (e.g. 4.5% vs 5.0%) doesn't
+    /// register as a blunder.
     public func isBlunder(threshold: Double) -> Bool {
-        bestScore > 0 && relativeGap >= threshold
+        bestScore > 0 && relativeGap >= threshold && absoluteGap >= 0.01
     }
 }
 
