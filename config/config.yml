@@ -34,7 +34,10 @@ search_max_depth: 2               # Stop iterative deepening here. Set to 2 to d
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
 gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
-bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)
+# bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
+                                         # Left unset by default so it resolves to a machine-global cache
+                                         # (~/.cache/tavli/, or $TAVLI_BEAROFF_DB) shared across all git worktrees.
+                                         # Set this to pin a specific path.
 training_state_path: training_state.json # Persisted scheduler state for resumed training
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)
