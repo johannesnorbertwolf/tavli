@@ -63,6 +63,9 @@ aux_loss_weight: 0.3       # Weight of the aux BCE term relative to the main val
 # Optimizer + replay buffer (Adam replaces manual TD update)
 learning_rate: 0.00003         # E5-proven value; E6's further drop to 1e-5 measured flat (#81)
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
+lr_restart_period_games: 0     # E16 (#81): SGDR warm restarts — self-play games per cosine cycle; 0 = off. OFF — measured WORSE: peak 5× LR over 50k games scored 48.34% vs the depth-2 fixed point (paired z=−7.64). Net is at a genuine optimum, not a sharp basin; perturbing it degrades it. Machinery kept, off.
+lr_restart_peak_factor: 5.0    # E16: peak LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
+lr_restart_min_factor: 0.03    # E16: floor LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
 ema_decay: 0.0                 # EMA/Polyak shadow weights (E13, #81): 0 disables. Confirmed FLAT by a high-power paired gate — EMA 50.03% over 40k duplicate-dice games (z=0.21, true edge bounded to ±0.3pp). The earlier 50.59% (z=1.18) was noise. Machinery kept for a future signal change
 replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size

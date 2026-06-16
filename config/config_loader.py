@@ -135,6 +135,18 @@ class ConfigLoader:
     def get_lr_warmup_steps(self):
         return int(self.config.get("lr_warmup_steps", 1000))
 
+    def get_lr_restart_period_games(self):
+        # SGDR warm restarts (E16): self-play games per cosine cycle; 0 = off.
+        return int(self.config.get("lr_restart_period_games", 0))
+
+    def get_lr_restart_peak_factor(self):
+        # Peak LR of each cycle as a multiple of learning_rate (e.g. 5.0 = 5x base).
+        return float(self.config.get("lr_restart_peak_factor", 1.0))
+
+    def get_lr_restart_min_factor(self):
+        # Floor LR of each cycle as a fraction of learning_rate (cosine anneal target).
+        return float(self.config.get("lr_restart_min_factor", 0.05))
+
     def get_replay_buffer_capacity(self):
         return int(self.config.get("replay_buffer_capacity", 50000))
 

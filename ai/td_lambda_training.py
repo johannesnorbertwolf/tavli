@@ -188,6 +188,10 @@ class TdLambdaTraining:
         # Optimizer + replay knobs
         self.learning_rate = float(self.config.get_learning_rate())
         self.lr_warmup_steps = max(0, int(self.config.get_lr_warmup_steps()))
+        # SGDR warm restarts (E16) — cosine cycles keyed on self-play games; 0 = off.
+        self.lr_restart_period_games = max(0, int(self.config.get_lr_restart_period_games()))
+        self.lr_restart_peak_factor = max(1.0, float(self.config.get_lr_restart_peak_factor()))
+        self.lr_restart_min_factor = max(0.0, float(self.config.get_lr_restart_min_factor()))
         self.replay_capacity = max(1, int(self.config.get_replay_buffer_capacity()))
         self.minibatch_size = max(1, int(self.config.get_minibatch_size()))
         self.updates_per_game = max(0, int(self.config.get_updates_per_game()))
@@ -296,6 +300,17 @@ class TdLambdaTraining:
         self.lambda_ = self.lambda_end + (self.lambda_start - self.lambda_end) * np.exp(-1.0 * progress * 10.0)
 
     def _current_lr(self) -> float:
+        # SGDR warm restarts (E16): cosine-anneal peak→floor each cycle, keyed on
+        # self-play games, then jump back to peak. Overrides linear warmup when on.
+        if self.lr_restart_period_games > 0:
+            pos = (self.global_game_num % self.lr_restart_period_games) / float(
+                self.lr_restart_period_games
+            )  # ∈ [0, 1)
+            peak = self.learning_rate * self.lr_restart_peak_factor
+            floor = self.learning_rate * self.lr_restart_min_factor
+            # float() so the lr stored in optimizer.param_groups stays a Python float —
+            # a numpy scalar here ends up in the saved Adam state and breaks torch.load(weights_only=True).
+            return float(floor + 0.5 * (peak - floor) * (1.0 + np.cos(np.pi * pos)))
         if self.lr_warmup_steps <= 0:
             return self.learning_rate
         step = self.optimizer_steps

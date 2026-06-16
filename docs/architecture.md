@@ -68,6 +68,8 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `hidden_sizes` | Network width list, e.g. `[128, 64]` |
 | `learning_rate` | Adam lr |
 | `lr_warmup_steps` | Linear warmup `0.1·lr → lr` over this many optimizer steps (0 = off) |
+| `lr_restart_period_games` | SGDR warm restarts (E16): self-play games per cosine cycle, keyed on `global_game_num`; `0` = off (linear warmup applies instead). Each cycle anneals `peak → floor` then jumps back to peak. **Off — measured worse:** a 5×-peak schedule over 50k games scored 48.34% (paired z=−7.64) vs the depth-2 fixed point; the net is at a genuine optimum, not a sharp escapable basin |
+| `lr_restart_peak_factor` / `lr_restart_min_factor` | Cycle peak / floor LR as a multiple / fraction of `learning_rate` (only read when `lr_restart_period_games > 0`) |
 | `replay_buffer_capacity` | Sample capacity of replay buffer |
 | `minibatch_size` | SGD minibatch size |
 | `updates_per_game` | Adam steps run per ingested trajectory |
