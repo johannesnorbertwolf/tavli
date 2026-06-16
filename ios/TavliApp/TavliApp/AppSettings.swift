@@ -73,8 +73,8 @@ enum DiceModeSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto:   return String(localized: "Auto-roll")
-        case .manual: return String(localized: "Manual entry")
+        case .auto:   return String(localized: "Random")
+        case .manual: return String(localized: "Enter manually")
         }
     }
 }

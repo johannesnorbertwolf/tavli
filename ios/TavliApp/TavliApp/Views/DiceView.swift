@@ -194,7 +194,10 @@ struct BoardDiceView: View {
 
     private var used: [Bool] { usedDiceFlags(values: values, built: session.moveBuilder.built) }
 
-    private var canRoll: Bool { session.phase == .awaitingRoll && !manualEntry }
+    private var canRoll: Bool {
+        session.phase == .awaitingRoll && !manualEntry
+            && !session.humanDiceRolling && !session.aiDiceRolling
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -219,6 +222,10 @@ struct BoardDiceView: View {
         // `initial: true` catches a session whose AI opens the game — its
         // tumble starts before this view appears.
         .onChange(of: session.aiDiceRolling, initial: true) { _, rolling in
+            if rolling { beginAITumble() } else { settleAITumble() }
+        }
+        // Human auto-roll tumble (#116): reuses the same masking + spin logic.
+        .onChange(of: session.humanDiceRolling) { _, rolling in
             if rolling { beginAITumble() } else { settleAITumble() }
         }
         .onDisappear { aiMaskTask?.cancel() }

@@ -42,7 +42,7 @@ struct SettingsView: View {
                                   selection: $diceMode,
                                   options: DiceModeSetting.allCases,
                                   label: \.label,
-                                  caption: "Roll automatically, or enter your own dice each turn. The AI always rolls its own.")
+                                  caption: "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own.")
                             .onChange(of: diceMode) { _, mode in
                                 // The two modes are mutually exclusive: switching to
                                 // manual dice turns off auto-roll.
@@ -145,11 +145,15 @@ struct SettingsView: View {
             }
             .tint(ChromeTheme.doneTint)
             .disabled(diceMode == .manual)
-            Text(diceMode == .manual
-                 ? "Not available with manual dice entry."
-                 : "Dice roll automatically at the start of your turn.")
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
+            if diceMode == .manual {
+                Text("Not available with manual dice entry.")
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            } else {
+                Text("Dice roll automatically at the start of your turn.")
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
         }
         .opacity(diceMode == .manual ? 0.5 : 1)
     }

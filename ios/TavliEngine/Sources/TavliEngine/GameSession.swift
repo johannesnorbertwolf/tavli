@@ -116,6 +116,12 @@ public final class GameSession: ObservableObject {
     /// until this flips back to false.
     @Published public private(set) var aiDiceRolling = false
 
+    /// True while the human's dice tumble under auto-roll (#116). Same contract
+    /// as `aiDiceRolling`: values are already set; the view masks them with
+    /// random faces and reveals on settle. The view uses `aiDiceRollDuration`
+    /// from `animationTimings` for the tumble length.
+    @Published public private(set) var humanDiceRolling = false
+
     /// The AI half-move currently animating (#93), or `nil` outside an AI
     /// flight. Hops of one turn are published strictly one at a time; the
     /// board mutates only as each one lands.
@@ -259,7 +265,7 @@ public final class GameSession: ObservableObject {
 
     /// Roll the dice for the current turn and compute legal moves.
     public func roll() {
-        guard phase == .awaitingRoll, !autoRollPassing else { return }
+        guard phase == .awaitingRoll, !autoRollPassing, !humanDiceRolling else { return }
         rollDice()
         beginTurn()
     }
@@ -441,6 +447,7 @@ public final class GameSession: ObservableObject {
         autoRollTask?.cancel()
         autoRollTask = nil
         autoRollPassing = false
+        humanDiceRolling = false
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
@@ -624,11 +631,28 @@ public final class GameSession: ObservableObject {
 
     /// Fire the human's roll automatically (#116). No-op when auto-roll is off,
     /// when the AI owns the turn, in manual-dice mode, or outside `.awaitingRoll`.
+    /// With animation on: pre-rolls (so the engine has the values), raises
+    /// `humanDiceRolling` (the view masks faces like the AI tumble), waits out
+    /// `aiDiceRollDuration`, then lowers the flag and calls `beginTurn`.
+    /// With animation off: goes straight to `roll()`.
     private func maybeAutoRoll() {
         guard autoRoll, !isAITurn, phase == .awaitingRoll, !manualDiceEntry else { return }
+        let rollDuration = animationTimings.aiDiceRollDuration
         autoRollTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled else { return }
-            self.roll()
+            if rollDuration > 0 {
+                self.rollDice()
+                self.humanDiceRolling = true
+                await GameSession.sleep(rollDuration)
+                guard !Task.isCancelled else {
+                    self.humanDiceRolling = false
+                    return
+                }
+                self.humanDiceRolling = false
+                self.beginTurn()
+            } else {
+                self.roll()
+            }
         }
     }
 
