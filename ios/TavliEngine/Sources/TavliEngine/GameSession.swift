@@ -103,6 +103,11 @@ public final class GameSession: ObservableObject {
     /// sync so a mid-game settings change takes effect on the next roll.
     public var manualDiceEntry: Bool
 
+    /// Auto-roll mode (#116): when true the human's dice fire automatically at
+    /// the start of their turn — no tap required. Mutually exclusive with
+    /// `manualDiceEntry`; the view keeps this in sync with the settings toggle.
+    public var autoRoll: Bool
+
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
 
@@ -111,6 +116,12 @@ public final class GameSession: ObservableObject {
     /// until this flips back to false.
     @Published public private(set) var aiDiceRolling = false
 
+    /// True while the human's dice tumble under auto-roll (#116). Same contract
+    /// as `aiDiceRolling`: values are already set; the view masks them with
+    /// random faces and reveals on settle. The view uses `aiDiceRollDuration`
+    /// from `animationTimings` for the tumble length.
+    @Published public private(set) var humanDiceRolling = false
+
     /// The AI half-move currently animating (#93), or `nil` outside an AI
     /// flight. Hops of one turn are published strictly one at a time; the
     /// board mutates only as each one lands.
@@ -118,6 +129,12 @@ public final class GameSession: ObservableObject {
 
     /// The in-progress AI turn animation, kept so `newGame()` can cancel it.
     private var aiAnimationTask: Task<Void, Never>? = nil
+
+    /// The pending auto-roll or auto-roll forced-pass task (#116).
+    private var autoRollTask: Task<Void, Never>? = nil
+    /// True while a forced-pass delay is counting down under auto-roll, to
+    /// block a concurrent manual `roll()` call during those 0.5 s.
+    private var autoRollPassing = false
 
     /// Bumped whenever a new game interrupts a pending AI turn, so a stale
     /// search result or animation continuation detects it and bails instead of
@@ -172,7 +189,8 @@ public final class GameSession: ObservableObject {
                 aiColor: Color? = nil,
                 searchConfig: SearchConfig = .standard,
                 animationTimings: AnimationTimings = .standard,
-                manualDiceEntry: Bool = false) {
+                manualDiceEntry: Bool = false,
+                autoRoll: Bool = false) {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
@@ -180,6 +198,7 @@ public final class GameSession: ObservableObject {
         self.searchConfig = searchConfig
         self.animationTimings = animationTimings
         self.manualDiceEntry = manualDiceEntry
+        self.autoRoll = autoRoll
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
     }
 
@@ -231,10 +250,11 @@ public final class GameSession: ObservableObject {
         return Agent(model: model, encoder: BoardEncoder(config: .standard))
     }
 
-    /// Kick off the first move if the starting player is the AI. Views call this
-    /// once after constructing the session.
+    /// Kick off the first move. If the AI owns the turn it thinks immediately;
+    /// if auto-roll is on and the human is first, the dice fire automatically.
     public func start() {
         maybeStartAITurn()
+        maybeAutoRoll()
     }
 
     private var isAITurn: Bool {
@@ -245,7 +265,7 @@ public final class GameSession: ObservableObject {
 
     /// Roll the dice for the current turn and compute legal moves.
     public func roll() {
-        guard phase == .awaitingRoll else { return }
+        guard phase == .awaitingRoll, !autoRollPassing, !humanDiceRolling else { return }
         rollDice()
         beginTurn()
     }
@@ -424,6 +444,10 @@ public final class GameSession: ObservableObject {
         aiAnimationTask = nil
         aiDiceRolling = false
         aiHopInFlight = nil
+        autoRollTask?.cancel()
+        autoRollTask = nil
+        autoRollPassing = false
+        humanDiceRolling = false
         game.board.initializeBoard()
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
@@ -437,6 +461,7 @@ public final class GameSession: ObservableObject {
         diceReplays = []
         phase = .awaitingRoll
         maybeStartAITurn()
+        maybeAutoRoll()
     }
 
     // ── Internal transitions ──────────────────────────────────────────────────
@@ -451,8 +476,23 @@ public final class GameSession: ObservableObject {
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
             moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-            recordTurn(mover: game.currentPlayer, move: nil)
-            finishTurn()
+            if autoRoll {
+                // Pause 0.5 s so the player can see the rolled dice before the
+                // turn passes automatically. `autoRollPassing` blocks a concurrent
+                // manual tap-to-roll during this window.
+                autoRollPassing = true
+                let mover = game.currentPlayer
+                autoRollTask = Task { @MainActor [weak self] in
+                    await GameSession.sleep(0.5)
+                    guard let self, !Task.isCancelled else { return }
+                    self.autoRollPassing = false
+                    self.recordTurn(mover: mover, move: nil)
+                    self.finishTurn()
+                }
+            } else {
+                recordTurn(mover: game.currentPlayer, move: nil)
+                finishTurn()
+            }
             return
         }
 
@@ -500,6 +540,7 @@ public final class GameSession: ObservableObject {
         game.switchTurn()
         phase = .awaitingRoll
         maybeStartAITurn()
+        maybeAutoRoll()
     }
 
     // ── Decision-point undo ──────────────────────────────────────────────────
@@ -586,6 +627,33 @@ public final class GameSession: ObservableObject {
         // the human to enter the AI's dice, which then drives `playAITurn`.
         guard !manualDiceEntry else { return }
         takeAITurn()
+    }
+
+    /// Fire the human's roll automatically (#116). No-op when auto-roll is off,
+    /// when the AI owns the turn, in manual-dice mode, or outside `.awaitingRoll`.
+    /// With animation on: pre-rolls (so the engine has the values), raises
+    /// `humanDiceRolling` (the view masks faces like the AI tumble), waits out
+    /// `aiDiceRollDuration`, then lowers the flag and calls `beginTurn`.
+    /// With animation off: goes straight to `roll()`.
+    private func maybeAutoRoll() {
+        guard autoRoll, !isAITurn, phase == .awaitingRoll, !manualDiceEntry else { return }
+        let rollDuration = animationTimings.aiDiceRollDuration
+        autoRollTask = Task { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            if rollDuration > 0 {
+                self.rollDice()
+                self.humanDiceRolling = true
+                await GameSession.sleep(rollDuration)
+                guard !Task.isCancelled else {
+                    self.humanDiceRolling = false
+                    return
+                }
+                self.humanDiceRolling = false
+                self.beginTurn()
+            } else {
+                self.roll()
+            }
+        }
     }
 
     /// Roll for the AI, then either play a random move (no model) or compute the
@@ -858,7 +926,8 @@ public final class GameSession: ObservableObject {
                               config: GameConfig = .standard,
                               agent: Agent? = nil,
                               animationTimings: AnimationTimings = .standard,
-                              manualDiceEntry: Bool = false) -> GameSession {
+                              manualDiceEntry: Bool = false,
+                              autoRoll: Bool = false) -> GameSession {
         let starting = Color(rawValue: save.startingPlayer) ?? .black
         let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
         let session = GameSession(startingPlayer: starting,
@@ -866,7 +935,8 @@ public final class GameSession: ObservableObject {
                                   agent: agent,
                                   aiColor: aiColor,
                                   animationTimings: animationTimings,
-                                  manualDiceEntry: manualDiceEntry)
+                                  manualDiceEntry: manualDiceEntry,
+                                  autoRoll: autoRoll)
         session.replay(save.history)
         return session
     }

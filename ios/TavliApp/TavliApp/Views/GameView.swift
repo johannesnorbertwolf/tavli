@@ -58,6 +58,7 @@ struct GameView: View {
 
     /// Live settings (#77), bound here so the chrome reacts immediately to changes.
     @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
 
@@ -235,6 +236,13 @@ struct GameView: View {
                 // Leaving manual mode while the AI sits paused for its dice:
                 // let it roll automatically again (no-op on the human's turn).
                 if mode != .manual { session.start() }
+            }
+            // Auto-roll (#116): keep the session in sync. When enabled mid-game
+            // while awaiting a human roll, `start()` fires the roll immediately.
+            .onAppear { session.autoRoll = autoRoll }
+            .onChange(of: autoRoll) { _, on in
+                session.autoRoll = on
+                if on { session.start() }
             }
         }
     }
@@ -443,6 +451,7 @@ private struct WinProbabilityBar: View {
 private struct TurnIndicatorView: View {
     @ObservedObject var session: GameSession
     @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -450,8 +459,8 @@ private struct TurnIndicatorView: View {
                 .font(ChromeType.headline)
                 .foregroundStyle(ChromeTheme.ink)
                 .multilineTextAlignment(.center)
-            if case .awaitingRoll = session.phase {
-                Text(diceSubtitle)
+            if case .awaitingRoll = session.phase, let sub = diceSubtitle {
+                Text(sub)
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
             }
@@ -470,12 +479,15 @@ private struct TurnIndicatorView: View {
         }
     }
 
-    /// Subtitle while a roll is awaited. In manual mode the human enters the dice
-    /// for whichever side is on roll — their own or the AI's (#110).
-    private var diceSubtitle: String {
-        guard diceMode == .manual else { return String(localized: "Tap dice to roll") }
-        let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-        return isAITurn ? String(localized: "Enter the AI's dice") : String(localized: "Enter your dice")
+    /// Subtitle while a roll is awaited. `nil` suppresses the label (auto-roll:
+    /// dice fire immediately so a "tap" prompt would flash misleadingly). In
+    /// manual mode the hint names which side's dice to enter (#110).
+    private var diceSubtitle: String? {
+        if diceMode == .manual {
+            let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
+            return isAITurn ? String(localized: "Enter the AI's dice") : String(localized: "Enter your dice")
+        }
+        return autoRoll ? nil : String(localized: "Tap dice to roll")
     }
 }
 

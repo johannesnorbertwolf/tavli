@@ -67,13 +67,15 @@ struct StatsPanelView: View {
 
     private var sparkline: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if stats.total <= 20 {
-                Text("All \(stats.total)")
-            } else {
-                Text("Last 20")
+            Group {
+                if stats.total <= 20 {
+                    Text("All \(stats.total)")
+                } else {
+                    Text("Last 20")
+                }
             }
-                .font(ChromeType.caption.bold())
-                .foregroundStyle(ChromeKit.inkSecondary)
+            .font(ChromeType.caption.bold())
+            .foregroundStyle(ChromeKit.inkSecondary)
             HStack(spacing: 5) {
                 ForEach(Array(stats.recent.enumerated()), id: \.offset) { _, won in
                     Circle()
