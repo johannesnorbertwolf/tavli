@@ -23,10 +23,22 @@
     },
     "· Blunder %@ of %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Grober Patzer %1$@ von %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "· Blunder %1$@ of %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "· Blunder %1$@ van %2$@"
           }
         }
       }
@@ -127,10 +139,22 @@
     },
     "%@W – %@L" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@S – %2$@N"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@W – %2$@L"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@W – %2$@V"
           }
         }
       }
@@ -270,6 +294,22 @@
         }
       }
     },
+    "All %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alle %@"
+          }
+        }
+      }
+    },
     "All %lld" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -289,10 +329,22 @@
     },
     "Analyzing move %@ of %@…" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analysiere Zug %1$@ von %2$@…"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Analyzing move %1$@ of %2$@…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zet %1$@ van %2$@ analyseren…"
           }
         }
       }
@@ -597,9 +649,21 @@
     },
     "d=%@ %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "d=%1$@ %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
+            "value" : "d=%1$@ %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "d=%1$@ %2$@"
           }
         }
@@ -627,20 +691,44 @@
     },
     "Dice %@ · %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Würfel %1$@ · %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Dice %1$@ · %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dobbelstenen %1$@ · %2$@"
           }
         }
       }
     },
     "Dice %@ · %@ — find a better move" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Würfel %1$@ · %2$@ — finde einen besseren Zug"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Dice %1$@ · %2$@ — find a better move"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dobbelstenen %1$@ · %2$@ — vind een betere zet"
           }
         }
       }
@@ -680,7 +768,6 @@
       }
     },
     "Dice roll automatically at the start of your turn." : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -764,6 +851,23 @@
         }
       }
     },
+    "Enter manually" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manuell eingeben"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handmatig invoeren"
+          }
+        }
+      }
+    },
     "Enter the AI's dice" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -794,22 +898,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Voer je dobbelstenen in"
-          }
-        }
-      }
-    },
-    "Enter manually" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuell eingeben"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Handmatig invoeren"
           }
         }
       }
@@ -981,22 +1069,6 @@
         }
       }
     },
-    "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das iPad würfelt für dich, oder gib deine eigenen Würfel ein. Die KI würfelt immer selbst."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Het iPad gooit voor jou, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
-          }
-        }
-      }
-    },
     "I'm sure" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1010,6 +1082,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ja, opgeven"
+          }
+        }
+      }
+    },
+    "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das iPad würfelt für dich, oder gib deine eigenen Würfel ein. Die KI würfelt immer selbst."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het iPad gooit voor jou, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
           }
         }
       }
@@ -1032,7 +1121,6 @@
       }
     },
     "Last 20" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1083,10 +1171,22 @@
     },
     "Move %@ of %@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zug %1$@ von %2$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Move %1$@ of %2$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zet %1$@ van %2$@"
           }
         }
       }
@@ -1287,7 +1387,6 @@
       }
     },
     "Not available with manual dice entry." : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1501,6 +1600,23 @@
         }
       }
     },
+    "Random" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zufällig"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willekeurig"
+          }
+        }
+      }
+    },
     "Red" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1514,22 +1630,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rood"
-          }
-        }
-      }
-    },
-    "Random" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zufällig"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Willekeurig"
           }
         }
       }
@@ -1566,8 +1666,7 @@
         }
       }
     },
-    "Review needs the AI model, which isn't available." : {
-      "extractionState" : "stale",
+    "Review needs the AI model, which isn’t available." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1582,9 +1681,6 @@
           }
         }
       }
-    },
-    "Review needs the AI model, which isn’t available." : {
-
     },
     "Roll automatically, or enter your own dice each turn. The AI always rolls its own." : {
       "extractionState" : "stale",
@@ -1882,10 +1978,22 @@
     },
     "Turn: %@  Dice: %@,%@" : {
       "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zug: %1$@  Würfel: %2$@,%3$@"
+          }
+        },
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Turn: %1$@  Dice: %2$@,%3$@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beurt: %1$@  Dobbelstenen: %2$@,%3$@"
           }
         }
       }
@@ -2027,7 +2135,20 @@
       }
     },
     "You still have a %@%% chance of winning. Are you sure you want to give up?" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast noch eine Gewinnchance von %@%%. Möchtest du wirklich aufgeben?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je hebt nog %@%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
+          }
+        }
+      }
     },
     "You still have a %lld%% chance of winning. Are you sure you want to give up?" : {
       "extractionState" : "stale",
