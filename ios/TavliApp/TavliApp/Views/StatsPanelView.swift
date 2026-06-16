@@ -67,11 +67,7 @@ struct StatsPanelView: View {
 
     private var sparkline: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if stats.total <= 20 {
-                Text("All \(stats.total)")
-            } else {
-                Text("Last 20")
-            }
+            Text(stats.total <= 20 ? "All \(stats.total)" : "Last 20")
                 .font(ChromeType.caption.bold())
                 .foregroundStyle(ChromeKit.inkSecondary)
             HStack(spacing: 5) {
