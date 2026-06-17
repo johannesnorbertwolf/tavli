@@ -1,3 +1,5 @@
+import os
+
 import yaml
 
 class ConfigLoader:
@@ -193,7 +195,27 @@ class ConfigLoader:
         return bool(self.config.get("use_bearoff_db", True))
 
     def get_bearoff_db_path(self):
-        return self.config.get("bearoff_db_path", "models/bearoff_db.npz")
+        # The bear-off DB depends only on the game rules (home_size, max_checkers,
+        # format version) — never on the branch, code, or trained model. Cache it
+        # in a machine-global location so every git worktree shares one build
+        # instead of each rebuilding the identical ~54k-state DP. Precedence:
+        #   1. explicit `bearoff_db_path` in config.yml
+        #   2. $TAVLI_BEAROFF_DB env var
+        #   3. user cache dir ($XDG_CACHE_HOME or ~/.cache)/tavli/, with the rule
+        #      params + format version in the filename so a param/format change
+        #      lands in a new file rather than silently loading a stale DB.
+        configured = self.config.get("bearoff_db_path")
+        if configured:
+            return configured
+        env = os.environ.get("TAVLI_BEAROFF_DB")
+        if env:
+            return env
+        cache_root = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+            os.path.expanduser("~"), ".cache")
+        home_size = self.get_home_size()
+        max_checkers = self.get_pieces_per_player()
+        filename = f"bearoff_db_h{home_size}_c{max_checkers}_v1.npz"
+        return os.path.join(cache_root, "tavli", filename)
 
     def get_play_eval_lookahead_plies(self):
         return int(self.config.get("play", {}).get("eval_lookahead_plies", 4))

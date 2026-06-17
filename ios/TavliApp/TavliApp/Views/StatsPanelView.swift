@@ -14,7 +14,7 @@ struct StatsPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Human vs AI")
-                .font(.custom("Cormorant Garamond", size: 32))
+                .font(ChromeType.statsTitle)
                 .foregroundStyle(Palette.ink)
 
             if stats.total == 0 {
@@ -25,11 +25,8 @@ struct StatsPanelView: View {
                 streak
             }
         }
-        .padding(24)
-        .frame(maxWidth: 360)
-        .background(Palette.card)
-        .cornerRadius(18)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.border, lineWidth: 1.5))
+        .frame(maxWidth: 352)
+        .chromeCard(padding: 24)
         .accessibilityIdentifier("statsPanel")
     }
 
@@ -38,11 +35,11 @@ struct StatsPanelView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No games yet")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(Palette.ink)
             Text("Play a game to start your record.")
-                .font(.subheadline)
-                .foregroundStyle(Palette.ink.opacity(0.65))
+                .font(ChromeType.subheadline)
+                .foregroundStyle(ChromeKit.inkSecondary)
         }
     }
 
@@ -50,11 +47,11 @@ struct StatsPanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(stats.wins)W – \(stats.losses)L")
-                    .font(.title2.bold())
+                    .font(ChromeType.title2.bold())
                     .foregroundStyle(Palette.ink)
                 Text("(\(percentString))")
-                    .font(.title3)
-                    .foregroundStyle(Palette.ink.opacity(0.65))
+                    .font(ChromeType.title3)
+                    .foregroundStyle(ChromeKit.inkSecondary)
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
@@ -70,14 +67,20 @@ struct StatsPanelView: View {
 
     private var sparkline: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(stats.total <= 20 ? "All \(stats.total)" : "Last 20")
-                .font(.caption.bold())
-                .foregroundStyle(Palette.ink.opacity(0.65))
-            HStack(spacing: 4) {
+            Group {
+                if stats.total <= 20 {
+                    Text("All \(stats.total)")
+                } else {
+                    Text("Last 20")
+                }
+            }
+            .font(ChromeType.caption.bold())
+            .foregroundStyle(ChromeKit.inkSecondary)
+            HStack(spacing: 5) {
                 ForEach(Array(stats.recent.enumerated()), id: \.offset) { _, won in
                     Circle()
                         .fill(won ? Palette.win : Palette.loss)
-                        .frame(width: 11, height: 11)
+                        .frame(width: 14, height: 14)
                 }
             }
         }
@@ -86,10 +89,10 @@ struct StatsPanelView: View {
     private var streak: some View {
         HStack(spacing: 6) {
             Text("Streak")
-                .font(.caption.bold())
-                .foregroundStyle(Palette.ink.opacity(0.65))
+                .font(ChromeType.caption.bold())
+                .foregroundStyle(ChromeKit.inkSecondary)
             Text(streakString)
-                .font(.subheadline.weight(.semibold))
+                .font(ChromeType.subheadline.weight(.semibold))
                 .foregroundStyle(stats.streakIsWin ? Palette.win : Palette.loss)
         }
     }
@@ -101,16 +104,19 @@ struct StatsPanelView: View {
     }
 
     private var streakString: String {
-        let word = stats.streakIsWin ? "win" : "loss"
-        let plural = stats.streakCount == 1 ? word : (stats.streakIsWin ? "wins" : "losses")
-        let arrow = stats.streakIsWin ? "↑" : "↓"
-        return "\(stats.streakCount) \(plural) in a row \(arrow)"
+        if stats.streakIsWin {
+            return stats.streakCount == 1
+                ? String(localized: "1 win in a row ↑")
+                : String(localized: "\(stats.streakCount) wins in a row ↑")
+        } else {
+            return stats.streakCount == 1
+                ? String(localized: "1 loss in a row ↓")
+                : String(localized: "\(stats.streakCount) losses in a row ↓")
+        }
     }
 
     private enum Palette {
-        static let card = SColor(hex: 0xf3ecdf)
         static let ink = CaramelPalette.frameText
-        static let border = CaramelPalette.frameBot
         static let win = SColor(hex: 0x6a8a4a)   // muted olive-green
         static let loss = SColor(hex: 0xb0563f)  // muted brick-red
     }

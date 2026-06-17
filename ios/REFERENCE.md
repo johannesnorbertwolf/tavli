@@ -53,24 +53,76 @@ so the game flow is validated without a simulator.
 
 - **`GameSession`** (`@MainActor`, `ObservableObject`) owns the `Game` and drives the turn state
   machine. Phases: `awaitingRoll / picking / moving / aiThinking / animating / gameOver(winner:)`
-  — the session itself only enters the four human-move phases; `aiThinking`/`animating` are part
-  of the shared vocabulary for later AI/animation tickets. Intents: `roll` / `setManualDice(_:_:)`
-  (deterministic dice for scripted/manual play) / `selectPoint` / `commitHalfMove(from:to:)` /
-  `undo` / `undoLastDecision` / `confirm` / `newGame`. On roll it computes `legalMoves` via
+  — the four human-move phases plus `aiThinking` (the off-main search) and `animating` (the
+  presentational replay of the AI's turn, #93); both AI phases block human input through the
+  same guards the intents already use. Intents: `roll` / `setManualDice(_:_:)`
+  (deterministic dice for scripted/manual play — on the AI's turn in manual mode it hands the
+  entered dice straight to `playAITurn`, #110) / `selectPoint` / `commitHalfMove(from:to:)` /
+  `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
   `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
   applies the half-move to the board and auto-finishes when the move is complete or the only
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
   ply, switches turn, and returns to `awaitingRoll`.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
-  `winProbability`) is the view contract. No animation or rendering live here (later tickets).
+  `winProbability`, plus `aiDiceRolling`/`aiHopInFlight` for the AI-turn animation, #93) is the
+  view contract. No rendering lives here.
+
+- **Manual-dice mode for both players (#110).** The `manualDiceEntry` flag (init parameter,
+  default `false`, threaded through `resume(from:)`; the view keeps it in sync with the dice-mode
+  setting) makes the human enter the AI's dice too. When set, `maybeStartAITurn` does **not**
+  auto-roll: the session pauses in `.awaitingRoll` on the AI's turn. The human's `setManualDice`
+  then detects `isAITurn` and calls `playAITurn(animateDiceRoll: false)` — the AI searches/plays
+  the entered dice with the normal move animation but no dice tumble (the values are already
+  shown). `takeAITurn` is now just `rollDice()` + `playAITurn(animateDiceRoll: true)`.
+
+- **AI-turn animation (#93).** Driven entirely by the session so the view layer stays passive;
+  knobs live in **`AnimationTimings`** (`aiDiceRollDuration` / `aiMoveAnimationDuration`, both
+  0.6 s in `.standard` for a ~1.8 s two-move turn; settings UI lands with #77). The struct is a
+  mutable `var animationTimings` on the session (init parameter, default `.standard`, also
+  threaded through `resume(from:)`); `.off` (both zero) restores the fully synchronous
+  pre-animation behavior — headless tests pass it — and `isAnimated` is the gate `takeAITurn`
+  checks. Animated flow:
+  1. `takeAITurn` rolls (values are set up front — the search needs them), then `playAITurn`
+     computes legal moves and sets `aiDiceRolling = true` (when the effective roll window > 0).
+     With a model it enters `aiThinking` and the search runs **concurrently with the dice tumble**;
+     the random fallback and the forced pass skip straight to `animating`. (In manual-dice mode,
+     #110, `setManualDice` calls `playAITurn(animateDiceRoll: false)` so the roll window is 0 — no
+     tumble, since the human already entered the dice.)
+  2. Once the move is chosen, `animateAITurn` (phase → `animating`) sleeps out the *remainder* of
+     the tumble window (`rollDuration`, 0 for manual entry), then clears `aiDiceRolling` — the dice
+     settle on the real values.
+  3. For each half-move in stored order it publishes an **`AIAnimatedHop`** (`id` = ordinal —
+     distinguishes consecutive hops with identical endpoints on a Pasch — plus `from`/`to`/
+     `color`/`duration`), sleeps `aiMoveAnimationDuration`, then **lands** it: `applyHalfMove` on
+     the live board, `moveBuilder.commit` (so the dice grey die-by-die), `aiHopInFlight = nil`.
+     The board advances point by point; all four hops of a Pasch are individually visible.
+  4. After the last hop: a fresh empty `MoveBuilder` (a stale `built` would re-enable the
+     within-turn Undo for the human), the `winProbability` update, `recordTurn`, `finishTurn`.
+     A forced pass (`move == nil`) still tumbles and settles the dice, holds them for a short
+     beat (`passBeat` — 0.45 s at standard timings, scaled down with the knobs so near-zero test
+     timings stay near-instant), then records the pass.
+  **Cancellation.** The driver task is stored (`aiAnimationTask`) and re-validates
+  `[weak self] + !Task.isCancelled + aiTurnEpoch` after every suspension; `newGame()` bumps the
+  epoch, cancels the task, and resets the published animation state, so neither a half-played
+  animation nor a stale search result (the search's `MainActor.run` completion checks the epoch
+  too) can mutate the fresh game. Covered by `GameSessionAnimationTests` (sequential hops match
+  the recorded ply, point-by-point landings, `.off` synchronous escape, `newGame` cancellation,
+  full animated game terminates with checkers conserved).
 - **Undo — two intents, two surfaces (#59).** Every committed ply (human or AI move, or a forced
   pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
   `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
   `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
   - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
     half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
-    true only while `moveBuilder.built` is non-empty. Wired to the persistent **Undo** button in
-    `ControlsView`.
+    true only while `moveBuilder.built` is non-empty.
+  - `undoOrStepBack()` / `canUndoOrStepBack` — what the persistent **Undo** button in `ControlsView`
+    actually calls. It is `undo()` plus, in **manual-dice mode** (#110), a step back when nothing is
+    left to peel: `stepBackToManualRoll()` either *unrolls* the current rolled-but-unrecorded turn
+    (same mover) or pops the last recorded ply (reversing it on the board, trimming `undoHistory` +
+    `record.plies`, clearing `diceReplays`), landing in `.awaitingRoll` for that ply's mover via
+    `enterManualRoll(for:)` — so a sequence played at one set of dice can be rewound a ply at a time
+    and re-rolled with different dice. Unlike `undoLastDecision` it steps a single ply (the human
+    drives both sides here) and lands *before* the roll. In auto mode it is exactly `undo()`.
   - `undoLastDecision()` — **decision-point rewind** (debug pane only): pops every ply from the
     human's last real move forward (reversing each on the board), restores that ply's player +
     dice, and re-enters the human's turn (`beginTurn` → `picking`) so the same position can be
@@ -86,14 +138,19 @@ so the game flow is validated without a simulator.
   `GameSession.makeAgent()` loads the app-bundled `PlakotoValue.mlmodelc` (returns `nil` if absent →
   random fallback). Call `start()` once after construction so the AI moves first if it owns the
   starting player. When `finishTurn` (or `start`/`newGame`) lands on the AI's turn, `takeAITurn`
-  rolls, computes legal moves (empty = forced pass), then: with no model it applies a random legal
-  move synchronously; with a model it enters `aiThinking` and runs the **multi-ply expectimax
-  search** (`agent.getBestMove`) on a detached task **off the main actor**, hopping back via
-  `MainActor.run` to apply the move. `Agent` calls are wrapped in `try?` so a Core ML failure falls
-  back to a random move. `winProbability` (WHITE's view: `mover == .white ? score : 1 - score`)
-  updates only from a real model score and stays at its `0.5` default under the random fallback.
-  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback; these pin
-  `searchConfig: SearchConfig(maxDepth: 1)` so full-game tests stay fast — the search itself is
+  rolls and `playAITurn` computes legal moves (empty = forced pass) — except in manual-dice mode
+  (#110), where it pauses for the human to enter the AI's dice (see *Manual-dice mode* above) —
+  then: with no model it picks a random legal
+  move (applied synchronously under `.off` timings); with a model it enters `aiThinking` and runs
+  the **multi-ply expectimax search** (`agent.getBestMove`) on a detached task **off the main
+  actor**, hopping back via `MainActor.run` to apply the move — directly, or through the animated
+  replay when `animationTimings.isAnimated` (see *AI-turn animation* above). `Agent` calls are
+  wrapped in `try?` so a Core ML failure falls back to a random move. `winProbability` (WHITE's
+  view: `mover == .white ? score : 1 - score`) updates only from a real model score and stays at
+  its `0.5` default under the random fallback.
+  Validated headless by `GameSessionAITests` (real-model game + missing-model fallback + the #110
+  manual-dice both-players path; these pin `searchConfig: SearchConfig(maxDepth: 1)` and
+  `animationTimings: .off` so full-game tests stay fast and synchronous — the search itself is
   covered by `AgentSearchTests`).
 
   **Board-copy isolation.** The search must not race the live `game.board`: the main actor keeps
@@ -163,6 +220,18 @@ so the game flow is validated without a simulator.
   `finishTurn` after `.gameOver` (all intents guard on the pre-game-over phases), and a fresh
   game (a new session, or `newGame`) re-arms it. `replay` (loading a save) deliberately does
   **not** fire it, so resuming a finished game never double-counts.
+
+- **Surrender / resign (#74).** `surrender()` lets the human concede: it discards any half-move
+  built this turn (`board.undoHalfMove`), records the AI side as the winner, and enters `.gameOver`
+  — the same terminal state a played-out loss reaches, so `onGameOver(aiColor)` fires and the loss
+  is counted normally. Gated by `canSurrender` (true only on the human's own `awaitingRoll`/`picking`/
+  `moving` phase of a game with an AI side — never mid-AI-think/animation or once over), so a double
+  tap or a tap during the AI's turn is a no-op and the hook still fires once. It records nothing to
+  `record.plies` (no ply was played), so the app's per-move auto-save hook does **not** fire on
+  resign — the view clears the auto-save slot explicitly via `onAutosave` after confirming.
+  `humanWinProbability` re-expresses WHITE's `winProbability` for the human side (or `nil` h-vs-h)
+  and drives the UI's double-confirm threshold; the engine owns the perspective flip, the view owns
+  the 10% policy.
 
 ## Save & load (#61, replay-based)
 
@@ -253,6 +322,79 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
   and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
   wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
 
+## Post-game blunder review (#62)
+
+`GameReview.swift` is the on-device analogue of the CLI's `review` command
+(`play/loop.py:_handle_review` → `_collect_blunders`): after a game ends it replays the canonical
+`GameRecord` and re-evaluates each human ply to surface the moves where the player deviated most
+from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so it's covered by
+`swift test` (`GameReviewTests`).
+
+- **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:onEvaluation:progress:)`** —
+  replays the record from the initial position, advancing the board by applying each ply's recorded
+  half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
+  At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
+  **more than one legal move** (a single legal move is no decision — mirrors the CLI's
+  `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
+  (default **2** — fast, and the depth on-device play uses; the same parity-validated scoring the
+  live AI uses), with **no wall-clock deadline** since analysis is offline. `evaluateMovesNply`
+  capture/restores stacks, so the working board is never corrupted. The played move is located among
+  the legal moves by **multiset-comparing `(from, to)` pairs** (order-independent — the recorded
+  order may differ from the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find`
+  match). `onEvaluation` fires per evaluated ply **as it is scored** (lets the UI stream blunders —
+  show the first one immediately while the rest are still being found); `progress` fires once per
+  evaluated human ply with `(done, total)`.
+- **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
+  `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
+  `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
+  `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
+- **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
+  those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters
+  at any threshold (the iPad UI fixes it at **10%**, matching the CLI default; a configurable one is
+  tracked in #77).
+
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
+task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
+found (the panel notes it's still analyzing) while the rest are scored in the background; on
+completion the model settles on the authoritative full set returned by `analyze`. The screen is a
+**full-screen, board-centric** mode (a `fullScreenCover` from the win overlay): the position the
+player faced fills the screen, with a panel (played→best + win-prob gap, a Best/Yours/None move
+overlay) and Prev/Next/swipe to page through blunders. The drill is launched the same way (full
+screen), with the already-streamed blunders handed over as a precomputed `GameReviewResult`.
+
+## Post-game drill (#63)
+
+The interactive sibling of the review — the on-device analogue of the CLI's `drill` command
+(`play/loop.py:_handle_drill` / `_drill_inner`): step through the same blunders, and for each, ask
+the player to find a better move **on the real board**. It reuses #62's blunder detection
+(`GameReview`/`PlyEvaluation`) and two small additions to `GameSession`:
+
+- **Attempt mode** (`onMoveAttempt: (@MainActor (Move) -> Void)?`). When set, the session runs in
+  attempt mode: completing a move (via the normal `commitHalfMove`/`confirm` tap flow) reports it
+  to the hook and then **rolls it back** to the pre-move position (`board.undoHalfMove` per built
+  half-move, then `beginTurn()` re-arms `.picking` at the same dice) instead of recording it and
+  advancing the turn. `record.plies`/`undoHistory` and the turn are left untouched, so a finished
+  game's record is never mutated and the player can re-attempt the position indefinitely. Both
+  completion sites funnel through one private `completeMove()`; with the hook nil (normal play)
+  behaviour is unchanged.
+- **Drill seeder** (`GameSession.drill(boardStacks:die1:die2:mover:agent:config:)`). Stands up a
+  **human-vs-human** session (`aiColor: nil`, so no AI auto-moves) at an arbitrary position: seed
+  each point via `setPoint`, then `setManualDice` → `.picking` with `mover` to play.
+
+Grading reuses `Agent.scoreCandidate(boardStacks:move:mover:depth:)` (in `GameReview.swift`): it
+rebuilds an **isolated** board from the stacks, reconstructs the attempted move against it, and
+scores that single candidate at 2-ply via `evaluateMovesNply` — identical to that move's entry in a
+full ranking, so it's directly comparable to the `PlyEvaluation`'s `bestScore`, and safe to run off
+the main actor (the attempt's own `Move` references the live drill board the main actor keeps
+reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_inner` (correct =
+`gap ≤ max(0.01, best·0.03)`, close = `gap ≤ max(0.04, best·0.10)`, else wrong).
+
+The app side (`DrillView` + `@MainActor DrillModel`) analyzes (or takes a precomputed
+`GameReviewResult` from the review screen), seeds a card per blunder, wires `onMoveAttempt` to grade
+off the main actor, reveals the best move with `SourceRingView`/`TargetHighlightView`, and tracks
+solved/skipped for the "Drill complete" summary. Launchable from the win overlay and the review
+screen.
+
 ## Layout
 
 ```
@@ -264,7 +406,8 @@ ios/
 │   │                            GameSave, SaveStore
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
 │                                FixtureSupport, MoveBuilderTests, GameSessionTests,
-│                                GameSessionAITests, GameSavePersistenceTests
+│                                GameSessionAITests, GameSessionAnimationTests,
+│                                GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,

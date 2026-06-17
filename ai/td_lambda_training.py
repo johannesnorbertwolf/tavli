@@ -275,6 +275,7 @@ class TdLambdaTraining:
             return float("nan")
         return self.agent.position_value_lookahead(game.board, game.current_player)
 
+
     def _select_move_self_play(self, board, possible_moves, current_player):
         from ai.self_play_worker import select_self_play_move
         move = select_self_play_move(
@@ -545,6 +546,7 @@ class TdLambdaTraining:
             if boot_mask.any():
                 values = values.copy()
                 values[boot_mask] = boot_arr[boot_mask]
+
 
         # Exact-race states (bear-off DB): bootstrap on truth instead of the
         # net's own estimate, and train the race states toward the exact value.

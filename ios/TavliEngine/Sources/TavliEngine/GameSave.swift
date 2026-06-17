@@ -9,7 +9,7 @@ import Foundation
 /// source of truth a live `GameSession` holds and every history-consuming feature
 /// reads. Reconstruction is always by replaying `plies` from the initial position —
 /// no board state is stored (see `GameSession.resume`).
-public struct GameRecord: Equatable {
+public struct GameRecord: Equatable, Sendable {
     public var startingPlayer: Color
     public var aiColor: Color?
     public var plies: [PlyRecord]
@@ -26,7 +26,7 @@ public struct GameRecord: Equatable {
         self.outcome = outcome
     }
 }
-public struct PlyRecord: Codable, Equatable {
+public struct PlyRecord: Codable, Equatable, Sendable {
     public let die1: Int
     public let die2: Int
     public let halfMoves: [[Int]]

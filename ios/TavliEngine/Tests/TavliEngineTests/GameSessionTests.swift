@@ -479,7 +479,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// legal move synchronously; undo reverses whatever it did, so the assertion on
     /// the restored position holds regardless of the AI's choice.)
     func testUndoStepsBackHumanDecisionRestoringBoardAndDice() {
-        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .white,
+                            animationTimings: .off)        // human = Black, opens
         s.start()
         XCTAssertEqual(s.currentPlayer, .black)
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -508,7 +509,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// When the AI opens and the human hasn't moved, there is no decision to rewind —
     /// undo is disabled and a no-op.
     func testUndoDisabledWhenAIOpenedAndHumanHasNotMoved() {
-        let s = GameSession(startingPlayer: .black, aiColor: .black)  // AI = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .black,
+                            animationTimings: .off)        // AI = Black, opens
         s.start()
         XCTAssertEqual(s.currentPlayer, .white)                       // human = White, to move
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -525,7 +527,8 @@ final class GameSessionUndoTests: XCTestCase {
     /// Two human decisions, then two sequential undos, walk all the way back to the
     /// opening position; once there, undo is disabled again.
     func testMultipleSequentialUndos() {
-        let s = GameSession(startingPlayer: .black, aiColor: .white)  // human = Black, opens
+        let s = GameSession(startingPlayer: .black, aiColor: .white,
+                            animationTimings: .off)        // human = Black, opens
         s.start()
         let start = signature(s.game.board)
 
@@ -573,5 +576,83 @@ final class GameSessionUndoTests: XCTestCase {
         XCTAssertEqual(signature(b), start, "in-progress build fully unwound")
         XCTAssertEqual(s.phase, .picking)
         XCTAssertEqual(s.currentPlayer, .white, "turn never finished")
+    }
+}
+
+// ── Surrender / resign (#74) ────────────────────────────────────────────────────
+
+@MainActor
+final class GameSessionSurrenderTests: XCTestCase {
+    /// Resigning ends the game immediately, records the AI as winner, and fires the
+    /// game-over hook exactly once (so the human's loss is recorded like any other).
+    func testSurrenderEndsGameWithAIWinner() {
+        let s = GameSession(startingPlayer: .white, aiColor: .black)  // human = White, opens
+        var hookWinners: [Color] = []
+        s.onGameOver = { hookWinners.append($0) }
+
+        XCTAssertTrue(s.canSurrender)
+        s.surrender()
+
+        XCTAssertTrue(s.isTerminal)
+        XCTAssertEqual(s.phase, .gameOver(winner: .black))
+        XCTAssertEqual(s.record.outcome, .black)
+        XCTAssertEqual(hookWinners, [.black], "loss recorded once for the human")
+    }
+
+    /// Resigning mid-move discards the half-move under composition (board restored)
+    /// before ending the game.
+    func testSurrenderDiscardsInProgressBuild() {
+        let s = GameSession(startingPlayer: .white, aiColor: .black)
+        let b = s.game.board
+        for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
+        b.setPoint(1, pieces: [.white])                             // lone checker walks the Pasch ray
+        b.setPoint(24, pieces: [.black])                           // keep both colors on the board
+        let start = signature(b)
+        s.setManualDice(2, 2)                                       // 1→3→5→7→9
+
+        s.selectPoint(1)
+        s.commitHalfMove(from: 1, to: 5)                           // two of four hops — turn unfinished
+        XCTAssertFalse(s.moveBuilder.built.isEmpty)
+        XCTAssertEqual(s.phase, .picking)
+
+        s.surrender()
+        XCTAssertEqual(signature(b), start, "in-progress build discarded on resign")
+        XCTAssertEqual(s.phase, .gameOver(winner: .black))
+        XCTAssertTrue(s.isTerminal)
+    }
+
+    /// A human-vs-human session has no AI side to award the win to, so resign is a
+    /// no-op and `canSurrender` is false.
+    func testSurrenderIsNoOpWithoutAI() {
+        let s = GameSession(startingPlayer: .white)                 // human-vs-human
+        var hookCalls = 0
+        s.onGameOver = { _ in hookCalls += 1 }
+
+        XCTAssertFalse(s.canSurrender)
+        s.surrender()
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertFalse(s.isTerminal)
+        XCTAssertEqual(hookCalls, 0)
+    }
+
+    /// Once resigned, the game is over: `canSurrender` is false and a second resign
+    /// is guarded, so the game-over hook still fires only once.
+    func testSurrenderCannotRepeatAfterGameOver() {
+        let s = GameSession(startingPlayer: .white, aiColor: .black)
+        var hookCalls = 0
+        s.onGameOver = { _ in hookCalls += 1 }
+
+        s.surrender()
+        XCTAssertFalse(s.canSurrender)
+        s.surrender()                                              // guarded by canSurrender
+        XCTAssertEqual(hookCalls, 1)
+    }
+
+    /// `humanWinProbability` is the human side's view of WHITE's `winProbability`,
+    /// and `nil` without an AI side. (No model in tests → it sits at the 0.5 default.)
+    func testHumanWinProbabilityPerspective() {
+        XCTAssertNil(GameSession(startingPlayer: .white).humanWinProbability)
+        XCTAssertEqual(GameSession(startingPlayer: .white, aiColor: .black).humanWinProbability, 0.5)
+        XCTAssertEqual(GameSession(startingPlayer: .black, aiColor: .white).humanWinProbability, 0.5)
     }
 }

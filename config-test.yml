@@ -30,6 +30,7 @@ use_bearoff_db: false
 model_save_path: test_trained_model.pth
 training_state_path: test_training_state.json
 
+
 # Optimizer + replay buffer (Adam)
 learning_rate: 0.0003
 lr_warmup_steps: 0

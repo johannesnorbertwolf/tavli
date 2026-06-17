@@ -57,9 +57,10 @@ struct RootView: View {
                         self.session = nil
                     },
                     onNewGame: {
-                        // "Play Again" returns to the opening roll so every game picks a starter.
+                        // "Play Again" keeps the same color and re-runs the starting-player
+                        // flow: the opening-roll ceremony, or a forced starter per Settings (#77).
                         self.session = nil
-                        self.pendingHumanColor = self.humanColor
+                        self.beginGame(humanColor: self.humanColor)
                     },
                     onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
                     onAutosave: persistAutosave
@@ -76,9 +77,7 @@ struct RootView: View {
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
-                               onSelect: { color in
-                                   pendingHumanColor = color
-                               },
+                               onSelect: beginGame,
                                onResume: resume)
             }
         }
@@ -117,13 +116,28 @@ struct RootView: View {
         }
     }
 
+    /// Start a new game as `color`. The starting-player setting decides whether to
+    /// run the opening-roll ceremony (#33) or seed the starter directly (#77).
+    private func beginGame(humanColor color: EngineColor) {
+        if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
+            humanColor = color
+            autosaveName = Self.newAutosaveName()
+            session = Self.makeSession(humanColor: color, startingPlayer: starter)
+        } else {
+            pendingHumanColor = color   // run the opening-roll ceremony
+        }
+    }
+
     /// Load a saved game (from the picker list) and switch into it, carrying its
     /// name forward so the auto-save keeps the same identity.
     private func resume(_ meta: SaveMetadata) {
         guard let save = try? store.load(filename: meta.filename) else { return }
         humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
         autosaveName = save.name
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
+        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   animationTimings: AppSettings.animationTimings,
+                                   manualDiceEntry: AppSettings.diceMode == .manual,
+                                   autoRoll: AppSettings.autoRoll)
         s.start()
         session = s
     }
@@ -133,7 +147,10 @@ struct RootView: View {
     private static func autoResume() -> (session: GameSession, humanColor: EngineColor, name: String)? {
         let store = SaveStore.default()
         guard let save = store.loadAutosave() else { return nil }
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent())
+        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   animationTimings: AppSettings.animationTimings,
+                                   manualDiceEntry: AppSettings.diceMode == .manual,
+                                   autoRoll: AppSettings.autoRoll)
         guard !s.isTerminal else {
             store.clearAutosave()
             return nil
@@ -147,7 +164,7 @@ struct RootView: View {
     /// save dialog defaults to. Generated once per game and kept stable across that
     /// game's per-move auto-saves.
     private static func newAutosaveName() -> String {
-        "Game · " + autosaveNameFormatter.string(from: Date())
+        String(localized: "Game · ") + autosaveNameFormatter.string(from: Date())
     }
 
     private static let autosaveNameFormatter: DateFormatter = {
@@ -162,16 +179,20 @@ struct RootView: View {
         let session = GameSession(
             startingPlayer: startingPlayer,
             agent: GameSession.makeAgent(),
-            aiColor: humanColor.opponent
+            aiColor: humanColor.opponent,
+            animationTimings: AppSettings.animationTimings,
+            manualDiceEntry: AppSettings.diceMode == .manual,
+            autoRoll: AppSettings.autoRoll
         )
         session.start()
         return session
     }
 }
 
-/// Caramel start screen: "Tavli" wordmark, two "Play vs AI" choices, and (since
-/// #61) a list of saved games to resume or delete. The AI-vs-AI watch mode from
-/// the design reference is deferred.
+/// Caramel start screen (#101): "Tavli" wordmark, one primary "Play vs AI" card
+/// holding the color choice (tapping a color starts the opening roll), a quiet
+/// "My Record" row, and (since #61) a list of saved games to resume or delete.
+/// The AI-vs-AI watch mode from the design reference is deferred.
 private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
@@ -181,49 +202,130 @@ private struct ModePickerView: View {
     @State private var saves: [SaveMetadata] = []
 
     @State private var showStats = false
+    @State private var showSettings = false
+
+    /// A fixed preferred color skips the per-game White/Red choice (#77).
+    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
 
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            VStack(spacing: 40) {
+            VStack(spacing: 28) {
                 Text("Tavli")
-                    .font(.custom("Cormorant Garamond", size: 96))
+                    .font(ChromeType.wordmark)
                     .foregroundStyle(CaramelPalette.frameText)
 
-                VStack(spacing: 20) {
-                    ModeButton(title: "Play vs AI", subtitle: "You play White") {
-                        onSelect(.white)
-                    }
-                    ModeButton(title: "Play vs AI", subtitle: "You play Black") {
-                        onSelect(.black)
-                    }
-                    ModeButton(title: "My Record", subtitle: recordSubtitle) {
-                        showStats = true
-                    }
-                }
+                playCard
+                recordRow
 
                 if !saves.isEmpty {
                     SavedGamesList(saves: saves,
                                    onResume: onResume,
                                    onDelete: delete)
-                        .frame(maxWidth: 420)
+                        .frame(maxWidth: 440)
                 }
             }
             .padding(40)
+
+            // Settings gear in the top-trailing corner (#77).
+            Button { showSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(ChromeType.title2)
+                    .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
+                    .padding(12)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
         }
         .onAppear { reload() }
-        .sheet(isPresented: $showStats) {
-            ZStack {
-                SColor(hex: 0xece6dc).ignoresSafeArea()
-                StatsPanelView(stats: stats)
-                    .padding(40)
+        .sheet(isPresented: $showStats) { statsSheet }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+    }
+
+    /// The one primary action: start playing. With a pinned preferred color (#77)
+    /// it's a single flat "Play vs AI" button (the action is the focus; the color is
+    /// just a small swatch). Otherwise it's the color-choice card — pick White/Red,
+    /// which carry the checker disc they map to on the board (engine black = Red).
+    @ViewBuilder
+    private var playCard: some View {
+        if let fixed = preferredColor.engineColor {
+            Button { onSelect(fixed) } label: {
+                HStack(spacing: 10) {
+                    Text("Play vs AI")
+                    Circle()
+                        .fill(ChromeTheme.checkerColor(fixed))
+                        .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1))
+                        .frame(width: 16, height: 16)
+                }
+            }
+            .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
+            .frame(maxWidth: 392)
+        } else {
+            VStack(spacing: 18) {
+                Text("Play vs AI")
+                    .font(ChromeType.title2.bold())
+                    .foregroundStyle(ChromeTheme.ink)
+                HStack(spacing: 14) {
+                    ColorChoiceButton(color: .white) { onSelect(.white) }
+                    ColorChoiceButton(color: .black) { onSelect(.black) }
+                }
+            }
+            .frame(maxWidth: 392)
+            .chromeCard(padding: 24)
+        }
+    }
+
+    /// Quiet secondary row: current W–L at a glance, full panel on tap.
+    private var recordRow: some View {
+        Button {
+            showStats = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "chart.bar.fill")
+                Text("My Record")
+                Spacer(minLength: 24)
+                Text(recordSubtitle)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(ChromeKit.inkSecondary)
             }
         }
+        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
+        .frame(maxWidth: 440)
+    }
+
+    /// Fitted stats sheet (#101): explicit Done affordance, sized to the card
+    /// rather than the near-fullscreen system default.
+    private var statsSheet: some View {
+        ZStack {
+            SColor(hex: 0xece6dc).ignoresSafeArea()
+            VStack(spacing: 16) {
+                HStack {
+                    Text("My Record")
+                        .font(ChromeType.title3.bold())
+                        .foregroundStyle(ChromeTheme.ink)
+                    Spacer()
+                    Button("Done") { showStats = false }
+                        .buttonStyle(ChromeButton(role: .secondary))
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                Spacer(minLength: 0)
+                StatsPanelView(stats: stats)
+                    .padding(.horizontal, 24)
+                Spacer(minLength: 0)
+            }
+        }
+        .presentationDetents([.height(480)])
+        .presentationDragIndicator(.visible)
     }
 
     private var recordSubtitle: String {
         stats.total == 0
-            ? "No games yet"
+            ? String(localized: "No games yet")
             : "\(stats.wins)W – \(stats.losses)L"
     }
 
@@ -232,6 +334,29 @@ private struct ModePickerView: View {
     private func delete(_ meta: SaveMetadata) {
         try? store.delete(filename: meta.filename)
         reload()
+    }
+}
+
+/// One side of the play card: the checker disc the player would command plus a
+/// "Play <Name>" label. Tapping starts the opening roll for that color.
+private struct ColorChoiceButton: View {
+    let color: EngineColor
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Circle()
+                    .fill(ChromeTheme.checkerColor(color))
+                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1.5))
+                    .frame(width: 44, height: 44)
+                Text("Play \(ChromeTheme.displayName(color))")
+                    .foregroundStyle(ChromeTheme.ink)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(ChromeButton(role: .secondary))
     }
 }
 
@@ -244,7 +369,7 @@ private struct SavedGamesList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Saved games")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(CaramelPalette.frameText.opacity(0.8))
 
             ScrollView {
@@ -273,14 +398,14 @@ private struct SavedGameRow: View {
             Button(action: onResume) {
                 HStack(spacing: 12) {
                     Image(systemName: meta.isAutosave ? "arrow.clockwise.circle.fill" : "doc.fill")
-                        .font(.title3)
+                        .font(ChromeType.title3)
                         .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                     VStack(alignment: .leading, spacing: 2) {
                         if meta.isAutosave {
                             // The auto-save's own name follows the manual convention;
                             // this badge sits on top of it to mark the last game (#61).
                             Text("Continue last game")
-                                .font(.caption2.weight(.bold))
+                                .font(ChromeType.caption2.weight(.bold))
                                 .textCase(.uppercase)
                                 .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                                 .padding(.horizontal, 8)
@@ -290,11 +415,11 @@ private struct SavedGameRow: View {
                                 .padding(.bottom, 2)
                         }
                         Text(meta.name)
-                            .font(.body.weight(.semibold))
+                            .font(ChromeType.body.weight(.semibold))
                             .foregroundStyle(CaramelPalette.frameText)
                         Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                            .font(ChromeType.caption)
+                            .foregroundStyle(ChromeKit.inkSecondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -304,16 +429,17 @@ private struct SavedGameRow: View {
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
-                    .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                    .font(ChromeType.body)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    .padding(8)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(SColor.white.opacity(0.35))
-        .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12)
-            .stroke(CaramelPalette.frameBot.opacity(0.4), lineWidth: 1))
+        .background(ChromeKit.cardColor)
+        .cornerRadius(ChromeKit.buttonRadius)
+        .shadow(color: ChromeKit.cardShadow, radius: 5, x: 0, y: 2)
     }
 
     private var subtitle: String {
@@ -328,45 +454,6 @@ private struct SavedGameRow: View {
         f.timeStyle = .short
         return f
     }()
-}
-
-/// A caramel wood pill matching the board frame palette.
-private struct ModeButton: View {
-    let title: String
-    let subtitle: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Text(title).font(.title2.bold())
-                Text(subtitle).font(.callout).opacity(0.75)
-            }
-            .frame(maxWidth: 320)
-            .padding(.horizontal, 48)
-            .padding(.vertical, 18)
-            .foregroundStyle(CaramelPalette.frameText)
-        }
-        .buttonStyle(ModeButtonStyle())
-    }
-}
-
-private struct ModeButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                LinearGradient(
-                    colors: [CaramelPalette.frameTop, CaramelPalette.frameMid],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
-            .cornerRadius(16)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(CaramelPalette.frameBot, lineWidth: 1.5)
-            )
-            .brightness(configuration.isPressed ? -0.05 : 0)
-    }
 }
 
 #Preview {

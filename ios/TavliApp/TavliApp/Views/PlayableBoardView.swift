@@ -54,6 +54,10 @@ struct PlayableBoardView: View {
     /// Logical point indices are unchanged; only the visual layout rotates.
     var flipped: Bool = false
 
+    /// When true (manual-dice mode, #77), the on-board dice don't roll on tap;
+    /// the human enters the dice via the chrome's `ManualDiceControl` instead.
+    var manualDiceEntry: Bool = false
+
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
@@ -72,13 +76,18 @@ struct PlayableBoardView: View {
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size),
                                     flipped: flipped)
 
-            // During drag: show one fewer checker at the source (it's in the air).
+            // During a drag or an AI flight (#93): show one fewer checker at
+            // the source (it's in the air, drawn by the overlay views below).
             let boardStacks = session.game.board.points.map(\.pieces)
             let displayStacks: [[TavliEngine.Color]] = {
-                guard let drag = liveDrag, drag.sourcePoint >= 1, drag.sourcePoint <= 24,
-                      !boardStacks[drag.sourcePoint].isEmpty else { return boardStacks }
                 var s = boardStacks
-                s[drag.sourcePoint] = Array(s[drag.sourcePoint].dropLast())
+                if let drag = liveDrag, drag.sourcePoint >= 1, drag.sourcePoint <= 24,
+                   !s[drag.sourcePoint].isEmpty {
+                    s[drag.sourcePoint] = Array(s[drag.sourcePoint].dropLast())
+                }
+                if let hop = session.aiHopInFlight, !s[hop.from].isEmpty {
+                    s[hop.from] = Array(s[hop.from].dropLast())
+                }
                 return s
             }()
 
@@ -107,7 +116,7 @@ struct PlayableBoardView: View {
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))
 
-                BoardDiceView(session: session)
+                BoardDiceView(session: session, manualEntry: manualDiceEntry)
 
                 // Floating checker follows the finger above all board layers.
                 if let drag = liveDrag, let topColor = boardStacks[drag.sourcePoint].last {
@@ -117,6 +126,15 @@ struct PlayableBoardView: View {
                 // Snap-back ghost animates to the checker's origin after a failed drop.
                 if let sb = snapBack {
                     DraggedCheckerView(geo: geo, location: sb.position, color: sb.color)
+                }
+
+                // The AI's checker arcs above all layers while a hop is in
+                // flight (#93). `.id` forces a fresh view per hop so the flight
+                // restarts even when consecutive hops share endpoints (a Pasch
+                // moving two checkers along the same route).
+                if let hop = session.aiHopInFlight {
+                    AIFlightCheckerView(hop: hop, geo: geo, stacks: boardStacks)
+                        .id(hop.id)
                 }
             }
             .accessibilityElement()

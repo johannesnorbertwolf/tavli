@@ -87,6 +87,10 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
             return float("nan")
         return agent.position_value_lookahead(game.board, game.current_player)
 
+    def state_exact_value():
+        v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
+        return float("nan") if v is None else float(v)
+
     states = [encoder.encode_board(game.board, game.current_player == WHITE)]
     exact_values = [state_exact_value()]
     bootstrap_values = [state_bootstrap_value()]

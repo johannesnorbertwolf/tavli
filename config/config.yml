@@ -44,7 +44,10 @@ selfplay_league_opponents:        # League opponent checkpoints, sampled uniform
   - models/gold_v10.pth
 gold_model_path: models/gold_v11.pth # Frozen reference (depth-2 bootstrap endpoint, E14/E14b, 2026-06-17; +0.6pp vs gold_v10 at high paired power, z=2.94)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
-bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)
+# bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
+                                         # Left unset by default so it resolves to a machine-global cache
+                                         # (~/.cache/tavli/, or $TAVLI_BEAROFF_DB) shared across all git worktrees.
+                                         # Set this to pin a specific path.
 training_state_path: training_state.json # Persisted scheduler state for resumed training
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)

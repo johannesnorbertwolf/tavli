@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert the trained value network (gold_v9) to a Core ML model for on-device play.
+"""Convert the trained value network to a Core ML model for on-device play.
 
 The exported model takes a 486-float board encoding and outputs the win probability
 for the side to move (sigmoid of the logits) — matching `BoardEvaluator.forward`,
@@ -28,8 +28,6 @@ sys.path.insert(0, ROOT)
 
 from config.config_loader import ConfigLoader
 from ai.checkpoint_io import load_agent_from_checkpoint
-
-GOLD_PATH = "models/gold_v9.pth"
 OUT_PATH = "ios/TavliEngine/Tests/TavliEngineTests/Fixtures/PlakotoValue.mlpackage"
 APP_OUT_PATH = "ios/TavliApp/TavliApp/Resources/PlakotoValue.mlpackage"
 FIXTURES = "ios/TavliEngine/Tests/TavliEngineTests/Fixtures/fixtures.json"
@@ -41,11 +39,12 @@ def main():
     import coremltools as ct
 
     config = ConfigLoader(os.path.join(ROOT, "config", "config.yml"))
-    agent, meta = load_agent_from_checkpoint(os.path.join(ROOT, GOLD_PATH), config)
+    gold_model_path = config.get_gold_model_path()
+    agent, meta = load_agent_from_checkpoint(os.path.join(ROOT, gold_model_path), config)
     evaluator = agent.board_evaluator
     evaluator.eval()
     input_size = agent.board_encoder.input_size
-    print(f"loaded {GOLD_PATH}: encoder={meta['encoder_version']} "
+    print(f"loaded {gold_model_path}: encoder={meta['encoder_version']} "
           f"hidden={meta['hidden_sizes']} input_size={input_size}")
 
     example = torch.zeros(1, input_size, dtype=torch.float32)

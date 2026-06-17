@@ -38,57 +38,56 @@ struct OpeningRollView: View {
                 } else {
                     portraitLayout
                 }
-
-                // Floating Back button — same pill style as GameView.
-                Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .font(.callout.bold())
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(SColor(hex: 0xa87a3e).opacity(0.22))
-                    .cornerRadius(10)
-                    .overlay(RoundedRectangle(cornerRadius: 10)
-                        .stroke(SColor(hex: 0xa87a3e).opacity(0.6), lineWidth: 1))
-                    .foregroundStyle(CaramelPalette.frameText)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
             }
         }
     }
 
     // MARK: - Layouts
 
+    // Mirrors GameView's panel structure (#101): navigation on top, then the
+    // status card with the manual-start choices directly beneath it — nothing
+    // floats over the board and nothing is orphaned in a far corner.
     private var landscapeLayout: some View {
         HStack(spacing: 0) {
             boardArea
                 .padding(8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             sidePanel
-                .frame(width: 260)
+                .frame(width: 280)
                 .padding(.vertical, 12)
                 .padding(.trailing, 12)
         }
     }
 
     private var portraitLayout: some View {
-        VStack(spacing: 12) {
-            statusBlock
-                .padding(.horizontal, 16)
-            Spacer(minLength: 0)
+        VStack(spacing: 16) {
+            ZStack {
+                statusBlock
+                HStack {
+                    backButton
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(.horizontal, 16)
             manualRow
                 .padding(.horizontal, 16)
+            Spacer(minLength: 0)
             boardArea
                 .padding(.horizontal, 8)
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 12)
+    }
+
+    private var backButton: some View {
+        Button(action: onBack) {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.left")
+                Text("Back")
+            }
+        }
+        .buttonStyle(ChromeButton(role: .secondary))
     }
 
     // MARK: - Board
@@ -132,33 +131,40 @@ struct OpeningRollView: View {
     // MARK: - Chrome
 
     private var sidePanel: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 14) {
+            HStack {
+                backButton
+                Spacer(minLength: 0)
+            }
             statusBlock
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity)
+                .chromeCard(padding: 16)
             manualRow
+            Spacer(minLength: 0)
         }
-        .padding(.top, 44)
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var statusBlock: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 6) {
             Text("Opening Roll")
-                .font(.headline)
+                .font(ChromeType.headline)
                 .foregroundStyle(CaramelPalette.frameText)
+            // The roll prompt is the screen's call to action, so it reads at
+            // body size in full ink — not as a dimmed caption (#101).
             Text(statusCaption)
-                .font(.caption)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.6))
+                .font(ChromeType.body)
+                .foregroundStyle(CaramelPalette.frameText)
                 .multilineTextAlignment(.center)
         }
     }
 
     private var statusCaption: String {
         switch rollState {
-        case .idle:                     return "Tap the board to roll"
-        case .rolling:                  return "Rolling…"
-        case .tied(let h, let a):       return "Tie (\(h) vs \(a)) — rolling again…"
-        case .resolved(_, _, let w):    return w == humanColor ? "You go first!" : "AI goes first!"
+        case .idle:                     return String(localized: "Tap the board to roll")
+        case .rolling:                  return String(localized: "Rolling…")
+        case .tied(let h, let a):       return String(localized: "Tie (\(h) vs \(a)) — rolling again…")
+        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "AI goes first!")
         }
     }
 
@@ -167,15 +173,15 @@ struct OpeningRollView: View {
         if case .resolved = rollState {
             EmptyView()
         } else {
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Text("Or choose manually:")
-                    .font(.caption)
-                    .foregroundStyle(CaramelPalette.frameText.opacity(0.5))
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
                 HStack(spacing: 12) {
                     Button("You start") { startGame(humanColor) }
-                        .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
+                        .buttonStyle(ChromeButton(role: .secondary))
                     Button("AI starts") { startGame(humanColor.opponent) }
-                        .buttonStyle(ORButton(tint: SColor(hex: 0xa87a3e)))
+                        .buttonStyle(ChromeButton(role: .secondary))
                 }
             }
         }
@@ -243,30 +249,12 @@ struct OpeningRollView: View {
     }
 }
 
-// MARK: - Button style matching GameView chrome
-
-private struct ORButton: ButtonStyle {
-    let tint: SColor
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.callout.bold())
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(tint.opacity(configuration.isPressed ? 0.45 : 0.22))
-            .cornerRadius(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(tint.opacity(0.6), lineWidth: 1))
-            .foregroundStyle(CaramelPalette.frameText)
-    }
-}
-
 // MARK: - Previews
 
 #Preview("Opening Roll — idle") {
     OpeningRollView(humanColor: .white, onStart: { _ in }, onBack: { })
 }
 
-#Preview("Opening Roll — landscape") {
+#Preview("Opening Roll — landscape", traits: .landscapeLeft) {
     OpeningRollView(humanColor: .black, onStart: { _ in }, onBack: { })
-        .previewInterfaceOrientation(.landscapeLeft)
 }
