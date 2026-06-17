@@ -42,7 +42,7 @@ selfplay_league_opponents:        # League opponent checkpoints, sampled uniform
   - models/gold_v8.pth
   - models/gold_v9.pth
   - models/gold_v10.pth
-gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
+gold_model_path: models/gold_v11.pth # Frozen reference (depth-2 bootstrap endpoint, E14/E14b, 2026-06-17; +0.6pp vs gold_v10 at high paired power, z=2.94)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
 bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes)
 training_state_path: training_state.json # Persisted scheduler state for resumed training
