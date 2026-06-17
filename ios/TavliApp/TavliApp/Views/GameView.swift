@@ -28,6 +28,19 @@ struct GameView: View {
     var onSave: (String) -> Void = { _ in }
     /// Auto-save the in-progress game after every move (#61). Defaults to a no-op so `#Preview`s compile.
     var onAutosave: () -> Void = {}
+    /// Weltsensation tournament hook: when non-nil, the win overlay's primary action
+    /// becomes "Zurück zum Turnier" (calling this) instead of "Play Again", and the
+    /// game-over verdict switches to German. Leaves the normal app untouched when nil.
+    var tournamentExit: (() -> Void)? = nil
+    /// Weltsensation: the AI opponent's display name (the real, possibly-renamed
+    /// player), used by the German loss verdict. Only consulted in tournament mode.
+    var tournamentOpponentName: String? = nil
+    /// Weltsensation recovery hook: when non-nil (a tournament AI game) and the game
+    /// is still running in auto-roll, a quiet "Am echten Brett – neu starten" button
+    /// appears that restarts the game into manual ("real board") dice entry — the
+    /// clean fix for having started in auto by mistake. Records nothing; nil in the
+    /// normal app, so it's never shown there.
+    var tournamentRestart: (() -> Void)? = nil
 
     @State private var showingSaveDialog = false
     @State private var saveName = ""
@@ -73,6 +86,13 @@ struct GameView: View {
     /// both players' rolls — the human enters the AI's dice too.
     private var manualDiceActive: Bool {
         diceMode == .manual && session.phase == .awaitingRoll
+    }
+
+    /// Weltsensation recovery affordance: offered only in a tournament AI game
+    /// (`tournamentRestart` set) that is still running in auto-roll. Hidden once the
+    /// game is already manual or over, and never present in the normal app.
+    private var showManualRestart: Bool {
+        tournamentRestart != nil && diceMode != .manual && !session.isTerminal
     }
 
     var body: some View {
@@ -127,6 +147,9 @@ struct GameView: View {
                             if !session.isTerminal {
                                 ControlsView(session: session)
                             }
+                            if showManualRestart {
+                                ManualRestartButton { tournamentRestart?() }
+                            }
                         }
                         .padding(.horizontal, 16)
                         PlayableBoardView(session: session, flipped: flipped,
@@ -162,7 +185,8 @@ struct GameView: View {
                     WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
-                                   onDrill: { showDrill = true })
+                                   onDrill: { showDrill = true },
+                                   tournamentExit: tournamentExit)
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -248,9 +272,16 @@ struct GameView: View {
     }
 
     /// Game-over verdict from the human's perspective (#101): the human's own
-    /// win is celebrated directly; an AI win names the winning color.
+    /// win is celebrated directly; an AI win names the winning color. In a
+    /// Weltsensation tournament game the verdict is German instead — a win is the
+    /// "Sensationell!" flourish, a loss names the AI opponent.
     private func verdict(_ winner: TavliEngine.Color) -> String {
-        winner == humanColor ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
+        let humanWon = winner == humanColor
+        if tournamentExit != nil {
+            if humanWon { return "Sensationell!" }
+            return "\(tournamentOpponentName ?? "Tavtav") war stärker."
+        }
+        return humanWon ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
     }
 
     /// Seed the field with a timestamped default and open the naming dialog.
@@ -329,6 +360,9 @@ struct GameView: View {
                 }
                 ControlsView(session: session)
             }
+            if showManualRestart {
+                ManualRestartButton { tournamentRestart?() }
+            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -395,6 +429,23 @@ private struct SurrenderButton: View {
             }
         }
         .buttonStyle(ChromeButton(role: .destructive))
+    }
+}
+
+/// Weltsensation recovery: a quiet, deliberately low-key restart that re-arms
+/// manual ("real board") dice entry, for when a tournament AI game was started in
+/// auto-roll by mistake. Shown only via `tournamentRestart` (see `showManualRestart`).
+private struct ManualRestartButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.counterclockwise")
+                Text("Am echten Brett – neu starten")
+            }
+        }
+        .buttonStyle(ChromeButton(role: .quiet))
     }
 }
 
@@ -582,19 +633,27 @@ private struct WinOverlayView: View {
     let onHistory: () -> Void
     let onReview: () -> Void
     let onDrill: () -> Void
+    /// Tournament mode (#weltsensation): when set, the primary action returns to
+    /// the tournament instead of replaying the game.
+    var tournamentExit: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 28) {
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
-            StatsPanelView(stats: stats)
+            // The personal Human-vs-AI record is the main app's; it's never written
+            // from the tournament flow (so it would always read "No games yet").
+            // Hide it in tournament mode.
+            if tournamentExit == nil {
+                StatsPanelView(stats: stats)
+            }
             Button {
-                onNewGame()
+                if let tournamentExit { tournamentExit() } else { onNewGame() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Play Again")
+                    Image(systemName: tournamentExit == nil ? "arrow.clockwise" : "trophy.fill")
+                    Text(tournamentExit == nil ? "Play Again" : "Zurück zum Turnier")
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 4)

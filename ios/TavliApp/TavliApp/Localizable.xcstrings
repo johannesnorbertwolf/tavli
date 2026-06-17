@@ -66,6 +66,16 @@
     "%@" : {
 
     },
+    "%@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
     "%@ moving…" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -82,6 +92,12 @@
           }
         }
       }
+    },
+    "%@ Sp." : {
+
+    },
+    "%@ Spiele" : {
+
     },
     "%@ wins" : {
       "extractionState" : "stale",
@@ -243,53 +259,8 @@
         }
       }
     },
-    "Tavtav goes first!" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt!"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint!"
-          }
-        }
-      }
-    },
-    "Tavtav starts" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint"
-          }
-        }
-      }
-    },
-    "Tavtav thinking…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt nach…"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt na…"
-          }
-        }
-      }
+    "AI" : {
+
     },
     "All %@" : {
       "localizations" : {
@@ -323,6 +294,15 @@
           }
         }
       }
+    },
+    "Alle Ergebnisse dieses Spielers gehen verloren." : {
+
+    },
+    "Am echten Brett – neu starten" : {
+
+    },
+    "Am echten Brett (Würfel manuell eintragen)" : {
+
     },
     "Analyzing move %@ of %@…" : {
       "localizations" : {
@@ -462,6 +442,9 @@
         }
       }
     },
+    "Beim Sperren wird wieder das Passwort verlangt." : {
+
+    },
     "Best" : {
       "localizations" : {
         "de" : {
@@ -510,6 +493,9 @@
           }
         }
       }
+    },
+    "Bitte Passwort eingeben" : {
+
     },
     "Blunder" : {
       "localizations" : {
@@ -866,6 +852,7 @@
       }
     },
     "Enter Tavtav's dice" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -898,6 +885,15 @@
         }
       }
     },
+    "Ergebnis" : {
+
+    },
+    "Ergebnis ändern" : {
+
+    },
+    "Ergebnisse eintragen oder gegen %@ spielen" : {
+
+    },
     "Excellent — that's the best move!" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -914,6 +910,12 @@
           }
         }
       }
+    },
+    "Falsches Passwort" : {
+
+    },
+    "Finale zurücksetzen" : {
+
     },
     "Finding your blunders…" : {
       "localizations" : {
@@ -947,6 +949,12 @@
           }
         }
       }
+    },
+    "Füge im Tab „Setup“ mindestens zwei Spieler hinzu." : {
+
+    },
+    "Füge im Tab „Setup“ Spieler hinzu, um die Tabelle zu starten." : {
+
     },
     "Game · " : {
       "extractionState" : "stale",
@@ -1082,6 +1090,9 @@
         }
       }
     },
+    "In dieser Partie spielt %@ nicht mit." : {
+
+    },
     "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1099,6 +1110,9 @@
         }
       }
     },
+    "Jeder gegen jeden" : {
+
+    },
     "Keep playing" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1115,6 +1129,9 @@
           }
         }
       }
+    },
+    "Kein Spiel gegen %@ möglich" : {
+
     },
     "Last 20" : {
       "localizations" : {
@@ -1366,6 +1383,12 @@
         }
       }
     },
+    "Noch keine Paarungen" : {
+
+    },
+    "Noch zu wenige Spieler" : {
+
+    },
     "None" : {
       "localizations" : {
         "de" : {
@@ -1531,6 +1554,7 @@
       }
     },
     "Play Again" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1777,6 +1801,9 @@
         }
       }
     },
+    "Setup" : {
+
+    },
     "Show on board" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1879,6 +1906,9 @@
         }
       }
     },
+    "Spiele" : {
+
+    },
     "Streak" : {
       "localizations" : {
         "de" : {
@@ -1894,6 +1924,12 @@
           }
         }
       }
+    },
+    "Tabelle" : {
+
+    },
+    "Tabelle und Finale werden geleert. Spieler bleiben erhalten." : {
+
     },
     "Tap dice to roll" : {
       "extractionState" : "stale",
@@ -1934,6 +1970,57 @@
     },
     "TAVLI" : {
 
+    },
+    "Tavtav goes first!" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav beginnt!"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav begint!"
+          }
+        }
+      }
+    },
+    "Tavtav starts" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav beginnt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav begint"
+          }
+        }
+      }
+    },
+    "Tavtav thinking…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav denkt nach…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav denkt na…"
+          }
+        }
+      }
     },
     "The opening roll decides who starts, unless you force a side." : {
       "extractionState" : "stale",
@@ -2010,7 +2097,22 @@
         }
       }
     },
+    "vs." : {
+
+    },
     "W" : {
+
+    },
+    "Welche Farbe möchtest du spielen?" : {
+
+    },
+    "Weltmeister" : {
+
+    },
+    "Wer hat das Finale gewonnen?" : {
+
+    },
+    "Wer hat gewonnen?" : {
 
     },
     "White" : {
