@@ -243,53 +243,50 @@
         }
       }
     },
-    "AI goes first!" : {
-      "extractionState" : "stale",
+    "Tavtav goes first!" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI beginnt!"
+            "value" : "Tavtav beginnt!"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI begint!"
+            "value" : "Tavtav begint!"
           }
         }
       }
     },
-    "AI starts" : {
-      "extractionState" : "stale",
+    "Tavtav starts" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI beginnt"
+            "value" : "Tavtav beginnt"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI begint"
+            "value" : "Tavtav begint"
           }
         }
       }
     },
-    "AI thinking…" : {
-      "extractionState" : "stale",
+    "Tavtav thinking…" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI denkt nach…"
+            "value" : "Tavtav denkt nach…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI denkt na…"
+            "value" : "Tavtav denkt na…"
           }
         }
       }
@@ -868,19 +865,18 @@
         }
       }
     },
-    "Enter the AI's dice" : {
-      "extractionState" : "stale",
+    "Enter Tavtav's dice" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Würfel der AI eingeben"
+            "value" : "Tavtavs Würfel eingeben"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voer de dobbelstenen van AI in"
+            "value" : "Voer Tavtavs dobbelstenen in"
           }
         }
       }
@@ -1036,18 +1032,18 @@
         }
       }
     },
-    "Human vs AI" : {
+    "Human vs Tavtav" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mensch gegen AI"
+            "value" : "Mensch gegen Tavtav"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mens tegen AI"
+            "value" : "Mens tegen Tavtav"
           }
         }
       }
