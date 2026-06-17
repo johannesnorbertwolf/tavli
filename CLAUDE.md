@@ -34,7 +34,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 Tests use `unittest` — run from repo root:
 ```bash
 .venv/bin/python -m unittest tests/domain/test_legal_moves.py -v   # single file
-.venv/bin/python -m unittest discover tests/ -v                     # all tests
+.venv/bin/python -m unittest discover -s tests/ -t . -v            # all tests
 ```
 
 Test config is at `config-test.yml` (minimal: 1 epoch, 1 game, no gold eval).
