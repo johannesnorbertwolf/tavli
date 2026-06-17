@@ -7,14 +7,14 @@ die_sides: 6
 alpha: 0.0003              # DEPRECATED (was learning rate for manual TD update); ignored by Adam path
 discount_factor: 1.0       # No discounting — correct for a finite terminal-reward game
 epsilon_start: 1.0         # Start with 100% random moves
-epsilon_end: 0.05          # End with 5% random moves to keep opening exploration
+epsilon_end: 0.0           # EXP E1 (#81): dice randomness explores enough; random moves corrupt λ-returns
 epsilon_decay: 0.9995      # Slower decay to allow for more exploration
 epsilon_decay_games: 0     # If >0, linearly decay epsilon to epsilon_end over this many games
 exploration_temperature: 1.0  # Softmax temperature during self-play exploration
 num_epochs: 10             # Number of training epochs
 games_per_epoch: 100       # Number of self-play games to generate per epoch
 max_grad_norm: 5.0         # Clip global L2 norm of gradients pre-Adam; 0 disables
-hidden_sizes: [256, 128, 64]  # Net2Net-expanded from [128, 64]
+hidden_sizes: [256, 128, 64]  # Net2Net-expanded from [128, 64]. E10 (#96) widened to [512,256,128] and measured flat after ~1M games — reverted; re-expand via `main.py expand-net` if a future signal change pays off
 alpha_decay: 0.9999        # DEPRECATED; ignored by Adam path
 alpha_decay_every: 1000    # DEPRECATED; ignored by Adam path
 alpha_min: 0.00005         # DEPRECATED; ignored by Adam path
@@ -32,7 +32,17 @@ search_relative_cutoff: 0.08      # Keep moves within this relative fraction of 
 search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
 search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
 num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
-gold_model_path: models/gold_v10.pth # Frozen reference model checkpoint (E5 endpoint, 2026-06-10; ~55.8% vs gold_v9)
+selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when runner-up is within this of the best 1-ply score (0 = off). E8 (#90) measured 0.03 flat at 13x cost — keep off
+selfplay_2ply_max_moves: 2        # Max candidates re-scored at 2-ply when escalating
+selfplay_seeded_fraction: 0.0     # Fraction of self-play games started from seed-pool positions (0 = off). E9 (#83) measured 0.25 flat — keep off
+selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
+selfplay_league_fraction: 0.0     # Fraction of self-play games with one side played by a frozen gold (0 = off). E11 (#83) measured 0.2 flat — keep off
+selfplay_league_opponents:        # League opponent checkpoints, sampled uniformly per league game
+  - models/gold_v7.pth
+  - models/gold_v8.pth
+  - models/gold_v9.pth
+  - models/gold_v10.pth
+gold_model_path: models/gold_v11.pth # Frozen reference (depth-2 bootstrap endpoint, E14/E14b, 2026-06-17; +0.6pp vs gold_v10 at high paired power, z=2.94)
 use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
 # bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
                                          # Left unset by default so it resolves to a machine-global cache
@@ -47,10 +57,19 @@ lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this tes
 lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
 lambda_decay: 0.999        # Decay rate for lambda per episode
+bootstrap_depth: 2         # E14 (#80): 1 = raw net bootstrap; 2 = one-ply expectimax backup (avg over 21 dice) as the TD bootstrap target. ~17x slower self-play. KEPT — first lever to beat the gate since gold_v10: paired gate 50.50% over 40k duplicate-dice games (z=2.34, p=0.0097)
+
+# Auxiliary output heads (#106): training-only side targets sharing the trunk
+aux_heads: 0               # 0 = off; 2 = [win-by-pin, final borne-off margin]. E12 (#106) measured 2 flat — keep off
+aux_loss_weight: 0.3       # Weight of the aux BCE term relative to the main value loss (when aux_heads > 0)
 
 # Optimizer + replay buffer (Adam replaces manual TD update)
-learning_rate: 0.0003          # Adam lr
+learning_rate: 0.00003         # E5-proven value; E6's further drop to 1e-5 measured flat (#81)
 lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
+lr_restart_period_games: 0     # E16 (#81): SGDR warm restarts — self-play games per cosine cycle; 0 = off. OFF — measured WORSE: peak 5× LR over 50k games scored 48.34% vs the depth-2 fixed point (paired z=−7.64). Net is at a genuine optimum, not a sharp basin; perturbing it degrades it. Machinery kept, off.
+lr_restart_peak_factor: 5.0    # E16: peak LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
+lr_restart_min_factor: 0.03    # E16: floor LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
+ema_decay: 0.0                 # EMA/Polyak shadow weights (E13, #81): 0 disables. Confirmed FLAT by a high-power paired gate — EMA 50.03% over 40k duplicate-dice games (z=0.21, true edge bounded to ±0.3pp). The earlier 50.59% (z=1.18) was noise. Machinery kept for a future signal change
 replay_buffer_capacity: 50000  # Samples held in the replay buffer
 minibatch_size: 128            # SGD minibatch size
 updates_per_game: 5            # Adam SGD steps run per ingested trajectory

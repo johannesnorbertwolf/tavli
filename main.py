@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import random
 import math
@@ -283,14 +284,19 @@ def train_ai(config, num_epochs_override=None):
 
     device = torch.device("cpu")
     board_encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
-    board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes()).to(device)
+    board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes(),
+                                     aux_heads=config.get_aux_heads()).to(device)
 
-    model_save_path = "trained_model.pth"
+    model_save_path = config.get_model_save_path()
     if os.path.exists(model_save_path):
         print(f"Loading existing model from {model_save_path}...")
         try:
             state_dict, meta = load_state_dict(model_save_path, device=device)
-            board_evaluator.load_state_dict(state_dict)
+            # strict=False: a checkpoint from before aux heads existed lacks the
+            # aux_head keys — those params start fresh. Shape mismatches still raise.
+            keys = board_evaluator.load_state_dict(state_dict, strict=False)
+            if keys.missing_keys:
+                print(f"Initialized fresh (not in checkpoint): {keys.missing_keys}")
             print(
                 f"Model loaded successfully "
                 f"(checkpoint network={meta.get('network_type')}, encoder={meta.get('encoder_version')})."
@@ -695,6 +701,7 @@ def evaluate_against_gold(
             game.switch_turn()
         return game.get_winner()
 
+    results = {}
     try:
         for candidate_color in (WHITE, BLACK):
             random.seed(eval_seed)
@@ -707,12 +714,70 @@ def evaluate_against_gold(
                     wins += 1
                 else:
                     losses += 1
+            results[candidate_color] = (wins, games_per_color)
             print(f"Candidate as {candidate_color}: {wins}-{losses} over {games_per_color} games (seed={eval_seed})")
     finally:
         random.setstate(py_state)
         np.random.set_state(np_state)
 
     print(f"Compared candidate '{model_load_path}' vs gold '{gold_model_path}'.")
+    return results
+
+
+def race_calibration(config, model_load_path="trained_model.pth", num_states=2000, seed=0):
+    """Games-free progress metric (#82): the net's error vs exact bear-off
+    equity on randomly sampled pure-race states. Prints MAE, bias, and RMSE.
+
+    Random race state: each side gets a uniform checker count 1..15 spread
+    uniformly over its 6 home points; the mover is White (perspective-invariant
+    encoding makes the choice irrelevant). The exact value comes from the
+    bear-off DB; the net sees the same pre-roll state.
+    """
+    from ai.bearoff import BearoffDB
+    from domain.board import Board
+
+    device = torch.device("cpu")
+    agent, _ = load_agent_from_checkpoint(model_load_path, config, device=device)
+    db = agent.bearoff or BearoffDB.load_or_build(config.get_bearoff_db_path())
+
+    rng = np.random.default_rng(seed)
+    board_size = config.get_board_size()
+
+    def sample_counts():
+        total = int(rng.integers(1, 16))
+        counts = [0] * 6
+        for _ in range(total):
+            counts[int(rng.integers(0, 6))] += 1
+        return tuple(counts)
+
+    encoded = []
+    exact = np.empty(num_states, dtype=np.float64)
+    for k in range(num_states):
+        white_counts = sample_counts()   # distance d → point board_size+1−d
+        black_counts = sample_counts()   # distance d → point d
+        board = Board()
+        for d in range(1, 7):
+            if white_counts[d - 1]:
+                board.set_point(board_size + 1 - d, WHITE, white_counts[d - 1])
+            if black_counts[d - 1]:
+                board.set_point(d, BLACK, black_counts[d - 1])
+        board.borne_off[WHITE] = config.get_pieces_per_player() - sum(white_counts)
+        board.borne_off[BLACK] = config.get_pieces_per_player() - sum(black_counts)
+        exact[k] = db.win_prob_on_roll(white_counts, black_counts)
+        encoded.append(agent.board_encoder.encode_board(board, is_whites_turn=True))
+
+    x = torch.from_numpy(np.stack(encoded)).float()
+    with torch.no_grad():
+        pred = agent.board_evaluator(x).squeeze(1).numpy().astype(np.float64)
+
+    err = pred - exact
+    print(f"Race calibration over {num_states} sampled race states (seed={seed}):")
+    print(f"  MAE  = {np.abs(err).mean():.4f}")
+    print(f"  bias = {err.mean():+.4f}")
+    print(f"  RMSE = {np.sqrt((err ** 2).mean()):.4f}")
+    print(f"  (model: {model_load_path})")
+    return {"mae": float(np.abs(err).mean()), "bias": float(err.mean()),
+            "rmse": float(np.sqrt((err ** 2).mean()))}
 
 
 def main():
@@ -785,6 +850,20 @@ def main():
                 return
         gold_model_path = sys.argv[3] if len(sys.argv) >= 4 and not sys.argv[3].startswith("--") else None
         evaluate_against_gold(config, games_per_color=games_per_color, gold_model_path=gold_model_path)
+    elif mode == 'eval-paired':
+        # eval-paired <model_a> <model_b> [num_pairs] [--workers N]
+        from ai.paired_eval import evaluate_paired
+        args = sys.argv[2:]
+        positional = [a for a in args if not a.startswith("--")]
+        if len(positional) < 2:
+            print("Usage: eval-paired <model_a> <model_b> [num_pairs] [--workers N]")
+            return
+        model_a, model_b = positional[0], positional[1]
+        num_pairs = int(positional[2]) if len(positional) >= 3 else 5000
+        num_workers = None
+        if "--workers" in args:
+            num_workers = int(args[args.index("--workers") + 1])
+        evaluate_paired(config, model_a, model_b, num_pairs=num_pairs, num_workers=num_workers)
     elif mode in ('eval-gold-stats', 'analyze-gold'):
         last_x = 50
         if len(sys.argv) >= 3:
@@ -843,6 +922,181 @@ def main():
             config, config.get_gold_model_path(),
             games_per_color=games_per_color, num_workers=num_workers,
         )
+    elif mode == 'rollout-lab':
+        opts = {
+            "--games": 600, "--top": 4000, "--rollouts": 64, "--steps": 2000,
+            "--lr": 1e-4, "--workers": 6, "--gate-games": 2000,
+        }
+        checkpoint_path = "trained_model.pth"
+        out_path = "models/rollout_candidate.pth"
+        apply_if_better = False
+        label_mode = "rollout"
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--apply":
+                apply_if_better = True
+                i += 1
+                continue
+            if arg == "--label" and i + 1 < len(args):
+                label_mode = args[i + 1]
+                if label_mode not in ("rollout", "search2"):
+                    print(f"Invalid --label mode: {label_mode} (use rollout|search2)")
+                    return
+                i += 2
+                continue
+            if arg == "--checkpoint" and i + 1 < len(args):
+                checkpoint_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--out" and i + 1 < len(args):
+                out_path = args[i + 1]
+                i += 2
+                continue
+            if arg in opts and i + 1 < len(args):
+                try:
+                    opts[arg] = float(args[i + 1]) if arg == "--lr" else int(args[i + 1])
+                except ValueError:
+                    print(f"Invalid value for {arg}: {args[i + 1]}")
+                    return
+                i += 2
+                continue
+            print(f"Unknown rollout-lab argument: {arg}")
+            return
+
+        from ai.rollout_lab import run_rollout_lab
+        summary = run_rollout_lab(
+            config, "config/config.yml", checkpoint_path=checkpoint_path,
+            out_path=out_path, num_games=opts["--games"], top_k=opts["--top"],
+            rollouts_per_position=opts["--rollouts"], lr=opts["--lr"],
+            steps=opts["--steps"], num_workers=opts["--workers"],
+            label_mode=label_mode,
+        )
+        for k, v in summary.items():
+            print(f"rollout-lab {k}: {v}")
+
+        # Gate: candidate vs source checkpoint head-to-head; promote only if
+        # significantly better (one-sided z-test, p < 0.05).
+        gate_games = opts["--gate-games"]
+        if gate_games > 0:
+            results = evaluate_against_gold(
+                config, model_load_path=out_path, gold_model_path=checkpoint_path,
+                games_per_color=gate_games,
+            )
+            wins = sum(w for w, _ in results.values())
+            n = sum(g for _, g in results.values())
+            p_hat = wins / n
+            z = (p_hat - 0.5) / math.sqrt(0.25 / n)
+            print(f"Gate: candidate {wins}/{n} = {p_hat:.4f} vs source, z = {z:.2f}")
+            if z > 1.645:
+                print("Gate PASSED (p < 0.05, one-sided).")
+                if apply_if_better:
+                    backup = os.path.splitext(checkpoint_path)[0] + "_pre_rollout_backup.pth"
+                    shutil.copy2(checkpoint_path, backup)
+                    shutil.copy2(out_path, checkpoint_path)
+                    print(f"Promoted candidate to {checkpoint_path} (backup at {backup}).")
+            else:
+                print("Gate FAILED — candidate not promoted.")
+    elif mode == 'seed-pool':
+        opts = {"--games": 600, "--every": 2, "--top": 8000, "--workers": 6}
+        checkpoint_path = "trained_model.pth"
+        out_path = "models/seed_pool.npz"
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--checkpoint" and i + 1 < len(args):
+                checkpoint_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--out" and i + 1 < len(args):
+                out_path = args[i + 1]
+                i += 2
+                continue
+            if arg in opts and i + 1 < len(args):
+                try:
+                    opts[arg] = int(args[i + 1])
+                except ValueError:
+                    print(f"Invalid value for {arg}: {args[i + 1]}")
+                    return
+                i += 2
+                continue
+            print(f"Unknown seed-pool argument: {arg}")
+            return
+
+        from ai.seed_pool import build_seed_pool
+        build_seed_pool(
+            config, "config/config.yml", checkpoint_path=checkpoint_path,
+            out_path=out_path, num_games=opts["--games"], sample_every=opts["--every"],
+            top_k=opts["--top"], num_workers=opts["--workers"],
+        )
+    elif mode == 'expand-net':
+        to_sizes = None
+        checkpoint_path = "trained_model.pth"
+        out_path = "expanded_model.pth"
+        noise_std = 1e-3
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--to" and i + 1 < len(args):
+                try:
+                    to_sizes = [int(s) for s in args[i + 1].split(",")]
+                except ValueError:
+                    print(f"Invalid --to sizes: {args[i + 1]} (use e.g. 512,256,128)")
+                    return
+                i += 2
+                continue
+            if arg == "--checkpoint" and i + 1 < len(args):
+                checkpoint_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--out" and i + 1 < len(args):
+                out_path = args[i + 1]
+                i += 2
+                continue
+            if arg == "--noise" and i + 1 < len(args):
+                try:
+                    noise_std = float(args[i + 1])
+                except ValueError:
+                    print(f"Invalid --noise value: {args[i + 1]}")
+                    return
+                i += 2
+                continue
+            print(f"Unknown expand-net argument: {arg}")
+            return
+        if to_sizes is None:
+            print("expand-net requires --to <sizes>, e.g. --to 512,256,128")
+            return
+
+        from ai.net2net import expand_checkpoint
+        expand_checkpoint(checkpoint_path, out_path, to_sizes, config, noise_std=noise_std)
+        print(f"Remember to set hidden_sizes: {to_sizes} in config/config.yml before training.")
+    elif mode == 'race-calibration':
+        num_states = 2000
+        model_path = "trained_model.pth"
+        args = sys.argv[2:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--model" and i + 1 < len(args):
+                model_path = args[i + 1]
+                i += 2
+                continue
+            if not arg.startswith("--"):
+                try:
+                    num_states = int(arg)
+                    if num_states <= 0:
+                        raise ValueError
+                except ValueError:
+                    print("Invalid num_states. Please provide a positive integer.")
+                    return
+                i += 1
+                continue
+            print(f"Unknown race-calibration argument: {arg}")
+            return
+        race_calibration(config, model_load_path=model_path, num_states=num_states)
     elif mode in ('human-stats',):
         analyze_human_games()
     elif mode in ('human-graph',):

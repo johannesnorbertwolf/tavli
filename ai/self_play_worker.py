@@ -19,32 +19,73 @@ from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
 from ai.checkpoint_io import ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
-from domain.constants import WHITE
+from domain.constants import WHITE, BLACK
 from domain.move_generation import legal_moves
 from game.game import Game
 
 
-def _select_self_play_move(agent, board, possible_moves, current_player, epsilon, exploration_temperature):
+def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
+                          exploration_temperature, twoply_margin=0.0, twoply_max_moves=4):
+    """Shared self-play move selection (workers and the trainer's local path).
+
+    Greedy on 1-ply scores with ε-softmax exploration. When `twoply_margin > 0`
+    and the greedy decision is ambiguous (runner-up within the margin of the
+    best), the top `twoply_max_moves` candidates are re-scored at 2-ply and the
+    deep best is played (#90). Exploration stays on the 1-ply scores."""
     if len(possible_moves) == 1:
         return possible_moves[0]
     scores = agent.evaluate_moves(board, possible_moves, current_player)
     best_idx = int(np.argmax(scores))
-    if np.random.random() >= epsilon:
-        return possible_moves[best_idx]
-    s = np.array(scores, dtype=np.float64) / max(exploration_temperature, 1e-6)
-    s -= np.max(s)
-    probs = np.exp(s) / np.sum(np.exp(s))
-    return possible_moves[int(np.random.choice(len(possible_moves), p=probs))]
+    if np.random.random() < epsilon:
+        s = np.array(scores, dtype=np.float64) / max(exploration_temperature, 1e-6)
+        s -= np.max(s)
+        probs = np.exp(s) / np.sum(np.exp(s))
+        return possible_moves[int(np.random.choice(len(possible_moves), p=probs))]
+    if twoply_margin > 0.0:
+        order = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+        close = [i for i in order if scores[i] >= scores[best_idx] - twoply_margin]
+        close = close[:max(2, int(twoply_max_moves))]
+        if len(close) > 1:
+            deep = agent.evaluate_moves(board, [possible_moves[i] for i in close],
+                                        current_player, lookahead_plies=2)
+            best_idx = close[int(np.argmax(deep))]
+    return possible_moves[best_idx]
 
 
-def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature):
+def play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
+                         seed_pool=None, seeded_fraction=0.0,
+                         league_opponents=None, league_fraction=0.0,
+                         bootstrap_depth=1):
     """Play one self-play game to a real terminal. Returns a trajectory dict:
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
     - `terminal_winner_white`: True if White won.
-    """
+
+    When `seed_pool` is set, a `seeded_fraction` share of games starts from a
+    sampled high-residual position instead of the initial board (#83).
+    When `league_opponents` is set, a `league_fraction` share of games has one
+    randomly chosen side played by a random frozen opponent (1-ply greedy, no
+    exploration) instead of the live net (#83 league play)."""
     t0 = time.perf_counter()
     game = Game(config)
+    if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
+        game.board, game.player = seed_pool.sample(config)
+    opponent, opponent_color = None, 0
+    if league_opponents and league_fraction > 0.0 and random.random() < league_fraction:
+        opponent = league_opponents[random.randrange(len(league_opponents))]
+        opponent_color = WHITE if random.random() < 0.5 else -WHITE
+    twoply_margin = config.get_selfplay_2ply_margin()
+    twoply_max_moves = config.get_selfplay_2ply_max_moves()
+
+    def state_exact_value():
+        v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
+        return float("nan") if v is None else float(v)
+
+    def state_bootstrap_value():
+        # Depth-2 pre-roll position value for the player to move (E14); NaN when off or terminal.
+        if bootstrap_depth < 2 or game.is_over():
+            return float("nan")
+        return agent.position_value_lookahead(game.board, game.current_player)
 
     def state_exact_value():
         v = exact_value_on_roll(game.board, game.current_player == WHITE, agent.bearoff)
@@ -52,6 +93,7 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
 
     states = [encoder.encode_board(game.board, game.current_player == WHITE)]
     exact_values = [state_exact_value()]
+    bootstrap_values = [state_bootstrap_value()]
     movers = []
 
     while True:
@@ -63,20 +105,32 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         if not possible_moves:
             game.switch_turn()
         else:
-            move = _select_self_play_move(agent, game.board, possible_moves, current_player,
-                                          epsilon, exploration_temperature)
+            if opponent is not None and current_player == opponent_color:
+                move, _ = opponent.get_best_move(game.board, possible_moves,
+                                                 current_player, lookahead_plies=1)
+            else:
+                move = select_self_play_move(agent, game.board, possible_moves, current_player,
+                                             epsilon, exploration_temperature,
+                                             twoply_margin=twoply_margin,
+                                             twoply_max_moves=twoply_max_moves)
             token = game.board.apply(move, current_player)
             game.switch_turn()
         movers.append(is_white_to_move)
         states.append(encoder.encode_board(game.board, game.current_player == WHITE))
         exact_values.append(state_exact_value())
+        bootstrap_values.append(state_bootstrap_value())
 
         if game.is_over():
+            winner = game.get_winner()
             return {
                 "states": states,
                 "movers": movers,
                 "exact_values": exact_values,
-                "terminal_winner_white": (game.get_winner() == WHITE),
+                "bootstrap_values": bootstrap_values,
+                "terminal_winner_white": (winner == WHITE),
+                "win_by_pin": bool(game.board.captured_starting(winner)),
+                "final_borne_off_white": int(game.board.borne_off[WHITE]),
+                "final_borne_off_black": int(game.board.borne_off[BLACK]),
                 "plies": len(movers),
                 "game_seconds": time.perf_counter() - t0,
             }
@@ -89,13 +143,34 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
     torch.set_num_threads(1)
     config = ConfigLoader(config_path)
     encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
-    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes))
+    # aux_heads must match the trainer's evaluator: workers receive its full
+    # state_dict (including aux keys) even though they never call the aux head.
+    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes),
+                               aux_heads=config.get_aux_heads())
     evaluator.eval()
     bearoff = None
     if config.get_use_bearoff_db():
         # The trainer builds the DB before spawning workers; this only loads the cache.
         bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path(), progress=False)
     agent = Agent(evaluator, encoder, bearoff=bearoff)
+
+    seed_pool = None
+    seeded_fraction = config.get_selfplay_seeded_fraction()
+    if seeded_fraction > 0.0:
+        # The trainer validates the pool path before spawning workers.
+        from ai.seed_pool import SeedPool
+        seed_pool = SeedPool(config.get_selfplay_seed_pool_path())
+
+    league_opponents = None
+    league_fraction = config.get_selfplay_league_fraction()
+    if league_fraction > 0.0:
+        from ai.checkpoint_io import load_agent_from_checkpoint
+        league_opponents = [load_agent_from_checkpoint(p, config)[0]
+                            for p in config.get_selfplay_league_opponents()]
+        if not league_opponents:
+            league_fraction = 0.0
+
+    bootstrap_depth = config.get_bootstrap_depth()
 
     seed = (base_seed + worker_id * 9176 + 7) & 0xFFFFFFFF
     random.seed(seed)
@@ -108,5 +183,9 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
             return
         weights, epsilon, exploration_temperature = msg
         evaluator.load_state_dict({k: torch.from_numpy(v) for k, v in weights.items()})
-        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)
+        traj = play_one_game_record(agent, encoder, config, epsilon, exploration_temperature,
+                                    seed_pool=seed_pool, seeded_fraction=seeded_fraction,
+                                    league_opponents=league_opponents,
+                                    league_fraction=league_fraction,
+                                    bootstrap_depth=bootstrap_depth)
         traj_q.put((worker_id, traj))

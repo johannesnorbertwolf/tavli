@@ -25,27 +25,31 @@ import os
 class ReplayBuffer:
     """Ring buffer of (encoded_state, target) pairs. Pure numpy, uniform sampling."""
 
-    def __init__(self, capacity: int, state_dim: int):
+    def __init__(self, capacity: int, state_dim: int, aux_dim: int = 0):
         self.capacity = int(capacity)
         self.state_dim = int(state_dim)
+        self.aux_dim = int(aux_dim)
         self.states = np.zeros((self.capacity, self.state_dim), dtype=np.float32)
         self.targets = np.zeros(self.capacity, dtype=np.float32)
+        self.aux = np.zeros((self.capacity, self.aux_dim), dtype=np.float32) if self.aux_dim > 0 else None
         self.size = 0
         self.cursor = 0
 
     def __len__(self):
         return self.size
 
-    def push(self, state: np.ndarray, target: float):
+    def push(self, state: np.ndarray, target: float, aux: np.ndarray = None):
         self.states[self.cursor] = state
         self.targets[self.cursor] = target
+        if self.aux is not None and aux is not None:
+            self.aux[self.cursor] = aux
         self.cursor = (self.cursor + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
 
-    def push_many(self, states: np.ndarray, targets: np.ndarray):
+    def push_many(self, states: np.ndarray, targets: np.ndarray, aux: np.ndarray = None):
         n = states.shape[0]
         for i in range(n):
-            self.push(states[i], float(targets[i]))
+            self.push(states[i], float(targets[i]), None if aux is None else aux[i])
 
     def sample(self, batch_size: int):
         if self.size == 0:
@@ -53,6 +57,14 @@ class ReplayBuffer:
         k = min(batch_size, self.size)
         idx = np.random.randint(0, self.size, size=k)
         return self.states[idx], self.targets[idx]
+
+    def sample_aux(self, batch_size: int):
+        """Like sample(), but also returns the aux-target rows (requires aux_dim > 0)."""
+        if self.size == 0:
+            return None, None, None
+        k = min(batch_size, self.size)
+        idx = np.random.randint(0, self.size, size=k)
+        return self.states[idx], self.targets[idx], self.aux[idx]
 
 
 def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
@@ -139,6 +151,32 @@ class TdLambdaTraining:
         self.epsilon_end = self.config.get_epsilon_end()
         self.epsilon_decay = self.config.get_epsilon_decay()
         self.epsilon_decay_games = self.config.get_epsilon_decay_games()
+        self.selfplay_2ply_margin = self.config.get_selfplay_2ply_margin()
+        self.selfplay_2ply_max_moves = self.config.get_selfplay_2ply_max_moves()
+        self.selfplay_seeded_fraction = self.config.get_selfplay_seeded_fraction()
+        self.seed_pool = None
+        if self.selfplay_seeded_fraction > 0.0:
+            pool_path = self.config.get_selfplay_seed_pool_path()
+            if not os.path.exists(pool_path):
+                raise FileNotFoundError(
+                    f"selfplay_seeded_fraction > 0 but seed pool not found: {pool_path} "
+                    f"(build it with: python main.py seed-pool)")
+            from ai.seed_pool import SeedPool
+            self.seed_pool = SeedPool(pool_path)
+        self.selfplay_league_fraction = self.config.get_selfplay_league_fraction()
+        self.league_opponents = None
+        if self.selfplay_league_fraction > 0.0:
+            from ai.checkpoint_io import load_agent_from_checkpoint
+            paths = self.config.get_selfplay_league_opponents()
+            self.league_opponents = [load_agent_from_checkpoint(p, self.config)[0] for p in paths]
+            if not self.league_opponents:
+                self.selfplay_league_fraction = 0.0
+        self.aux_heads_n = self.config.get_aux_heads()
+        self.aux_loss_weight = self.config.get_aux_loss_weight()
+        if self.aux_heads_n > 0 and getattr(self.board_evaluator, "aux_heads", 0) != self.aux_heads_n:
+            raise ValueError(
+                f"aux_heads={self.aux_heads_n} in config but the evaluator was built with "
+                f"aux_heads={getattr(self.board_evaluator, 'aux_heads', 0)}")
         self.exploration_temperature = self.config.get_exploration_temperature()
         self.lambda_decay_games = max(0, int(self.config.get_lambda_decay_games()))
         self.training_state_path = self.config.get_training_state_path()
@@ -150,6 +188,10 @@ class TdLambdaTraining:
         # Optimizer + replay knobs
         self.learning_rate = float(self.config.get_learning_rate())
         self.lr_warmup_steps = max(0, int(self.config.get_lr_warmup_steps()))
+        # SGDR warm restarts (E16) — cosine cycles keyed on self-play games; 0 = off.
+        self.lr_restart_period_games = max(0, int(self.config.get_lr_restart_period_games()))
+        self.lr_restart_peak_factor = max(1.0, float(self.config.get_lr_restart_peak_factor()))
+        self.lr_restart_min_factor = max(0.0, float(self.config.get_lr_restart_min_factor()))
         self.replay_capacity = max(1, int(self.config.get_replay_buffer_capacity()))
         self.minibatch_size = max(1, int(self.config.get_minibatch_size()))
         self.updates_per_game = max(0, int(self.config.get_updates_per_game()))
@@ -169,12 +211,27 @@ class TdLambdaTraining:
         self.device = next(self.board_evaluator.parameters()).device
         self.gold_agent = None
 
-        self.model_save_path = "trained_model.pth"
+        self.model_save_path = self.config.get_model_save_path()
 
         # Replay buffer + Adam optimizer
-        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size)
+        self.replay = ReplayBuffer(self.replay_capacity, self.board_encoder.input_size,
+                                   aux_dim=self.aux_heads_n)
         self.optimizer = torch.optim.Adam(self.board_evaluator.parameters(), lr=self.learning_rate)
         self.optimizer_steps = 0
+
+        # EMA / Polyak weights (E13): a shadow copy of the parameters tracked as an
+        # exponential moving average, saved alongside the raw checkpoint for eval/deploy.
+        # ema_decay = 0 disables it (raw weights only). Self-play workers always use the
+        # raw weights, so EMA only changes what we deploy, not the data distribution.
+        self.ema_decay = float(self.config.get_ema_decay())
+        self.ema_params = None
+        if self.ema_decay > 0.0:
+            self.ema_params = {n: p.detach().clone()
+                               for n, p in self.board_evaluator.named_parameters()}
+
+        # Depth-2 TD bootstrap targets (E14): bootstrap λ-returns on a one-ply expectimax
+        # backup of the net (averaged over the 21 dice) instead of the raw net value. 1 = off.
+        self.bootstrap_depth = self.config.get_bootstrap_depth()
 
         self._try_load_gold_agent()
         self._try_load_optimizer_state()
@@ -212,22 +269,22 @@ class TdLambdaTraining:
         v = exact_value_on_roll(game.board, game.current_player == WHITE, self.bearoff)
         return float("nan") if v is None else float(v)
 
+    def _state_bootstrap_value(self, game) -> float:
+        """Depth-2 pre-roll bootstrap value for the player to move (E14); NaN when off/terminal."""
+        if self.bootstrap_depth < 2 or game.is_over():
+            return float("nan")
+        return self.agent.position_value_lookahead(game.board, game.current_player)
+
+
     def _select_move_self_play(self, board, possible_moves, current_player):
-        if len(possible_moves) == 1:
-            return possible_moves[0], None
-
-        move_scores = self.agent.evaluate_moves(board, possible_moves, current_player)
-        best_idx = int(np.argmax(move_scores))
-
-        if np.random.random() >= self.epsilon:
-            return possible_moves[best_idx], move_scores[best_idx]
-
-        scores = np.array(move_scores, dtype=np.float64) / self.exploration_temperature
-        scores -= np.max(scores)
-        exp_scores = np.exp(scores)
-        probs = exp_scores / np.sum(exp_scores)
-        choice_idx = int(np.random.choice(len(possible_moves), p=probs))
-        return possible_moves[choice_idx], move_scores[choice_idx]
+        from ai.self_play_worker import select_self_play_move
+        move = select_self_play_move(
+            self.agent, board, possible_moves, current_player,
+            self.epsilon, self.exploration_temperature,
+            twoply_margin=self.selfplay_2ply_margin,
+            twoply_max_moves=self.selfplay_2ply_max_moves,
+        )
+        return move, None
 
     def _update_schedules(self, game_num):
         if self.epsilon_decay_games and self.epsilon_decay_games > 0:
@@ -244,6 +301,17 @@ class TdLambdaTraining:
         self.lambda_ = self.lambda_end + (self.lambda_start - self.lambda_end) * np.exp(-1.0 * progress * 10.0)
 
     def _current_lr(self) -> float:
+        # SGDR warm restarts (E16): cosine-anneal peak→floor each cycle, keyed on
+        # self-play games, then jump back to peak. Overrides linear warmup when on.
+        if self.lr_restart_period_games > 0:
+            pos = (self.global_game_num % self.lr_restart_period_games) / float(
+                self.lr_restart_period_games
+            )  # ∈ [0, 1)
+            peak = self.learning_rate * self.lr_restart_peak_factor
+            floor = self.learning_rate * self.lr_restart_min_factor
+            # float() so the lr stored in optimizer.param_groups stays a Python float —
+            # a numpy scalar here ends up in the saved Adam state and breaks torch.load(weights_only=True).
+            return float(floor + 0.5 * (peak - floor) * (1.0 + np.cos(np.pi * pos)))
         if self.lr_warmup_steps <= 0:
             return self.learning_rate
         step = self.optimizer_steps
@@ -294,6 +362,15 @@ class TdLambdaTraining:
             _, meta = load_state_dict(self.model_save_path, device=self.device)
             opt_state = meta.get("optimizer_state_dict")
             if opt_state is not None:
+                # torch only validates group structure on load; a state saved for a
+                # different architecture would otherwise crash at the first step().
+                params = [p for g in self.optimizer.param_groups for p in g["params"]]
+                for key, entry in opt_state.get("state", {}).items():
+                    exp_avg = entry.get("exp_avg")
+                    if exp_avg is not None and tuple(exp_avg.shape) != tuple(params[int(key)].shape):
+                        print(f"Optimizer state in {self.model_save_path} does not match the "
+                              f"current architecture; starting Adam fresh")
+                        return
                 self.optimizer.load_state_dict(opt_state)
                 print(f"Loaded Adam optimizer state from {self.model_save_path}")
             else:
@@ -458,6 +535,19 @@ class TdLambdaTraining:
             values = self.board_evaluator(torch.from_numpy(states_np).float().to(self.device)).squeeze(-1).cpu().numpy()
         self.board_evaluator.train()
 
+        # Depth-2 bootstrap targets (E14): where the self-play loop computed a one-ply
+        # expectimax backup, bootstrap the λ-returns on it instead of the raw net value
+        # (NaN = terminal state or feature off → keep the net value). Exact-race values
+        # (below) still take precedence over this.
+        boot_arr = traj.get("bootstrap_values")
+        if boot_arr is not None:
+            boot_arr = np.asarray(boot_arr, dtype=np.float32)
+            boot_mask = ~np.isnan(boot_arr)
+            if boot_mask.any():
+                values = values.copy()
+                values[boot_mask] = boot_arr[boot_mask]
+
+
         # Exact-race states (bear-off DB): bootstrap on truth instead of the
         # net's own estimate, and train the race states toward the exact value.
         exact_mask = None
@@ -474,8 +564,24 @@ class TdLambdaTraining:
         if exact_mask is not None and exact_mask.any():
             targets[exact_mask] = exact_arr[exact_mask]
 
+        # Auxiliary side targets (#106), mover's perspective per state:
+        # col 0 — does this game end by pinning the start point (game-level);
+        # col 1 — final borne-off margin, normalized to [0,1].
+        aux_targets = None
+        if self.aux_heads_n > 0 and "win_by_pin" in traj:
+            persp_white = np.empty(T + 1, dtype=bool)
+            persp_white[:T] = movers_arr
+            persp_white[T] = not movers_arr[T - 1]
+            pieces = float(self.config.get_pieces_per_player())
+            bo_w = float(traj["final_borne_off_white"])
+            bo_b = float(traj["final_borne_off_black"])
+            margin_white = (bo_w - bo_b + pieces) / (2.0 * pieces)
+            aux_targets = np.empty((T + 1, self.aux_heads_n), dtype=np.float32)
+            aux_targets[:, 0] = 1.0 if traj["win_by_pin"] else 0.0
+            aux_targets[:, 1] = np.where(persp_white, margin_white, 1.0 - margin_white)
+
         # Push all T+1 (state, target) pairs into replay buffer.
-        self.replay.push_many(states_np, targets)
+        self.replay.push_many(states_np, targets, aux_targets)
 
         td_abs_sum = float(np.sum(np.abs(targets - values)))
         td_count = T + 1
@@ -493,8 +599,12 @@ class TdLambdaTraining:
             return
         if len(self.replay) < max(1, self.min_buffer_to_train):
             return
+        use_aux = self.aux_heads_n > 0
         for _ in range(self.updates_per_game):
-            states_np, targets_np = self.replay.sample(self.minibatch_size)
+            if use_aux:
+                states_np, targets_np, aux_np = self.replay.sample_aux(self.minibatch_size)
+            else:
+                states_np, targets_np = self.replay.sample(self.minibatch_size)
             if states_np is None:
                 return
             states_t = torch.from_numpy(states_np).float().to(self.device)
@@ -502,13 +612,49 @@ class TdLambdaTraining:
 
             self._set_lr(self._current_lr())
             self.optimizer.zero_grad()
-            logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
-            loss = F.binary_cross_entropy_with_logits(logits, targets_t)
+            if use_aux:
+                logits, aux_logits = self.board_evaluator.forward_aux_logits(states_t)
+                loss = F.binary_cross_entropy_with_logits(logits.squeeze(-1), targets_t)
+                aux_t = torch.from_numpy(aux_np).float().to(self.device)
+                loss = loss + self.aux_loss_weight * F.binary_cross_entropy_with_logits(aux_logits, aux_t)
+            else:
+                logits = self.board_evaluator.forward_logits(states_t).squeeze(-1)
+                loss = F.binary_cross_entropy_with_logits(logits, targets_t)
             loss.backward()
             if self.max_grad_norm > 0:
                 torch.nn.utils.clip_grad_norm_(self.board_evaluator.parameters(), self.max_grad_norm)
             self.optimizer.step()
             self.optimizer_steps += 1
+            self._update_ema()
+
+    def _update_ema(self):
+        """Blend the current parameters into the EMA shadow (no-op if EMA is off)."""
+        if self.ema_params is None:
+            return
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                self.ema_params[n].mul_(self.ema_decay).add_(p.detach(), alpha=1.0 - self.ema_decay)
+
+    def _ema_save_path(self):
+        root, ext = os.path.splitext(self.model_save_path)
+        return root + "_ema" + ext
+
+    def _save_ema_checkpoint(self):
+        """Swap the EMA weights into the evaluator, checkpoint them, then restore raw weights."""
+        backup = {n: p.detach().clone() for n, p in self.board_evaluator.named_parameters()}
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                p.copy_(self.ema_params[n])
+        save_checkpoint(self._ema_save_path(), self.board_evaluator, self.config, optimizer=None)
+        with torch.no_grad():
+            for n, p in self.board_evaluator.named_parameters():
+                p.copy_(backup[n])
+
+    def _save_checkpoint_with_ema(self):
+        """Save the raw checkpoint (with optimizer state) and, if EMA is on, the EMA shadow."""
+        save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+        if self.ema_params is not None:
+            self._save_ema_checkpoint()
 
     def _apply_trajectory(self, traj):
         """Ingest a trajectory and run a round of minibatch SGD updates."""
@@ -528,6 +674,12 @@ class TdLambdaTraining:
         """Self-play one full game in-process, collecting a trajectory dict matching the
         worker's output format. No mid-game weight updates."""
         game = Game(self.config)
+        if self.seed_pool is not None and random.random() < self.selfplay_seeded_fraction:
+            game.board, game.player = self.seed_pool.sample(self.config)
+        opponent, opponent_color = None, 0
+        if self.league_opponents and random.random() < self.selfplay_league_fraction:
+            opponent = self.league_opponents[random.randrange(len(self.league_opponents))]
+            opponent_color = WHITE if random.random() < 0.5 else BLACK
         log_fh = None
         if verbose_log_file:
             log_fh = open(verbose_log_file, 'w')
@@ -535,6 +687,7 @@ class TdLambdaTraining:
 
         states = [self.board_encoder.encode_board(game.board, game.current_player == WHITE)]
         exact_values = [self._state_exact_value(game)]
+        bootstrap_values = [self._state_bootstrap_value(game)]
         movers = []
 
         self.board_evaluator.eval()
@@ -551,13 +704,18 @@ class TdLambdaTraining:
                     game.switch_turn()
                     move = "pass"
                 else:
-                    move, score = self._select_move_self_play(game.board, possible_moves, current_player)
+                    if opponent is not None and current_player == opponent_color:
+                        move, score = opponent.get_best_move(game.board, possible_moves,
+                                                             current_player, lookahead_plies=1)
+                    else:
+                        move, score = self._select_move_self_play(game.board, possible_moves, current_player)
                     game.board.apply(move, current_player)
                     game.switch_turn()
 
                 movers.append(is_white_to_move)
                 states.append(self.board_encoder.encode_board(game.board, game.current_player == WHITE))
                 exact_values.append(self._state_exact_value(game))
+                bootstrap_values.append(self._state_bootstrap_value(game))
 
                 if log_fh:
                     log_fh.write(f"Player: {current_player}\n")
@@ -573,11 +731,16 @@ class TdLambdaTraining:
                 if game.is_over():
                     if log_fh:
                         log_fh.write(f"Game over. Winner is {game.get_winner()}.\n")
+                    winner = game.get_winner()
                     return {
                         "states": states,
                         "movers": movers,
                         "exact_values": exact_values,
-                        "terminal_winner_white": (game.get_winner() == WHITE),
+                        "bootstrap_values": bootstrap_values,
+                        "terminal_winner_white": (winner == WHITE),
+                        "win_by_pin": bool(game.board.captured_starting(winner)),
+                        "final_borne_off_white": int(game.board.borne_off[WHITE]),
+                        "final_borne_off_black": int(game.board.borne_off[BLACK]),
                         "plies": len(movers),
                         "game_seconds": time.perf_counter() - game_start_time,
                     }
@@ -641,7 +804,7 @@ class TdLambdaTraining:
             self._save_training_state()
 
             if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+                self._save_checkpoint_with_ema()
                 print(f"Model checkpoint saved at epoch {epoch + 1}")
 
             if (epoch + 1) % self.eval_every_epochs == 0:
@@ -659,7 +822,7 @@ class TdLambdaTraining:
         )
         print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-        save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+        self._save_checkpoint_with_ema()
         self._save_training_state()
         print(f"Model saved to {self.model_save_path}")
 
@@ -775,7 +938,7 @@ class TdLambdaTraining:
                 self._save_training_state()
 
                 if self.model_save_every_epochs > 0 and (epoch + 1) % self.model_save_every_epochs == 0:
-                    save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+                    self._save_checkpoint_with_ema()
                     print(f"Model checkpoint saved at epoch {epoch + 1}")
 
                 if (epoch + 1) % self.eval_every_epochs == 0:
@@ -793,7 +956,7 @@ class TdLambdaTraining:
             )
             print(f"Training mean |TD error|: {total_td_mae:.6f}")
 
-            save_checkpoint(self.model_save_path, self.board_evaluator, self.config, optimizer=self.optimizer)
+            self._save_checkpoint_with_ema()
             self._save_training_state()
             print(f"Model saved to {self.model_save_path}")
         finally:

@@ -27,6 +27,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 ./run.sh eval-gold-graph [x]           # Generate SVG progress chart
 ./run.sh eval-lookahead [total_games] [--workers N]  # Validate flexible search vs fixed 2-ply (gold self-play, parallel; default 1000)
 ./run.sh play                          # Human vs AI interactive game
+./run.sh rollout-lab [--apply ...]     # Disagreement mining + rollout-labeled fine-tune with gated promotion (ai/REFERENCE.md)
 ./run.sh tournament [num_runs] [seed]  # Run round-robin tournaments (see tournaments/)
 ```
 
@@ -58,7 +59,7 @@ that indexes its modules and points to its reference doc(s).
 
 **Current trained model**: `trained_model.pth` in the repo root. This is the live model updated by training. It contains both the network `state_dict` and Adam optimizer state (format_version=2).
 
-**Gold standard checkpoints**: `models/gold_v1.pth` … `models/gold_vN.pth`. These are frozen reference models used as eval opponents. Higher number = newer/better. The current gold reference is whichever version `gold_model_path` points to in `config/config.yml` — check that file to see which is active (currently `gold_v9.pth`). Gold files grow when the architecture changes (v9 is 1.9 MB vs v8's 652 KB because `hidden_sizes` grew from `[128,64]` to `[256,128,64]`).
+**Gold standard checkpoints**: `models/gold_v1.pth` … `models/gold_vN.pth`. These are frozen reference models used as eval opponents. Higher number = newer/better. The current gold reference is whichever version `gold_model_path` points to in `config/config.yml` — check that file to see which is active (currently `gold_v11.pth`, the depth-2 TD-bootstrap endpoint). Gold files grow when the architecture changes (v9 is 1.9 MB vs v8's 652 KB because `hidden_sizes` grew from `[128,64]` to `[256,128,64]`).
 
 **To promote the current trained model to a new gold standard**:
 ```bash
