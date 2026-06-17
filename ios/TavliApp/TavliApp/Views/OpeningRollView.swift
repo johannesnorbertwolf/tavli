@@ -164,7 +164,7 @@ struct OpeningRollView: View {
         case .idle:                     return String(localized: "Tap the board to roll")
         case .rolling:                  return String(localized: "Rolling…")
         case .tied(let h, let a):       return String(localized: "Tie (\(h) vs \(a)) — rolling again…")
-        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "AI goes first!")
+        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "Tavtav goes first!")
         }
     }
 
@@ -180,7 +180,7 @@ struct OpeningRollView: View {
                 HStack(spacing: 12) {
                     Button("You start") { startGame(humanColor) }
                         .buttonStyle(ChromeButton(role: .secondary))
-                    Button("AI starts") { startGame(humanColor.opponent) }
+                    Button("Tavtav starts") { startGame(humanColor.opponent) }
                         .buttonStyle(ChromeButton(role: .secondary))
                 }
             }
