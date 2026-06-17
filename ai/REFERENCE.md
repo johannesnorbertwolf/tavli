@@ -83,6 +83,12 @@ Smart features are computed in a single pass over the board slots, using running
 
 ## board_evaluator.py
 
+### Auxiliary heads (#106)
+
+`BoardEvaluator(input_size, hidden_sizes, aux_heads=0)`: with `aux_heads > 0`, an extra `Linear(last_hidden, aux_heads)` (`self.aux_head`, deliberately NOT in `self.layers` so legacy layer-name migration and the Core ML trace of `forward` are untouched) predicts side targets from the shared trunk. `forward_aux_logits(x)` returns `(main_logit, aux_logits)` in one trunk pass; `forward` / `forward_logits` are unchanged and ignore the head. Targets (computed in `_ingest_trajectory` from end-of-game fields in the trajectory dict, mover's perspective): col 0 = does the game end by pinning the start point; col 1 = final borne-off margin normalized to [0,1]. Loss adds `aux_loss_weight × BCE(aux)`. Checkpoints store `aux_heads` in metadata; `load_agent_from_checkpoint` rebuilds the head, and `main.py train` loads older checkpoints with `strict=False` (head starts fresh; the Adam group mismatch makes the optimizer start fresh too).
+
+
+
 `BoardEvaluator(input_size, hidden_sizes)` is a simple feed-forward neural network (MLP) that outputs a single win-probability scalar in [0, 1].
 
 **Architecture**: fully-connected layers with ReLU activations on all hidden layers, no activation on the output layer. Layers are stored in `self.layers` as an `nn.ModuleList`. The final layer has output size 1.
@@ -138,6 +144,45 @@ Config knobs: `use_bearoff_db` (default true) and `bearoff_db_path` (default `mo
 
 ---
 
+## net2net.py
+
+Function-preserving MLP widening for capacity expansions (`python main.py expand-net --to 512,256,128 [--checkpoint X] [--out Y] [--noise 1e-3]`). Used when the net has converged to the fixed point of its training signal at its current capacity: widening lets training continue from the same playing strength instead of from scratch (the [128,64] → [256,128,64] expansion preceded gold_v9).
+
+`widen_evaluator(evaluator, new_hidden_sizes, noise_std, seed)`: per hidden layer, each new unit copies an original unit (identity for the first `old_n`, uniform-random duplicates for the rest); the next layer's columns are divided by each source unit's duplicate count, so every pre-activation — and hence the output, exactly, under ReLU — is unchanged. Gaussian noise (`noise_std`) on the duplicated rows breaks the symmetry so copies diverge during training; with `noise_std=0` preservation is exact (unit-tested to 1e-6). Layer count must match and layers can only grow.
+
+`expand_checkpoint(in_path, out_path, new_hidden_sizes, config, ...)`: loads via `load_state_dict`, refuses non-current encoder versions, widens, saves via `save_checkpoint` **without optimizer state** (Adam starts fresh on resume; the trainer's shape guard would skip a stale state anyway), and prints the max output deviation over 512 random inputs as verification. After expanding, set `hidden_sizes` in `config/config.yml` to the new sizes before training (and consider resetting `optimizer_steps` in `training_state.json` to re-enable LR warmup).
+
+---
+
+## rollout_lab.py
+
+Offline improvement pass (issue #80) targeting compute at positions where the net is most likely wrong. Three phases, orchestrated by `run_rollout_lab()` and exposed as `./run.sh rollout-lab` / `python main.py rollout-lab`:
+
+1. **Mine** (`mine_games`): greedy 1-ply self-play games with the current checkpoint. Every `sample_every`-th non-race pre-roll state gets two values: `V_net(s)` (static net eval, mover perspective) and `V_search(s)` (`state_search_value`: expectation over the 21 weighted dice outcomes of the best 1-ply move score, exact bear-off equity at race leaves; a pass roll contributes `1 − V(board, opponent)`). The residual `|V_search − V_net|` measures the net's self-inconsistency — a TD-error magnitude under the net's own policy. Pure-race states are skipped (they already train on exact targets).
+2. **Label** (`label_positions` / `rollout_value`): two modes. `rollout` (default): the top-`top_k` residual states are labeled by `rollouts_per_position` Monte-Carlo playouts under the greedy 1-ply policy (both sides). A playout returns as soon as the position becomes an exact race — the bear-off DB equity stands in for the rest of the game — or a side wins; a `max_plies` guard (default 1000) falls back to the net value. Labels are mean returns from the mover's perspective. Rollouts run on `board.clone()`; the mined board is never mutated. `search2` (`--label search2`): deterministic depth-2 expectimax state value (`state_search_value(move_plies=2)`) — a TreeStrap-style policy-*improvement* label, useful once 1-ply-policy rollouts stop disagreeing with the net (~2 s/position; rollout count is ignored).
+3. **Fine-tune** (`fine_tune`): Adam + BCE-with-logits on the labeled set at small LR (default 1e-4, 2000 steps). Each minibatch is half labeled positions, half **anchors** — the non-top mined states pinned to their own pre-fine-tune net values — so the net only moves where rollouts disagree with it (a cheap trust region against catastrophic forgetting). Sets `.train()` for the duration and restores `.eval()` in a `finally`.
+
+Parallelism: `run_rollout_lab` splits mining+labeling across `num_workers` spawn-context processes (`_worker_mine_and_label`); each worker loads its own agent from the checkpoint, keeps its local top `top_k/num_workers` (approximate global top-k), and returns flat numpy arrays — `Board` objects never cross the process boundary. The labeled dataset is cached next to the candidate (`*_dataset.npz`) so fine-tune variants can re-run without re-mining.
+
+The candidate checkpoint is the **source payload with only `state_dict` swapped** — optimizer state and metadata are preserved so a promoted candidate resumes TD training like any mid-run checkpoint. Promotion is gated in `main.py`: head-to-head vs the source checkpoint (`evaluate_against_gold`, `--gate-games` per color); the candidate is only promoted (with `--apply`, after a one-sided z-test at p < 0.05) and the source is backed up first.
+
+CLI knobs: `--games 600 --top 4000 --rollouts 64 --steps 2000 --lr 1e-4 --workers 6 --gate-games 2000 --label rollout|search2 --checkpoint trained_model.pth --out models/rollout_candidate.pth --apply`.
+
+---
+
+## seed_pool.py
+
+Seeded-start self-play (issue #83, experiment E9): a coverage lever. Pure self-play funnels every game through the same opening distribution, so the states where the net is least self-consistent are visited too rarely for TD to fix them. This module builds a pool of those states offline and lets self-play start a configurable fraction of games from them. Both sides still play the current policy from the seed onward, so the learned values keep their on-policy meaning (unlike league play, which changes the value definition).
+
+**Build** (`build_seed_pool`, exposed as `python main.py seed-pool`): reuses `rollout_lab.mine_games` across `num_workers` spawn-context processes (`_worker_mine_seeds`) — greedy 1-ply self-play, every `sample_every`-th non-race pre-roll state measured for residual `|V_search − V_net|`. Boards are flattened to plain arrays (`board_to_arrays`: `n` int16, `color` int8, `pinned` bool, two borne-off counts) so no `Board` objects cross the process boundary. The global top `top_k` by residual is saved to a compressed npz (default `models/seed_pool.npz`, gitignored) together with `mover_is_white` and the residuals.
+
+**Consume**: when `selfplay_seeded_fraction > 0`, each worker (and the trainer's local path) loads a `SeedPool` once; `play_one_game_record` then starts that fraction of games from `SeedPool.sample()` — `board_from_arrays` reconstructs the board and the stored mover becomes the player to move — instead of `Board.initial`. Sampling uses the worker's seeded global `random` so runs stay reproducible. The trainer validates the pool file exists at construction (fails fast with a build hint); trajectories, TD ingestion, and λ-returns are unchanged — seeded games are simply shorter.
+
+CLI knobs: `--games 600 --every 2 --top 8000 --workers 6 --checkpoint trained_model.pth --out models/seed_pool.npz`. The pool is static for a run; rebuild it from the latest checkpoint between runs to track the net's current weak spots.
+
+---
+
+
 ## td_lambda_training.py
 
 Contains the training loop (`TdLambdaTraining`), the replay buffer (`ReplayBuffer`), and the λ-return computation (`compute_lambda_returns`).
@@ -166,7 +211,7 @@ where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted t
 
 The main orchestrator. Constructed with `(board_evaluator, board_encoder, config)`.
 
-**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `trained_model.pth`), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
+**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `model_save_path`, default `trained_model.pth`; skipped with a message when the saved state's tensor shapes don't match the current architecture), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `selfplay_seeded_fraction > 0` it also loads the `SeedPool` (failing fast if the pool file is missing); when `selfplay_league_fraction > 0` it loads each `selfplay_league_opponents` checkpoint as a frozen opponent agent (workers load their own copies). When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
 1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
@@ -195,9 +240,9 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, bear-off DB (cache load only — the trainer builds it before spawning), and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
 
-`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature)`: plays one full self-play game. At each step: roll dice, get legal moves, call `_select_self_play_move`, apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
+`play_one_game_record(agent, encoder, config, epsilon, exploration_temperature, seed_pool=None, seeded_fraction=0.0, league_opponents=None, league_fraction=0.0)`: plays one full self-play game. When a `SeedPool` is given, a `seeded_fraction` share of games starts from a sampled high-residual position instead of the initial board (see `seed_pool.py`). When `league_opponents` (a list of loaded `Agent`s) is given, a `league_fraction` share of games has one randomly chosen color played by a uniformly sampled opponent at 1-ply greedy with no exploration — league play (#83): diversifies the data-generating distribution at the cost of slightly off-policy values. At each step: roll dice, get legal moves, call `select_self_play_move` (or the opponent's `get_best_move` for its color), apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
-`_select_self_play_move`: ε-softmax over `agent.evaluate_moves` scores. With probability `1 - ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature`.
+`select_self_play_move` (shared by workers and the trainer's local-game path, which delegates to it): ε-softmax over 1-ply `agent.evaluate_moves` scores. With probability `1 − ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature` (always on the 1-ply scores). When `selfplay_2ply_margin > 0` (#90), a greedy decision whose runner-up is within the margin of the best is *escalated*: the top `selfplay_2ply_max_moves` candidates are re-scored at 2-ply and the deep best is played — targeted policy improvement at the ambiguous decisions only, keeping most plies at 1-ply cost.
 
 Workers always run in `eval()` mode (no gradient tracking). `torch.set_num_threads(1)` prevents thread contention between workers.
 
@@ -218,3 +263,13 @@ Both arms share the *same* weights, so each worker loads the checkpoint once and
 `evaluate_lookahead_selfplay(config, model_path, games_per_color, num_workers)` builds the full task list of `(flex_color, seed)` games, round-robins them into per-worker chunks, and runs each chunk in a `multiprocessing` *spawn* `Process`. Unlike training there is no weight queue (the model is static). Each worker sets `torch.set_num_threads(1)`, plays its games via `_play_one_game`, and **streams one result per game** (`{win, depth_hist, move_times}`) back through a shared `result_q`. The parent consumes results as they arrive and, every ~1% of the run, prints a live ASCII progress block (`_render_progress`): running win rate with a bar (`_bar`), the depth histogram so far, and an ETA (`_fmt_dur`) derived from wall-elapsed/games-done. This matters because a full run takes hours — the streaming output lets you watch it converge. The final summary adds the Wilson 95% CI, a two-sided binomial p-value vs 0.5 (`_wilson_interval`, `_two_sided_binomial_p`), the full depth histogram (the "how far did it actually look" answer), and avg/median/min/max flexible move time.
 
 Because each flexible move runs the depth-capped search (~5–6s at the default knobs) and a game has ~46 flexible moves, a game takes ~4 min; a full `total_games=1000` run is ~12 hours even on 6 workers — start it yourself rather than expecting it to finish inline.
+
+## paired_eval.py
+
+Variance-reduced head-to-head of two checkpoints A and B via **duplicate dice (common random numbers)**, for resolving small strength differences that a plain head-to-head can't separate from noise. Invoked via `python main.py eval-paired <model_a> <model_b> [num_pairs] [--workers N]`.
+
+Each *pair* k uses one seed `s_k`. The same seed is set (`random.seed`/`np.random.seed`) before **both** orientations, so they draw the identical dice stream:
+- o1: White=A, Black=B → winner1 (A won iff winner1==WHITE)
+- o2: White=B, Black=A → winner2 (A won iff winner2==BLACK)
+
+with `a_wins_k = [A won o1] + [A won o2] ∈ {0,1,2}` and `d_k = a_wins_k − 1 ∈ {−1,0,+1}`. Sharing the dice cancels luck and playing both sides cancels the ~3pp first-mover edge, so a pair is decided only where the two models actually *disagree*; for near-identical models most pairs cancel to `d_k=0` and the estimator's variance collapses. The test is one-sided on `mean(d_k)`: `z = mean(d_k)·√n / std(d_k)`, significant at p<0.05 iff `z > 1.645`. The win-rate identity `rate = 0.5 + mean(d_k)/2` makes the result comparable to a plain head-to-head percentage. **Invariant** (and unit test): A vs itself yields `d_k = 0` for every pair, since the two orientations are byte-identical deterministic games. `run_pairs(agent_a, agent_b, config, seeds, lookahead)` is the single-process core (tested directly); `_worker` loads both checkpoints once per spawn process and streams `(d_k, a_wins_k)` to the parent, which prints a live block (running rate, z, decisive ±/tie counts, variance-reduction factor) and a final summary. Bear-off DB stays on (deployment-realistic); races are then identical for both models and cancel automatically.

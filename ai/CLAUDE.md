@@ -11,10 +11,14 @@ or modifying anything here.
 | `board_evaluator.py` | `BoardEvaluator` MLP → win prob ∈ [0,1]. `forward` (sigmoid) vs `forward_logits` (raw). |
 | `checkpoint_io.py` | Save/load checkpoints (format_version=2, with Adam state). Encoder-version + legacy-layer-name back-compat. |
 | `bearoff.py` | Exact race equity: one-sided bear-off database (`BearoffDB`, DP over dice outcomes, disk-cached npz) + exact-race detector (`race_state`) + `exact_value_on_roll`. Replaces net evals and TD targets with ground truth in pure races. |
+| `net2net.py` | Function-preserving MLP widening for capacity expansions (`main.py expand-net --to 512,256,128`): duplicate hidden units, rescale downstream columns, small noise to break symmetry. Expanded checkpoints carry no optimizer state. |
+| `rollout_lab.py` | Offline disagreement mining + rollout-labeled fine-tuning (#80): mine states where `V_net` and one-roll expectimax disagree, label by race-truncated rollouts, fine-tune with anchor regularization. Gated promotion via `main.py rollout-lab`. |
+| `seed_pool.py` | Seeded-start self-play (#83): build a pool of high-residual positions (`main.py seed-pool`); workers start `selfplay_seeded_fraction` of games from sampled pool states instead of the initial board. Coverage lever; values stay on-policy. |
 | `td_lambda_training.py` | Training loop (`TdLambdaTraining`), `ReplayBuffer`, `compute_lambda_returns`. Forward-view TD(λ), Adam, parallel self-play workers. |
 | `self_play_worker.py` | Worker subprocess: plays self-play games, streams trajectories to the trainer. |
 | `evaluator.py` | Older vs-random eval helper (`AIEvaluator`); likely vestigial. |
 | `lookahead_eval.py` | Parallel harness: flexible search vs fixed 2-ply (gold self-play) to validate deeper search. |
+| `paired_eval.py` | Variance-reduced head-to-head (`main.py eval-paired A B [pairs]`): plays each trial twice on the SAME seeded dice (A-White-vs-B and B-White-vs-A), cancelling dice luck + first-mover edge. Paired one-sided z-test on `d_k∈{-1,0,+1}`; far more power per game for near-identical models. Self-comparison ⇒ all `d_k=0`. |
 
 ## Conventions / gotchas
 

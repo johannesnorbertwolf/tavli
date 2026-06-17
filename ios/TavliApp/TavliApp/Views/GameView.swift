@@ -473,7 +473,7 @@ private struct TurnIndicatorView: View {
         case .awaitingRoll:      return String(localized: "\(name)'s turn")
         case .picking:           return String(localized: "Pick a checker")
         case .moving:            return String(localized: "Choose destination")
-        case .aiThinking:        return String(localized: "AI thinking…")
+        case .aiThinking:        return String(localized: "Tavtav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
         case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         }
@@ -485,7 +485,7 @@ private struct TurnIndicatorView: View {
     private var diceSubtitle: String? {
         if diceMode == .manual {
             let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-            return isAITurn ? String(localized: "Enter the AI's dice") : String(localized: "Enter your dice")
+            return isAITurn ? String(localized: "Enter Tavtav's dice") : String(localized: "Enter your dice")
         }
         return autoRoll ? nil : String(localized: "Tap dice to roll")
     }

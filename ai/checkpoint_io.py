@@ -50,6 +50,7 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
             "board_spec": obj.get("board_spec", {}),
             "optimizer_state_dict": obj.get("optimizer_state_dict"),
             "format_version": obj.get("format_version", 1),
+            "aux_heads": obj.get("aux_heads", 0),
         }
         return _migrate_state_dict(obj["state_dict"]), meta
 
@@ -61,6 +62,7 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
         "board_spec": {},
         "optimizer_state_dict": None,
         "format_version": 1,
+        "aux_heads": 0,
     }
     return _migrate_state_dict(obj), meta
 
@@ -73,6 +75,7 @@ def save_checkpoint(path: str, evaluator, config, optimizer=None) -> None:
         "hidden_sizes": evaluator.hidden_sizes,
         "board_spec": _board_spec_from_config(config),
         "format_version": CHECKPOINT_FORMAT_VERSION,
+        "aux_heads": getattr(evaluator, "aux_heads", 0),
     }
     if optimizer is not None:
         payload["optimizer_state_dict"] = optimizer.state_dict()
@@ -89,7 +92,8 @@ def load_agent_from_checkpoint(path: str, config, device: Optional[torch.device]
         device = torch.device("cpu")
     state_dict, meta = load_state_dict(path, device=device)
     encoder = BoardEncoder(config, version=meta["encoder_version"])
-    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"]).to(device)
+    evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"],
+                               aux_heads=meta.get("aux_heads", 0)).to(device)
     evaluator.load_state_dict(state_dict)
     evaluator.eval()
     bearoff = None

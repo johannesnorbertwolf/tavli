@@ -89,6 +89,9 @@ class ConfigLoader:
     def get_training_state_path(self):
         return self.config.get("training_state_path", "training_state.json")
 
+    def get_model_save_path(self):
+        return self.config.get("model_save_path", "trained_model.pth")
+
     def get_state_save_every_games(self):
         return self.config.get("state_save_every_games", 100)
 
@@ -134,6 +137,18 @@ class ConfigLoader:
     def get_lr_warmup_steps(self):
         return int(self.config.get("lr_warmup_steps", 1000))
 
+    def get_lr_restart_period_games(self):
+        # SGDR warm restarts (E16): self-play games per cosine cycle; 0 = off.
+        return int(self.config.get("lr_restart_period_games", 0))
+
+    def get_lr_restart_peak_factor(self):
+        # Peak LR of each cycle as a multiple of learning_rate (e.g. 5.0 = 5x base).
+        return float(self.config.get("lr_restart_peak_factor", 1.0))
+
+    def get_lr_restart_min_factor(self):
+        # Floor LR of each cycle as a fraction of learning_rate (cosine anneal target).
+        return float(self.config.get("lr_restart_min_factor", 0.05))
+
     def get_replay_buffer_capacity(self):
         return int(self.config.get("replay_buffer_capacity", 50000))
 
@@ -145,6 +160,36 @@ class ConfigLoader:
 
     def get_min_buffer_to_train(self):
         return int(self.config.get("min_buffer_to_train", 2000))
+
+    def get_selfplay_2ply_margin(self):
+        return float(self.config.get("selfplay_2ply_margin", 0.0))
+
+    def get_selfplay_2ply_max_moves(self):
+        return int(self.config.get("selfplay_2ply_max_moves", 4))
+
+    def get_selfplay_seeded_fraction(self):
+        return float(self.config.get("selfplay_seeded_fraction", 0.0))
+
+    def get_selfplay_league_fraction(self):
+        return float(self.config.get("selfplay_league_fraction", 0.0))
+
+    def get_selfplay_league_opponents(self):
+        return list(self.config.get("selfplay_league_opponents", []) or [])
+
+    def get_aux_heads(self):
+        return int(self.config.get("aux_heads", 0))
+
+    def get_aux_loss_weight(self):
+        return float(self.config.get("aux_loss_weight", 0.3))
+
+    def get_ema_decay(self):
+        return float(self.config.get("ema_decay", 0.0))
+
+    def get_bootstrap_depth(self):
+        return int(self.config.get("bootstrap_depth", 1))
+
+    def get_selfplay_seed_pool_path(self):
+        return self.config.get("selfplay_seed_pool_path", "models/seed_pool.npz")
 
     def get_use_bearoff_db(self):
         return bool(self.config.get("use_bearoff_db", True))

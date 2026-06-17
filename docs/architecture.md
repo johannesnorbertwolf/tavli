@@ -62,16 +62,28 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 |---|---|
 | `discount_factor` | γ — use `1.0` for terminal-reward games |
 | `lambda_start/end` | TD(λ) — forward-view weighting of n-step returns |
+| `bootstrap_depth` | 1 = bootstrap λ-returns on the raw net value. 2 (E14, **KEPT**) = bootstrap on a one-ply expectimax backup of the net (averaged over the 21 dice via `Agent.position_value_lookahead`, threaded through the trajectory as `bootstrap_values`); exact-race values still take precedence. ~17× slower self-play. First signal change to beat the gate since gold_v10: +0.5pp at z=2.34 (p=0.0097) in a 40k-game paired duplicate-dice gate |
 | `epsilon_start/end/decay` | Exploration schedule |
 | `max_grad_norm` | Global L2 clip on gradients pre-Adam (0 = off) |
 | `hidden_sizes` | Network width list, e.g. `[128, 64]` |
 | `learning_rate` | Adam lr |
 | `lr_warmup_steps` | Linear warmup `0.1·lr → lr` over this many optimizer steps (0 = off) |
+| `lr_restart_period_games` | SGDR warm restarts (E16): self-play games per cosine cycle, keyed on `global_game_num`; `0` = off (linear warmup applies instead). Each cycle anneals `peak → floor` then jumps back to peak. **Off — measured worse:** a 5×-peak schedule over 50k games scored 48.34% (paired z=−7.64) vs the depth-2 fixed point; the net is at a genuine optimum, not a sharp escapable basin |
+| `lr_restart_peak_factor` / `lr_restart_min_factor` | Cycle peak / floor LR as a multiple / fraction of `learning_rate` (only read when `lr_restart_period_games > 0`) |
 | `replay_buffer_capacity` | Sample capacity of replay buffer |
 | `minibatch_size` | SGD minibatch size |
 | `updates_per_game` | Adam steps run per ingested trajectory |
 | `min_buffer_to_train` | Don't start training until buffer holds this many samples |
 | `model_save_every_epochs` | Periodic mid-run checkpoint saves |
+| `selfplay_2ply_margin` | Self-play decisions whose 1-ply runner-up is within this absolute margin of the best are re-scored at 2-ply (top candidates only); 0 disables. Targeted policy improvement (#90) |
+| `selfplay_2ply_max_moves` | Max candidates re-scored at 2-ply on escalation |
+| `selfplay_seeded_fraction` | Fraction of self-play games started from a sampled seed-pool position instead of the initial board (#83); 0 disables. Trainer fails fast if the pool file is missing |
+| `selfplay_seed_pool_path` | npz pool of high-residual pre-roll positions, built offline via `python main.py seed-pool` (gitignored) |
+| `selfplay_league_fraction` | Fraction of self-play games with one randomly-chosen side played by a frozen opponent from `selfplay_league_opponents` (1-ply greedy, no exploration); 0 disables. Diversifies the data distribution (#83) |
+| `selfplay_league_opponents` | List of opponent checkpoint paths, sampled uniformly per league game (any encoder version — each loads its own agent) |
+| `aux_heads` | Auxiliary output heads (#106): 0 = off; 2 adds [P(game ends by pinning), final borne-off margin] as side targets sharing the trunk. Training-only — eval/play/Core ML use the main head; old checkpoints load with the head initialized fresh |
+| `aux_loss_weight` | Weight of the aux BCE term added to the main value loss |
+| `model_save_path` | Live checkpoint path (default `trained_model.pth`); training resumes weights + Adam state from it. `config-test.yml` points it at a test-local file so tests never touch live artifacts |
 | `gold_model_path` | Reference model for eval |
 | `use_bearoff_db` | Exact race equity from the bear-off DB (`ai/bearoff.py`): replaces net evals at search leaves and TD bootstrap values/targets for pure-race states (no pins, all checkers home). `false` in `config-test.yml` to keep tests fast |
 | `bearoff_db_path` | Disk cache of the one-sided bear-off DB (npz, ~54k states, built once in ~1 min, gitignored) |

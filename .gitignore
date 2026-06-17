@@ -9,6 +9,9 @@ __pycache__/
 .idx/
 trained_model.pth
 models/bearoff_db.npz
+models/exp_*
+models/rollout_candidate*
+*_pre_rollout_backup.pth
 last_game_log.txt
 training_log_td.txt
 nohup.out
@@ -20,3 +23,6 @@ local_tools/
 tournament_results/
 tournament_log.txt
 tournament_full.log
+test_trained_model.pth
+test_training_state.json
+models/seed_pool*
