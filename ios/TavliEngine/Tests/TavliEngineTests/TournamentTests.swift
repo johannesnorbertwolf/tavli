@@ -206,11 +206,11 @@ final class TournamentTests: XCTestCase {
 
     // ── Defaults + persistence round-trip ───────────────────────────────────────
 
-    func testMakeDefaultSeedsGroupAndTavtav() {
+    func testMakeDefaultSeedsGroupAndTavTav() {
         let t = Tournament.makeDefault()
         // The eight human guests plus the AI player.
         XCTAssertEqual(t.players.count, Tournament.defaultPlayerNames.count + 1)
-        XCTAssertEqual(t.aiPlayer?.name, "Tavtav")
+        XCTAssertEqual(t.aiPlayer?.name, "TavTav")
         XCTAssertTrue(t.hasAI)
         XCTAssertEqual(t.players.filter(\.isAI).count, 1)
         XCTAssertTrue(t.players.contains { $0.name == "Norbert" })

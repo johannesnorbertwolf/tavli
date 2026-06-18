@@ -23,19 +23,29 @@ final class TournamentModel: ObservableObject {
     /// Display names of the currently-connected peers (for the Setup indicator).
     @Published private(set) var peerNames: [String] = []
 
+    /// In-app AI games saved on this device (newest first), shown in the Setup list.
+    /// Local-only — never synced. Refreshed from disk via `reloadSavedGames()` at the
+    /// moments it's displayed (Setup appears, a game closes); the per-move autosave
+    /// during a game writes straight to `gamesStore` without republishing this.
+    @Published private(set) var savedGames: [SavedTournamentGame] = []
+
     /// Stable per-install id: the last-writer-wins tiebreak and the sync identity.
     let deviceID: UUID
 
     private let store: TournamentStore
+    private let gamesStore: TournamentGameStore
     private let sync: SyncTransport?
 
-    init(store: TournamentStore = .default(), sync: SyncTransport? = nil) {
+    init(store: TournamentStore = .default(),
+         gamesStore: TournamentGameStore = .default(),
+         sync: SyncTransport? = nil) {
         self.store = store
+        self.gamesStore = gamesStore
         self.deviceID = TournamentModel.loadDeviceID()
         if let loaded = store.load() {
             self.tournament = loaded
         } else {
-            let fresh = Tournament.makeDefault()   // seeds the AI player (Tavtav)
+            let fresh = Tournament.makeDefault()   // seeds the AI player (TavTav)
             self.tournament = fresh
             store.save(fresh)
         }
@@ -44,6 +54,7 @@ final class TournamentModel: ObservableObject {
         self.sync = sync ?? MultipeerTransport(
             deviceName: "\(UIDevice.current.name) · \(deviceID.uuidString.prefix(4))",
             deviceID: deviceID)
+        self.savedGames = gamesStore.list()
         configureSync()
     }
 
@@ -157,6 +168,42 @@ final class TournamentModel: ObservableObject {
                                         humanColor: humanColor, winner: winner)
         setFinaleWinner(w)
     }
+
+    /// Map a finished saved game's winner back onto the tournament. Works for a
+    /// freshly-played *and* a resumed game (it carries its own match/player ids), so
+    /// a match interrupted and finished later still counts. Practice games, and games
+    /// whose match/players no longer exist, record nothing.
+    func recordOutcome(for saved: SavedTournamentGame, winner: Color) {
+        guard let human = player(saved.humanPlayerID),
+              let ai = player(saved.aiPlayerID) else { return }
+        switch saved.kind {
+        case .match:
+            guard let matchID = saved.matchID,
+                  matches.contains(where: { $0.id == matchID }) else { return }
+            recordAIMatch(matchID: matchID, human: human, ai: ai,
+                          humanColor: saved.humanColor, winner: winner)
+        case .finale:
+            recordFinaleGame(human: human, ai: ai, humanColor: saved.humanColor, winner: winner)
+        case .practice:
+            break
+        }
+    }
+
+    // ── Saved in-app games (local-only, never synced) ──────────────────────────────
+
+    /// Write `game` to its per-game file (every move, on game over, and on the way
+    /// out). Does not republish `savedGames` — that's refreshed when the list is next
+    /// shown — so the autosave never churns the views behind the live game.
+    func persistGame(_ game: SavedTournamentGame) { gamesStore.save(game) }
+
+    func deleteSavedGame(id: UUID) {
+        gamesStore.delete(id: id)
+        reloadSavedGames()
+    }
+
+    /// Re-read the saved games from disk and republish. Called when the Setup list
+    /// appears and after a game closes.
+    func reloadSavedGames() { savedGames = gamesStore.list() }
 
     // ── Device identity ──────────────────────────────────────────────────────────
 

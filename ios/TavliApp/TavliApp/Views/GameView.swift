@@ -35,12 +35,14 @@ struct GameView: View {
     /// Weltsensation: the AI opponent's display name (the real, possibly-renamed
     /// player), used by the German loss verdict. Only consulted in tournament mode.
     var tournamentOpponentName: String? = nil
-    /// Weltsensation recovery hook: when non-nil (a tournament AI game) and the game
-    /// is still running in auto-roll, a quiet "Am echten Brett – neu starten" button
-    /// appears that restarts the game into manual ("real board") dice entry — the
-    /// clean fix for having started in auto by mistake. Records nothing; nil in the
-    /// normal app, so it's never shown there.
-    var tournamentRestart: (() -> Void)? = nil
+    /// Whether the chrome shows the Back affordance. The normal app keeps it (returns
+    /// to the picker); the tournament hides it (#: the only way out of a game is to
+    /// give up, which concedes the match but keeps the game resumable).
+    var showsBackButton: Bool = true
+    /// Override for the "give up" confirmation's final action. When set (tournament),
+    /// the player concedes-and-leaves instead of the default in-place resignation:
+    /// the handler records the loss, keeps the in-progress game saved, and exits.
+    var onGiveUp: (() -> Void)? = nil
 
     @State private var showingSaveDialog = false
     @State private var saveName = ""
@@ -86,13 +88,6 @@ struct GameView: View {
     /// both players' rolls — the human enters the AI's dice too.
     private var manualDiceActive: Bool {
         diceMode == .manual && session.phase == .awaitingRoll
-    }
-
-    /// Weltsensation recovery affordance: offered only in a tournament AI game
-    /// (`tournamentRestart` set) that is still running in auto-roll. Hidden once the
-    /// game is already manual or over, and never present in the normal app.
-    private var showManualRestart: Bool {
-        tournamentRestart != nil && diceMode != .manual && !session.isTerminal
     }
 
     var body: some View {
@@ -147,9 +142,6 @@ struct GameView: View {
                             if !session.isTerminal {
                                 ControlsView(session: session)
                             }
-                            if showManualRestart {
-                                ManualRestartButton { tournamentRestart?() }
-                            }
                         }
                         .padding(.horizontal, 16)
                         PlayableBoardView(session: session, flipped: flipped,
@@ -160,10 +152,9 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
 
-                    // Portrait keeps the debug toggle floating top-trailing — it sits
-                    // over the empty band, clear of the single top bar. (Landscape
-                    // docks it inside the panel so it can't cover the chrome, #101.)
-                    VStack(alignment: .trailing, spacing: 8) {
+                    // The TavTav logo gets the top-right as its own tile; the debug
+                    // toggle (and its pane) move to the top-LEFT band to clear it.
+                    VStack(alignment: .leading, spacing: 8) {
                         DebugToggleButton(isOn: $showDebugPane)
                         if showDebugPane {
                             DebugOverlay(session: session,
@@ -171,9 +162,18 @@ struct GameView: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.15), value: showDebugPane)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
+
+                    // Logo tile, top-right corner — floats over the empty band so it
+                    // never pushes the board down.
+                    TavTavLogo()
+                        .frame(width: 180)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, 8)
+                        .padding(.trailing, 16)
+                        .allowsHitTesting(false)
                 }
 
                 if case .gameOver(let winner) = session.phase {
@@ -186,7 +186,8 @@ struct GameView: View {
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
                                    onDrill: { showDrill = true },
-                                   tournamentExit: tournamentExit)
+                                   tournamentExit: tournamentExit,
+                                   mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -229,13 +230,18 @@ struct GameView: View {
             } message: {
                 Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
             }
-            // Standard confirmation (#74). Confirming ends the game (AI recorded as
-            // winner) and clears the auto-save slot via `onAutosave` — the same path a
-            // played-out loss takes through the per-move auto-save hook below.
+            // Standard confirmation (#74). The default ends the game in place (AI
+            // recorded as winner) and clears the auto-save slot via `onAutosave`. In
+            // the tournament `onGiveUp` takes over: it concedes the match but keeps
+            // the in-progress game saved (resumable) and returns to the tournament.
             .alert("Are you sure you want to give up?", isPresented: $showSurrenderConfirm) {
                 Button("Give up", role: .destructive) {
-                    session.surrender()
-                    onAutosave()
+                    if let onGiveUp {
+                        onGiveUp()
+                    } else {
+                        session.surrender()
+                        onAutosave()
+                    }
                 }
                 Button("Keep playing", role: .cancel) {}
             }
@@ -279,7 +285,7 @@ struct GameView: View {
         let humanWon = winner == humanColor
         if tournamentExit != nil {
             if humanWon { return "Sensationell!" }
-            return "\(tournamentOpponentName ?? "Tavtav") war stärker."
+            return "\(tournamentOpponentName ?? "TavTav") war stärker."
         }
         return humanWon ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
     }
@@ -322,8 +328,11 @@ struct GameView: View {
     // Resign live here (not floating over the board), with Undo/Done beneath them.
     private var sidePanel: some View {
         VStack(spacing: 14) {
+            TavTavLogoTile()
             HStack {
-                BackButton(action: onBack)
+                if showsBackButton {
+                    BackButton(action: onBack)
+                }
                 SettingsButton { showSettings = true }
                 Spacer(minLength: 0)
                 DebugToggleButton(isOn: $showDebugPane)
@@ -360,9 +369,6 @@ struct GameView: View {
                 }
                 ControlsView(session: session)
             }
-            if showManualRestart {
-                ManualRestartButton { tournamentRestart?() }
-            }
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }
@@ -371,7 +377,9 @@ struct GameView: View {
     // counters trailing. The turn status lives down by the board, not here.
     private var portraitTopBar: some View {
         HStack(spacing: 8) {
-            BackButton(action: onBack)
+            if showsBackButton {
+                BackButton(action: onBack)
+            }
             SettingsButton { showSettings = true }
             if !session.isTerminal {
                 SaveButton(action: presentSaveDialog)
@@ -379,9 +387,9 @@ struct GameView: View {
                     .disabled(!session.canSurrender)
                     .opacity(session.canSurrender ? 1 : 0.4)
             }
-            Spacer(minLength: 16)
             BorneOffView(session: session, color: .white)
             BorneOffView(session: session, color: .black)
+            Spacer(minLength: 16)
         }
     }
 }
@@ -429,23 +437,6 @@ private struct SurrenderButton: View {
             }
         }
         .buttonStyle(ChromeButton(role: .destructive))
-    }
-}
-
-/// Weltsensation recovery: a quiet, deliberately low-key restart that re-arms
-/// manual ("real board") dice entry, for when a tournament AI game was started in
-/// auto-roll by mistake. Shown only via `tournamentRestart` (see `showManualRestart`).
-private struct ManualRestartButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.counterclockwise")
-                Text("Am echten Brett – neu starten")
-            }
-        }
-        .buttonStyle(ChromeButton(role: .quiet))
     }
 }
 
@@ -524,7 +515,7 @@ private struct TurnIndicatorView: View {
         case .awaitingRoll:      return String(localized: "\(name)'s turn")
         case .picking:           return String(localized: "Pick a checker")
         case .moving:            return String(localized: "Choose destination")
-        case .aiThinking:        return String(localized: "Tavtav thinking…")
+        case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
         case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         }
@@ -536,7 +527,7 @@ private struct TurnIndicatorView: View {
     private var diceSubtitle: String? {
         if diceMode == .manual {
             let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-            return isAITurn ? String(localized: "Enter Tavtav's dice") : String(localized: "Enter your dice")
+            return isAITurn ? String(localized: "Enter TavTav's dice") : String(localized: "Enter your dice")
         }
         return autoRoll ? nil : String(localized: "Tap dice to roll")
     }
@@ -636,9 +627,15 @@ private struct WinOverlayView: View {
     /// Tournament mode (#weltsensation): when set, the primary action returns to
     /// the tournament instead of replaying the game.
     var tournamentExit: (() -> Void)? = nil
+    /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
+    /// `nil` in human-vs-human games (no mascot shown).
+    var mascot: TavTavPersona? = nil
 
     var body: some View {
         VStack(spacing: 28) {
+            if let mascot {
+                TavTavAvatar(persona: mascot, size: 108)
+            }
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)

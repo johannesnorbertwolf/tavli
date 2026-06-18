@@ -5,17 +5,21 @@ private typealias SColor = SwiftUI.Color
 private typealias EngineColor = TavliEngine.Color
 
 /// What an in-app game is being played for. A `match`/`finale` records its
-/// outcome onto the tournament; `practice` is an unscored game vs the AI.
+/// outcome onto the tournament; `practice` is an unscored game vs the AI;
+/// `resume` re-opens a previously-saved game (from the Setup list) at its last
+/// position, carrying its own identity so a resumed match still records its result.
 enum GameContext: Identifiable {
     case match(TournamentMatch)
     case finale(Finale)
     case practice
+    case resume(SavedTournamentGame)
 
     var id: String {
         switch self {
-        case .match(let m):  return "match-\(m.id.uuidString)"
-        case .finale:        return "finale"
-        case .practice:      return "practice"
+        case .match(let m):   return "match-\(m.id.uuidString)"
+        case .finale:         return "finale"
+        case .practice:       return "practice"
+        case .resume(let g):  return "resume-\(g.id.uuidString)"
         }
     }
 }
@@ -38,8 +42,23 @@ struct TournamentRootView: View {
                 .tabItem { Label("Setup", systemImage: "person.2.fill") }
         }
         .tint(ChromeTheme.undoTint)
+        // Persistent brand mark across all three tabs. Top-trailing is the only
+        // corner free on every tab (titles sit centred/leading; the tab bar owns
+        // the bottom). Non-interactive so it never eats a tap; hidden during a
+        // game (the full-screen cover sits on top, and the game has its own
+        // in-chrome mascot).
+        .overlay(alignment: .topTrailing) {
+            TavTavLogo()
+                .frame(width: 96)
+                .padding(.top, 14)
+                .padding(.trailing, 16)
+                .allowsHitTesting(false)
+        }
         .fullScreenCover(item: $game) { ctx in
-            TournamentGameFlow(model: model, context: ctx, onClose: { game = nil })
+            TournamentGameFlow(model: model, context: ctx, onClose: {
+                game = nil
+                model.reloadSavedGames()   // surface the just-played/-saved game in Setup
+            })
         }
     }
 
@@ -47,9 +66,11 @@ struct TournamentRootView: View {
 }
 
 /// Drives one in-app AI game: pick the human's colour → opening roll → the full
-/// `GameView`. On game over the result is recorded onto the originating match or
-/// finale (practice records nothing). The win overlay / back both route to
-/// `onClose`, returning to the tournament with the standings refreshed.
+/// `GameView` (a `.resume` context skips straight to the board). The game is
+/// **auto-saved after every move** under a stable per-game record, so an interrupted
+/// game is never lost and can be re-opened from the Setup list. On game over the
+/// result is recorded onto the originating match or finale (practice records
+/// nothing). The win overlay / back both route to `onClose`.
 private struct TournamentGameFlow: View {
     @ObservedObject var model: TournamentModel
     let context: GameContext
@@ -58,17 +79,23 @@ private struct TournamentGameFlow: View {
     @State private var humanColor: EngineColor?
     @State private var session: GameSession?
 
+    /// The persistent record for the live game (its stable identity + metadata).
+    /// Set once the session is built; `persist()` rewrites it after every move.
+    @State private var saved: SavedTournamentGame?
+
     /// Whether this game is played on the real board with the dice keyed in by hand
     /// (the quiet "Am echten Brett" opt-in on the colour screen). Off = the obvious
     /// path: auto-roll on the iPad. Reset per game (a fresh flow each launch).
     @State private var manualDice = false
 
-    // Resolve the human / AI sides up front (captured into `onGameOver`).
+    // Resolve the human / AI sides up front (captured into the saved record). A
+    // `resume` game carries its own identity, so these are unused there.
     private var ai: TournamentPlayer? {
         switch context {
         case .match(let m):  return model.humanAndAI(in: m)?.ai
         case .finale(let f): return model.humanAndAI(in: f)?.ai
         case .practice:      return model.aiPlayer
+        case .resume:        return nil
         }
     }
 
@@ -77,20 +104,31 @@ private struct TournamentGameFlow: View {
         case .match(let m):  return model.humanAndAI(in: m)?.human
         case .finale(let f): return model.humanAndAI(in: f)?.human
         case .practice:      return nil
+        case .resume:        return nil
         }
+    }
+
+    private var isResume: Bool {
+        if case .resume = context { return true }
+        return false
     }
 
     var body: some View {
         Group {
-            if ai == nil {
-                invalidView
-            } else if let session {
+            if let session {
                 GameView(session: session,
                          humanColor: humanColor ?? .white,
-                         onBack: onClose,
+                         onAutosave: persist,
                          tournamentExit: onClose,
-                         tournamentOpponentName: ai?.name,
-                         tournamentRestart: restartManual)
+                         tournamentOpponentName: saved?.aiName,
+                         showsBackButton: false,
+                         onGiveUp: giveUp)
+            } else if isResume {
+                // Build the resumed session once, then fall into the GameView branch.
+                Weltsensation.page.ignoresSafeArea()
+                    .onAppear(perform: startResume)
+            } else if ai == nil {
+                invalidView
             } else if let hc = humanColor {
                 OpeningRollView(humanColor: hc,
                                 onStart: { starter in start(humanColor: hc, starter: starter) },
@@ -140,7 +178,7 @@ private struct TournamentGameFlow: View {
     }
 
     private var titleText: String {
-        let opponent = ai?.name ?? "Tavtav"
+        let opponent = ai?.name ?? "TavTav"
         switch context {
         case .match, .practice:
             if let human { return "\(human.name) gegen \(opponent)" }
@@ -148,6 +186,8 @@ private struct TournamentGameFlow: View {
         case .finale:
             if let human { return "Finale: \(human.name) gegen \(opponent)" }
             return "Finale gegen \(opponent)"
+        case .resume:
+            return ""
         }
     }
 
@@ -186,10 +226,10 @@ private struct TournamentGameFlow: View {
         ZStack {
             Weltsensation.page.ignoresSafeArea()
             VStack(spacing: 16) {
-                Text("Kein Spiel gegen \(model.aiPlayer?.name ?? "Tavtav") möglich")
+                Text("Kein Spiel gegen \(model.aiPlayer?.name ?? "TavTav") möglich")
                     .font(ChromeType.headline)
                     .foregroundStyle(ChromeTheme.ink)
-                Text("In dieser Partie spielt \(model.aiPlayer?.name ?? "Tavtav") nicht mit.")
+                Text("In dieser Partie spielt \(model.aiPlayer?.name ?? "TavTav") nicht mit.")
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -201,15 +241,6 @@ private struct TournamentGameFlow: View {
     }
 
     // MARK: - Build the session
-
-    /// Recovery for "started in auto by mistake": re-arm manual dice entry and drop
-    /// back to the opening roll for the same colour. The in-progress session is
-    /// discarded (it recorded nothing — no game-over fired), and the next `start`
-    /// rebuilds it in manual mode. Wired to `GameView.tournamentRestart`.
-    private func restartManual() {
-        manualDice = true
-        session = nil
-    }
 
     private func start(humanColor hc: EngineColor, starter: EngineColor) {
         // The obvious path is auto-roll (anyone can just play on the iPad). The quiet
@@ -226,27 +257,97 @@ private struct TournamentGameFlow: View {
                             animationTimings: AppSettings.animationTimings,
                             manualDiceEntry: manualDice)
 
-        // Capture the resolved sides + context by value: the result is recorded
-        // when the game ends, then the user returns to the tournament via onClose.
-        let human = self.human
-        let ai = self.ai
-        let context = self.context
+        let header = makeHeader(humanColor: hc, starter: starter)
         let model = self.model
-        s.onGameOver = { winner in
-            guard let ai else { return }
-            switch context {
-            case .match(let m):
-                guard let human else { return }
-                model.recordAIMatch(matchID: m.id, human: human, ai: ai,
-                                    humanColor: hc, winner: winner)
-            case .finale:
-                guard let human else { return }
-                model.recordFinaleGame(human: human, ai: ai, humanColor: hc, winner: winner)
-            case .practice:
-                break
-            }
-        }
+        // Record the tournament result when the game ends (the per-move autosave
+        // captures the final board + outcome via `persist`).
+        s.onGameOver = { winner in model.recordOutcome(for: header, winner: winner) }
         s.start()
+        saved = header
         session = s
+    }
+
+    /// Re-open a saved game at its last position. Skips the colour/opening-roll
+    /// screens; restores the dice mode it was played in; re-arms result recording so
+    /// finishing a resumed match still counts. A finished game replays straight to
+    /// its win overlay (review only — `onGameOver` does not re-fire on replay).
+    private func startResume() {
+        guard case .resume(let savedGame) = context, session == nil else { return }
+
+        let mode: DiceModeSetting = savedGame.manualDiceEntry ? .manual : .auto
+        UserDefaults.standard.set(mode.rawValue, forKey: SettingsKey.diceMode)
+
+        let s = GameSession.resume(from: savedGame.gameSave,
+                                   agent: GameSession.makeAgent(),
+                                   animationTimings: AppSettings.animationTimings,
+                                   manualDiceEntry: savedGame.manualDiceEntry,
+                                   autoRoll: AppSettings.autoRoll)
+        let model = self.model
+        s.onGameOver = { winner in model.recordOutcome(for: savedGame, winner: winner) }
+        s.start()
+        humanColor = savedGame.humanColor
+        saved = savedGame
+        session = s
+    }
+
+    /// The persistent header (stable identity + who/what/which-colour) for a fresh
+    /// game. The `.resume` case never reaches here (it carries its own record).
+    private func makeHeader(humanColor hc: EngineColor, starter: EngineColor) -> SavedTournamentGame {
+        let kind: SavedTournamentGame.Kind
+        var matchID: UUID?
+        switch context {
+        case .match(let m):  kind = .match; matchID = m.id
+        case .finale:        kind = .finale
+        case .practice:      kind = .practice
+        case .resume(let g): return g
+        }
+        return SavedTournamentGame(
+            kind: kind,
+            matchID: matchID,
+            humanPlayerID: human?.id,
+            aiPlayerID: ai?.id,
+            humanName: human?.name,
+            aiName: ai?.name ?? "TavTav",
+            humanColor: hc,
+            startingPlayer: starter,
+            manualDiceEntry: manualDice)
+    }
+
+    /// Give up = the only way out of a game (there's no back button). Mark the saved
+    /// game **conceded** (kept in progress, so it stays resumable and shows as
+    /// "Aufgegeben"), concede the match in the standings (AI wins) **without** ending
+    /// the session, and return to the tournament. Re-opening it to continue clears the
+    /// conceded mark on the next move; finishing it overwrites the conceded result.
+    /// Practice records nothing in the standings.
+    private func giveUp() {
+        save(conceded: true, force: true)
+        if let saved { model.recordOutcome(for: saved, winner: saved.aiColor) }
+        onClose()
+    }
+
+    /// Rewrite the saved game after every move via `GameView.onAutosave`. Active play
+    /// clears any earlier "conceded" mark (the game is running again).
+    private func persist() { save(conceded: false) }
+
+    /// Write the saved game from the live session. A game with no moves yet writes
+    /// nothing (nothing to recover, and it avoids empty list clutter); once it has a
+    /// ply, the same file is overwritten with the latest history + outcome + conceded
+    /// state. `force` writes even when nothing changed (used by give up so the
+    /// conceded mark + timestamp land); without it, re-opening a finished game to
+    /// review is a no-op so it isn't bumped to the top of the list for nothing.
+    private func save(conceded: Bool, force: Bool = false) {
+        guard let saved, let session, !session.record.plies.isEmpty else { return }
+        let outcomeRaw = session.record.outcome?.rawValue
+        let changed = session.record.plies.count != saved.history.count
+            || outcomeRaw != saved.outcomeRaw
+            || conceded != (saved.conceded ?? false)
+        guard force || changed else { return }
+
+        var record = saved
+        record.history = session.record.plies
+        record.outcomeRaw = outcomeRaw
+        record.conceded = conceded
+        record.updatedAt = Date()
+        model.persistGame(record)
     }
 }

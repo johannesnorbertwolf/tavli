@@ -5,7 +5,7 @@ private typealias SColor = SwiftUI.Color
 
 /// "Spiele" tab — the list of all round-robin pairings, split into open and
 /// played. Tapping a pairing opens a sheet to enter / change / clear the result;
-/// for a pairing that involves the AI (Tavtav) the sheet also offers
+/// for a pairing that involves the AI (TavTav) the sheet also offers
 /// "Gegen die AI spielen", which plays the game in-app and records the result
 /// automatically. Every result is overwritable.
 struct MatchesView: View {
@@ -49,7 +49,7 @@ struct MatchesView: View {
             Text("Spiele")
                 .font(ChromeType.statsTitle)
                 .foregroundStyle(ChromeTheme.ink)
-            Text("Ergebnisse eintragen oder gegen \(model.aiPlayer?.name ?? "Tavtav") spielen")
+            Text("Ergebnisse eintragen oder gegen \(model.aiPlayer?.name ?? "TavTav") spielen")
                 .font(ChromeType.caption)
                 .foregroundStyle(ChromeKit.inkSecondary)
                 .multilineTextAlignment(.center)

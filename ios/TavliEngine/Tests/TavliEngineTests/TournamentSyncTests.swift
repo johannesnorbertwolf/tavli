@@ -137,7 +137,7 @@ final class TournamentSyncTests: XCTestCase {
         a.removePlayer(Tournament.seedAIPlayerID, by: deviceA)   // tombstone
         a.addAIPlayer(by: deviceA)                                // un-tombstone, newer
 
-        // B still has the seed Tavtav (.zero). The re-add (newest) wins on both.
+        // B still has the seed TavTav (.zero). The re-add (newest) wins on both.
         XCTAssertTrue(base.merged(with: a).hasAI)
         XCTAssertTrue(a.merged(with: base).hasAI)
     }

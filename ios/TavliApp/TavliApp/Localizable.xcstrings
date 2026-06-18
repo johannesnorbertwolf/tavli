@@ -298,9 +298,6 @@
     "Alle Ergebnisse dieses Spielers gehen verloren." : {
 
     },
-    "Am echten Brett – neu starten" : {
-
-    },
     "Am echten Brett (Würfel manuell eintragen)" : {
 
     },
@@ -851,19 +848,19 @@
         }
       }
     },
-    "Enter Tavtav's dice" : {
+    "Enter TavTav's dice" : {
       "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtavs Würfel eingeben"
+            "value" : "TavTavs Würfel eingeben"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voer Tavtavs dobbelstenen in"
+            "value" : "Voer TavTavs dobbelstenen in"
           }
         }
       }
@@ -1040,18 +1037,18 @@
         }
       }
     },
-    "Human vs Tavtav" : {
+    "Human vs TavTav" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mensch gegen Tavtav"
+            "value" : "Mensch gegen TavTav"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mens tegen Tavtav"
+            "value" : "Mens tegen TavTav"
           }
         }
       }
@@ -1384,6 +1381,9 @@
       }
     },
     "Noch keine Paarungen" : {
+
+    },
+    "Noch keine Partien. Spiele gegen %@ werden hier nach jedem Zug gespeichert — auch wenn die App zwischendurch schließt." : {
 
     },
     "Noch zu wenige Spieler" : {
@@ -1971,53 +1971,53 @@
     "TAVLI" : {
 
     },
-    "Tavtav goes first!" : {
+    "TavTav goes first!" : {
       "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav beginnt!"
+            "value" : "TavTav beginnt!"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav begint!"
+            "value" : "TavTav begint!"
           }
         }
       }
     },
-    "Tavtav starts" : {
+    "TavTav starts" : {
       "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav beginnt"
+            "value" : "TavTav beginnt"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav begint"
+            "value" : "TavTav begint"
           }
         }
       }
     },
-    "Tavtav thinking…" : {
+    "TavTav thinking…" : {
       "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav denkt nach…"
+            "value" : "TavTav denkt nach…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav denkt na…"
+            "value" : "TavTav denkt na…"
           }
         }
       }

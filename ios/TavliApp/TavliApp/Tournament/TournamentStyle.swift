@@ -28,7 +28,7 @@ enum WeltsensationKey {
     static let unlocked = "weltsensation.unlocked"
 }
 
-/// Small "AI" pill marking the AI player (Tavtav) wherever a player is shown.
+/// Small "AI" pill marking the AI player (TavTav) wherever a player is shown.
 struct AIBadge: View {
     var body: some View {
         Text("AI")
@@ -42,7 +42,7 @@ struct AIBadge: View {
     }
 }
 
-/// A player's name with the AI badge appended when it's Tavtav. `fallback` covers
+/// A player's name with the AI badge appended when it's TavTav. `fallback` covers
 /// a missing player (e.g. a stale id).
 struct PlayerNameLabel: View {
     let player: TournamentPlayer?
@@ -51,6 +51,9 @@ struct PlayerNameLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            if player?.isAI == true {
+                TavTavAvatar(persona: .smirk, size: 22, ringed: false)
+            }
             Text(player?.name ?? fallback)
                 .font(font)
                 .foregroundStyle(ChromeTheme.ink)

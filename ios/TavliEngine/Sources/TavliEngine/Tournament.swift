@@ -5,7 +5,7 @@ import Foundation
 /// logic — SwiftUI-free, so `swift test` covers it. The app wraps this in a
 /// `TournamentModel` (`ObservableObject`) and a `TournamentStore` (file IO).
 ///
-/// The AI ("Tavtav") is a **regular ranked player** (`isAI`): matches against it
+/// The AI ("TavTav") is a **regular ranked player** (`isAI`): matches against it
 /// are played in-app and recorded automatically; human-vs-human matches are
 /// entered by hand. Both are just a `winner` on a `TournamentMatch`, so every
 /// result is freely overwritable.
@@ -50,7 +50,7 @@ public struct Stamp: Codable, Hashable, Sendable, Comparable {
 
 // ── Value types ───────────────────────────────────────────────────────────────
 
-/// One tournament participant. `isAI` marks the single Core ML opponent (Tavtav);
+/// One tournament participant. `isAI` marks the single Core ML opponent (TavTav);
 /// it is otherwise an ordinary player and can be renamed or removed like any other.
 /// `stamp` is the sync clock for this record (bumped on add / rename).
 public struct TournamentPlayer: Identifiable, Codable, Hashable, Sendable {
@@ -213,11 +213,11 @@ public struct Tournament: Codable, Sendable, Equatable {
         ("Albert",   UUID(uuidString: "00000000-0000-4000-8000-000000000006")!, false),
         ("Caspar",   UUID(uuidString: "00000000-0000-4000-8000-000000000007")!, false),
         ("Frida",    UUID(uuidString: "00000000-0000-4000-8000-000000000008")!, false),
-        ("Tavtav",   UUID(uuidString: "00000000-0000-4000-8000-000000000009")!, true),
+        ("TavTav",   UUID(uuidString: "00000000-0000-4000-8000-000000000009")!, true),
     ]
 
-    /// Fixed id for the AI player, reused by `addAIPlayer` so re-adding Tavtav
-    /// merges with other devices' Tavtav rather than forking a new identity.
+    /// Fixed id for the AI player, reused by `addAIPlayer` so re-adding TavTav
+    /// merges with other devices' TavTav rather than forking a new identity.
     public static let seedAIPlayerID = seedRoster.first { $0.isAI }!.id
 
     /// The human seed names (used by tests / display).
@@ -226,7 +226,7 @@ public struct Tournament: Codable, Sendable, Equatable {
     }
 
     /// A fresh tournament seeded with the default group (the eight guests) plus the
-    /// AI player (Tavtav), all on their fixed seed ids. Used on first launch.
+    /// AI player (TavTav), all on their fixed seed ids. Used on first launch.
     public static func makeDefault() -> Tournament {
         let players = seedRoster.map { TournamentPlayer(id: $0.id, name: $0.name, isAI: $0.isAI) }
         var t = Tournament(players: players)
@@ -281,10 +281,10 @@ public struct Tournament: Codable, Sendable, Equatable {
         return player
     }
 
-    /// Re-add the AI player (Tavtav) if it was removed, reusing the fixed seed id so
-    /// it reunites with other devices' Tavtav. No-op when one exists.
+    /// Re-add the AI player (TavTav) if it was removed, reusing the fixed seed id so
+    /// it reunites with other devices' TavTav. No-op when one exists.
     @discardableResult
-    public mutating func addAIPlayer(name: String = "Tavtav",
+    public mutating func addAIPlayer(name: String = "TavTav",
                                      by device: UUID = Tournament.defaultDevice) -> TournamentPlayer? {
         guard !hasAI else { return nil }
         let player = TournamentPlayer(id: Tournament.seedAIPlayerID, name: name,
