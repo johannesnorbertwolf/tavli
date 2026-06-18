@@ -246,7 +246,9 @@ struct BoardDiceView: View {
     // ── AI dice-roll animation (#93) ────────────────────────────────────────
 
     /// Two slow rotations easing out over the engine's tumble window, with
-    /// random faces cycling underneath until the engine settles the roll.
+    /// random faces cycling underneath. The cycling task times out after
+    /// `duration` seconds — tied to the rotation — so both effects end together.
+    /// `settleAITumble()` can still cut the task short (early search finish).
     private func beginAITumble() {
         let duration = max(session.animationTimings.aiDiceRollDuration, 0.05)
         withAnimation(.easeOut(duration: duration)) {
@@ -255,14 +257,24 @@ struct BoardDiceView: View {
         }
         aiMaskTask?.cancel()
         aiMaskTask = Task { @MainActor in
-            while !Task.isCancelled {
+            // Stop cycling faces slightly before the rotation ends so the last
+            // random face holds steady while the dice decelerate to a stop.
+            let earlyStop: TimeInterval = 0.12
+            let cycleDeadline = Date().addingTimeInterval(duration - earlyStop)
+            while !Task.isCancelled, Date() < cycleDeadline {
                 aiMaskFaces = [Int.random(in: 1...6), Int.random(in: 1...6)]
                 try? await Task.sleep(nanoseconds: 90_000_000)
             }
+            // Hold the last random face until the rotation settles.
+            try? await Task.sleep(nanoseconds: UInt64(earlyStop * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            aiMaskFaces = nil
+            withAnimation(.easeOut(duration: 0.15)) { tumbling = false }
         }
     }
 
-    /// Reveal the real roll: stop the face cycling and ease the scale back.
+    /// Reveal the real roll early (search finished before the animation window).
+    /// No-op if the cycling task has already self-terminated on schedule.
     private func settleAITumble() {
         aiMaskTask?.cancel()
         aiMaskTask = nil
