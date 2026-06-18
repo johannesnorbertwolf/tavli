@@ -48,7 +48,7 @@ enum StartingPlayerSetting: String, CaseIterable, Identifiable {
         switch self {
         case .openingRoll: return String(localized: "Opening roll")
         case .human:       return String(localized: "I start")
-        case .ai:          return String(localized: "Tavtav starts")
+        case .ai:          return String(localized: "TavTav starts")
         }
     }
 

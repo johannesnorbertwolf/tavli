@@ -137,10 +137,9 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
 
-                    // Portrait keeps the debug toggle floating top-trailing — it sits
-                    // over the empty band, clear of the single top bar. (Landscape
-                    // docks it inside the panel so it can't cover the chrome, #101.)
-                    VStack(alignment: .trailing, spacing: 8) {
+                    // The TavTav logo gets the top-right as its own tile; the debug
+                    // toggle (and its pane) move to the top-LEFT band to clear it.
+                    VStack(alignment: .leading, spacing: 8) {
                         DebugToggleButton(isOn: $showDebugPane)
                         if showDebugPane {
                             DebugOverlay(session: session,
@@ -148,9 +147,18 @@ struct GameView: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.15), value: showDebugPane)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
+
+                    // Logo tile, top-right corner — floats over the empty band so it
+                    // never pushes the board down.
+                    TavTavLogo()
+                        .frame(width: 180)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, 8)
+                        .padding(.trailing, 16)
+                        .allowsHitTesting(false)
                 }
 
                 if case .gameOver(let winner) = session.phase {
@@ -162,7 +170,8 @@ struct GameView: View {
                     WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
-                                   onDrill: { showDrill = true })
+                                   onDrill: { showDrill = true },
+                                   mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -291,6 +300,7 @@ struct GameView: View {
     // Resign live here (not floating over the board), with Undo/Done beneath them.
     private var sidePanel: some View {
         VStack(spacing: 14) {
+            TavTavLogoTile()
             HStack {
                 BackButton(action: onBack)
                 SettingsButton { showSettings = true }
@@ -345,9 +355,9 @@ struct GameView: View {
                     .disabled(!session.canSurrender)
                     .opacity(session.canSurrender ? 1 : 0.4)
             }
-            Spacer(minLength: 16)
             BorneOffView(session: session, color: .white)
             BorneOffView(session: session, color: .black)
+            Spacer(minLength: 16)
         }
     }
 }
@@ -473,7 +483,7 @@ private struct TurnIndicatorView: View {
         case .awaitingRoll:      return String(localized: "\(name)'s turn")
         case .picking:           return String(localized: "Pick a checker")
         case .moving:            return String(localized: "Choose destination")
-        case .aiThinking:        return String(localized: "Tavtav thinking…")
+        case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
         case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         }
@@ -485,7 +495,7 @@ private struct TurnIndicatorView: View {
     private var diceSubtitle: String? {
         if diceMode == .manual {
             let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-            return isAITurn ? String(localized: "Enter Tavtav's dice") : String(localized: "Enter your dice")
+            return isAITurn ? String(localized: "Enter TavTav's dice") : String(localized: "Enter your dice")
         }
         return autoRoll ? nil : String(localized: "Tap dice to roll")
     }
@@ -582,9 +592,15 @@ private struct WinOverlayView: View {
     let onHistory: () -> Void
     let onReview: () -> Void
     let onDrill: () -> Void
+    /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
+    /// `nil` in human-vs-human games (no mascot shown).
+    var mascot: TavTavPersona? = nil
 
     var body: some View {
         VStack(spacing: 28) {
+            if let mascot {
+                TavTavAvatar(persona: mascot, size: 108)
+            }
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
