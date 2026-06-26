@@ -346,9 +346,11 @@ struct MoveHighlightView: View {
     let stacks: [[TavliEngine.Color]]
     var flipped: Bool = false
 
-    /// Source points (after removing pass-through hops) mapped to the number of
-    /// checkers moved from each, plus the set of landing points.
-    private struct Marks { var sources: [Int: Int]; var targets: Set<Int> }
+    /// Effective half-moves of a move (those whose source isn't a pass-through hop),
+    /// plus the set of landing points. Keeping the individual `[from,to]` lifts — not
+    /// just a per-point count — lets the source rings be coloured per *piece*: two
+    /// checkers leaving one point can ring different colours (#133).
+    private struct Marks { var lifts: [[Int]]; var targets: Set<Int> }
 
     private static func marks(of move: [[Int]]) -> Marks {
         let pairs = move.filter { $0.count == 2 }
@@ -356,16 +358,37 @@ struct MoveHighlightView: View {
         let tos = pairs.map { $0[1] }
         // A point used as both a source and a goal is a hop-over — highlight neither.
         let passThrough = Set(froms).intersection(Set(tos))
-        var sources: [Int: Int] = [:]
-        for f in froms where !passThrough.contains(f) { sources[f, default: 0] += 1 }
-        return Marks(sources: sources, targets: Set(tos).subtracting(passThrough))
+        let lifts = pairs.filter { !passThrough.contains($0[0]) }
+        return Marks(lifts: lifts, targets: Set(tos).subtracting(passThrough))
     }
 
     /// Amber when only the played move owns an element, blue when only the best move,
-    /// green when both.
+    /// green when both. Used for the landing triangles, which stay point-level: if any
+    /// move lands there in both played and best it's green — including the case where
+    /// you reached the square with the wrong die (#133).
     private static func color(played: Bool, best: Bool) -> SwiftUI.Color {
         if played && best { return CaramelPalette.hlBoth }
         return best ? CaramelPalette.hlBest : CaramelPalette.hl
+    }
+
+    /// Ring colours for one source point, one entry per lifted checker (#133): green
+    /// for each lift you played that the best move also makes (matched by
+    /// destination), then blue for the best's remaining lifts from this point (it
+    /// wants a checker off here, you sent a different one), then amber for any extra
+    /// you lifted that the best wouldn't.
+    private static func ringColors(playedLifts: [[Int]], bestLifts: [[Int]]) -> [SwiftUI.Color] {
+        var bestToCounts: [Int: Int] = [:]
+        for b in bestLifts { bestToCounts[b[1], default: 0] += 1 }
+        var green = 0, playedUnmatched = 0
+        for p in playedLifts {
+            if let c = bestToCounts[p[1]], c > 0 { bestToCounts[p[1]] = c - 1; green += 1 }
+            else { playedUnmatched += 1 }
+        }
+        let bestUnmatched = bestToCounts.values.reduce(0, +)
+        let yellow = max(0, playedUnmatched - bestUnmatched)
+        return Array(repeating: CaramelPalette.hlBoth, count: green)
+             + Array(repeating: CaramelPalette.hlBest, count: bestUnmatched)
+             + Array(repeating: CaramelPalette.hl, count: yellow)
     }
 
     var body: some View {
@@ -381,13 +404,14 @@ struct MoveHighlightView: View {
                                    best: best?.targets.contains(t) ?? false)
                 drawTarget(&context, geo: geo, point: t, color: c, s: s)
             }
-            let bestSources = best.map { Set($0.sources.keys) } ?? []
-            for src in Set(played.sources.keys).union(bestSources) {
-                let pCount = played.sources[src]
-                let bCount = best?.sources[src]
-                let c = Self.color(played: pCount != nil, best: bCount != nil)
-                drawSourceRings(&context, geo: geo, point: src,
-                                count: max(pCount ?? 0, bCount ?? 0), color: c, s: s)
+            // Source rings, coloured per lifted checker.
+            let bestLifts = best?.lifts ?? []
+            let sources = Set(played.lifts.map { $0[0] }).union(bestLifts.map { $0[0] })
+            for src in sources {
+                let colors = Self.ringColors(
+                    playedLifts: played.lifts.filter { $0[0] == src },
+                    bestLifts: bestLifts.filter { $0[0] == src })
+                drawSourceRings(&context, geo: geo, point: src, colors: colors, s: s)
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -413,19 +437,21 @@ struct MoveHighlightView: View {
         }
     }
 
-    /// Ring the top `count` checkers of the source point (the ones lifted off).
+    /// Ring the top checkers of the source point (the ones lifted off), one ring per
+    /// entry in `colors`, applied top-down.
     private func drawSourceRings(_ context: inout GraphicsContext, geo: BoardGeometry,
-                                 point n: Int, count: Int, color: SwiftUI.Color, s: CGFloat) {
-        guard n >= 1 && n <= 24, count > 0 else { return }
+                                 point n: Int, colors: [SwiftUI.Color], s: CGFloat) {
+        guard n >= 1 && n <= 24, !colors.isEmpty else { return }
         let r = geo.checkerRadius
         let visible = min(stacks[n].count, 5)
-        let lo = max(0, visible - count)
-        for slot in lo..<visible {
+        let count = min(colors.count, visible)
+        let ringR = r + 3.2 * s
+        for i in 0..<count {
+            let slot = visible - 1 - i
             let c = geo.checkerCenter(point: n, slot: slot)
-            let ringR = r + 3.2 * s
             let ring = Path(ellipseIn: CGRect(x: c.x - ringR, y: c.y - ringR,
                                               width: 2 * ringR, height: 2 * ringR))
-            context.stroke(ring, with: .color(color), lineWidth: 3.4 * s)
+            context.stroke(ring, with: .color(colors[i]), lineWidth: 3.4 * s)
         }
     }
 }

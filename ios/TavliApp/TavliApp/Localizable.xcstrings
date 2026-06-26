@@ -243,54 +243,6 @@
         }
       }
     },
-    "Tavtav goes first!" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt!"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint!"
-          }
-        }
-      }
-    },
-    "Tavtav starts" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint"
-          }
-        }
-      }
-    },
-    "Tavtav thinking…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt nach…"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt na…"
-          }
-        }
-      }
-    },
     "All %@" : {
       "localizations" : {
         "de" : {
@@ -463,6 +415,7 @@
       }
     },
     "Best" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -610,6 +563,9 @@
           }
         }
       }
+    },
+    "Compare" : {
+
     },
     "Continue last game" : {
       "localizations" : {
@@ -817,6 +773,7 @@
 
     },
     "Drill blunders" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -866,6 +823,7 @@
       }
     },
     "Enter Tavtav's dice" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1367,6 +1325,7 @@
       }
     },
     "None" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1414,6 +1373,9 @@
           }
         }
       }
+    },
+    "Only move available" : {
+
     },
     "Opening roll" : {
       "extractionState" : "stale",
@@ -1935,6 +1897,57 @@
     "TAVLI" : {
 
     },
+    "Tavtav goes first!" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav beginnt!"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav begint!"
+          }
+        }
+      }
+    },
+    "Tavtav starts" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav beginnt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav begint"
+          }
+        }
+      }
+    },
+    "Tavtav thinking…" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav denkt nach…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tavtav denkt na…"
+          }
+        }
+      }
+    },
     "The opening roll decides who starts, unless you force a side." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2180,7 +2193,11 @@
         }
       }
     },
+    "Your move" : {
+
+    },
     "Yours" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
