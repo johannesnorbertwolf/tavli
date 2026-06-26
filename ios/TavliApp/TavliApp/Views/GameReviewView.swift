@@ -205,33 +205,43 @@ struct GameReviewView: View {
                         ProgressView().controlSize(.small)
                     }
                 }
-                Text("Dice \(eval.die1) · \(eval.die2)")
-                    .font(.callout.monospaced())
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                HStack(spacing: 8) {
+                    Text("Dice \(eval.die1) · \(eval.die2)")
+                        .font(.callout.monospaced())
+                        .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    // Which look-ahead depth this score is from (#103) — refines live
+                    // 1→2→3-ply, so you can see what you're looking at.
+                    DepthChip(depth: eval.depth)
+                }
             }
 
-            // Played vs best, with the win-prob gap — emphasized red for a blunder,
-            // muted for a small miss, or a best-move note when you matched the AI.
+            // Played vs best. For a ply with a choice we ALWAYS show the played line,
+            // the best line, and a status line — so (a) the panel height is constant as
+            // you page, keeping the controls below from jumping (#105/#132), and (b) the
+            // text agrees with the board: "best move played" shows only when the moves
+            // are actually identical, never just close in score (#103).
+            let playedIsBest = sameMove(eval.playedMove, eval.bestMove)
             VStack(alignment: .leading, spacing: 10) {
-                moveLine(label: "\(mover) played", move: eval.playedMove,
+                // Distinct literal labels (not "\(mover) played") so they localize.
+                moveLine(label: isHuman ? "You played" : "Tavtav played", move: eval.playedMove,
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
-                if !eval.hadChoice {
-                    // Forced ply: a single legal move, so there was nothing to choose.
-                    // Shown so the timeline reaches the final move (#131), but never
-                    // praised or flagged as a miss.
+                if eval.hadChoice {
+                    moveLine(label: "Best move", move: eval.bestMove,
+                             pct: Double(eval.bestScore), tint: ReviewTint.best)
+                    if playedIsBest {
+                        Text(isHuman ? "Best move played ✓" : "Tavtav played the best ✓")
+                            .font(.callout.bold())
+                            .foregroundStyle(ReviewTint.best)
+                    } else {
+                        Text("−\(percent(eval.absoluteGap)) win chance")
+                            .font(.callout.bold())
+                            .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
+                    }
+                } else {
+                    // Forced ply: a single legal move, nothing to choose (#131).
                     Text("Only move available")
                         .font(.callout.bold())
                         .foregroundStyle(ChromeKit.inkSecondary)
-                } else if eval.absoluteGap >= 0.005 {
-                    moveLine(label: "Best move", move: eval.bestMove,
-                             pct: Double(eval.bestScore), tint: ReviewTint.best)
-                    Text("−\(percent(eval.absoluteGap)) win chance")
-                        .font(.callout.bold())
-                        .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
-                } else {
-                    Text(isHuman ? "Best move played ✓" : "Tavtav played the best ✓")
-                        .font(.callout.bold())
-                        .foregroundStyle(ReviewTint.best)
                 }
             }
 
@@ -242,15 +252,16 @@ struct GameReviewView: View {
                     Text("Compare").tag(MoveOverlay.both)
                 }
                 .pickerStyle(.segmented)
-                if overlay == .both {
-                    HStack(spacing: 14) {
-                        legendDot(CaramelPalette.hl, "played")
-                        legendDot(CaramelPalette.hlBest, "best")
-                        legendDot(CaramelPalette.hlBoth, "both")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                // Always laid out (hidden when not comparing) so the controls below
+                // don't shift when you toggle Compare (#132).
+                HStack(spacing: 14) {
+                    legendDot(CaramelPalette.hl, "played")
+                    legendDot(CaramelPalette.hlBest, "best")
+                    legendDot(CaramelPalette.hlBoth, "both")
                 }
+                .font(.caption)
+                .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                .opacity(overlay == .both ? 1 : 0)
             }
 
             // Step through all plies (both sides), or jump only between your own
@@ -335,6 +346,15 @@ struct GameReviewView: View {
         }
     }
     private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
+    /// Whether two moves are the *same* move (order-independent), so the panel claims
+    /// "best move played" only when they genuinely match — not merely scoring alike,
+    /// which let the text disagree with the highlighted board move (#103).
+    private func sameMove(_ a: [[Int]], _ b: [[Int]]) -> Bool {
+        func norm(_ m: [[Int]]) -> [[Int]] {
+            m.filter { $0.count == 2 }.sorted { $0[0] != $1[0] ? $0[0] < $1[0] : $0[1] < $1[1] }
+        }
+        return norm(a) == norm(b)
+    }
     private func moveText(_ pairs: [[Int]]) -> String {
         guard !pairs.isEmpty else { return "(pass)" }
         return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
@@ -502,6 +522,19 @@ private struct BlunderBadge: View {
         .foregroundStyle(CaramelPalette.hlEdge)
         .background(CaramelPalette.hl.opacity(0.22), in: Capsule())
         .overlay(Capsule().stroke(CaramelPalette.hlEdge.opacity(0.55), lineWidth: 1))
+    }
+}
+
+/// The look-ahead depth a review score is from (#103): 1/2/3-ply, refining live.
+private struct DepthChip: View {
+    let depth: Int
+    var body: some View {
+        Text("\(depth)-ply")
+            .font(.caption2.bold().monospacedDigit())
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+            .background(ChromeTheme.ink.opacity(0.08), in: Capsule())
+            .accessibilityLabel("\(depth)-ply analysis")
     }
 }
 

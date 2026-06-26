@@ -1,2218 +1,2454 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    " · skipped %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " · %lld übersprungen"
+  "sourceLanguage": "en",
+  "strings": {
+    " · skipped %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · %lld übersprungen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : " · %lld overgeslagen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · %lld overgeslagen"
           }
         }
       }
     },
-    "—" : {
-
-    },
-    "· Blunder %@ of %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Grober Patzer %1$@ von %2$@"
+    "%@": {},
+    "%@ moving…": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ zieht…"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "· Blunder %1$@ of %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ beweegt…"
+          }
+        }
+      }
+    },
+    "%@ wins": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ gewinnt"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Blunder %1$@ van %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wint"
           }
         }
       }
     },
-    "· Blunder %lld of %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Grober Patzer %1$lld von %2$lld"
+    "%@ wins!": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ gewinnt!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "· Blunder %1$lld van %2$lld"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wint!"
           }
         }
       }
     },
-    "(%@)" : {
-
-    },
-    "%@" : {
-
-    },
-    "%@ moving…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ zieht…"
+    "%@'s turn": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ist dran"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ beweegt…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is aan de beurt"
           }
         }
       }
     },
-    "%@ wins" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ gewinnt"
+    "%@.": {},
+    "%@W – %@L": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@S – %2$@N"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "%1$@W – %2$@L"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ wint"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@W – %2$@V"
           }
         }
       }
     },
-    "%@ wins!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ gewinnt!"
+    "%lld losses in a row ↓": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Niederlagen in Folge ↓"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ wint!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld verliezen op rij ↓"
           }
         }
       }
     },
-    "%@." : {
-
-    },
-    "%@'s turn" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ist dran"
+    "%lld wins in a row ↑": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Siege in Folge ↑"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ is aan de beurt"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld overwinningen op rij ↑"
           }
         }
       }
     },
-    "%@W – %@L" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@S – %2$@N"
+    "(%@)": {},
+    "1 loss in a row ↓": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Niederlage in Folge ↓"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@W – %2$@L"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 verlies op rij ↓"
+          }
+        }
+      }
+    },
+    "1 win in a row ↑": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Sieg in Folge ↑"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@W – %2$@V"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 overwinning op rij ↑"
           }
         }
       }
     },
-    "%lld losses in a row ↓" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Niederlagen in Folge ↓"
+    "All %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %@"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld verliezen op rij ↓"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %@"
           }
         }
       }
     },
-    "%lld wins in a row ↑" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Siege in Folge ↑"
+    "All %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %lld"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld overwinningen op rij ↑"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %lld"
           }
         }
       }
     },
-    "−%@ win chance" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "−%@ Gewinnchance"
+    "All moves": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Züge"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "−%@ winstkans"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle zetten"
           }
         }
       }
     },
-    "1 loss in a row ↓" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 Niederlage in Folge ↓"
+    "Analyzing move %@ of %@…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysiere Zug %1$@ von %2$@…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 verlies op rij ↓"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Analyzing move %1$@ of %2$@…"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zet %1$@ van %2$@ analyseren…"
+          }
         }
       }
     },
-    "1 win in a row ↑" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 Sieg in Folge ↑"
+    "Analyzing move %lld of %lld…": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysiere Zug %1$lld von %2$lld…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 overwinning op rij ↑"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zet %1$lld van %2$lld analyseren…"
           }
         }
       }
     },
-    "All %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle %@"
+    "Analyzing your moves…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analysiere deine Züge…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle %@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je zetten analyseren…"
           }
         }
       }
     },
-    "All %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle %lld"
+    "Animate AI moves": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI-Züge animieren"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Alle %lld"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI-zetten animeren"
           }
         }
       }
     },
-    "Analyzing move %@ of %@…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analysiere Zug %1$@ von %2$@…"
+    "Are you sure you want to give up?": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Möchtest du wirklich aufgeben?"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Analyzing move %1$@ of %2$@…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weet je zeker dat je wilt opgeven?"
+          }
+        }
+      }
+    },
+    "Ask": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zet %1$@ van %2$@ analyseren…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vragen"
           }
         }
       }
     },
-    "Analyzing move %lld of %lld…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analysiere Zug %1$lld von %2$lld…"
+    "Auto-roll": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch würfeln"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zet %1$lld van %2$lld analyseren…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch gooien"
           }
         }
       }
     },
-    "Analyzing your moves…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analysiere deine Züge…"
+    "Back": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zurück"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je zetten analyseren…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terug"
           }
         }
       }
     },
-    "Animate AI moves" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI-Züge animieren"
+    "Best": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bester"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "AI-zetten animeren"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beste"
           }
         }
       }
     },
-    "Are you sure you want to give up?" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Möchtest du wirklich aufgeben?"
+    "Best move": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bester Zug"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weet je zeker dat je wilt opgeven?"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beste zet"
           }
         }
       }
     },
-    "Ask" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fragen"
+    "Best move played ✓": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bester Zug gespielt ✓"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vragen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beste zet gespeeld ✓"
           }
         }
       }
     },
-    "Auto-roll" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch würfeln"
+    "Blunder": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grober Patzer"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch gooien"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blunder"
           }
         }
       }
     },
-    "Back" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zurück"
+    "Cancel": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abbrechen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Terug"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuleren"
           }
         }
       }
     },
-    "Best" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bester"
+    "Checking…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prüfe…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beste"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Controleren…"
           }
         }
       }
     },
-    "Best move" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bester Zug"
+    "Choose destination": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ziel wählen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beste zet"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies bestemming"
           }
         }
       }
     },
-    "Best move played ✓" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bester Zug gespielt ✓"
+    "Close": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schließen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beste zet gespeeld ✓"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sluiten"
           }
         }
       }
     },
-    "Blunder" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grober Patzer"
+    "Close — there's a better move. Try again.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Knapp — es gibt einen besseren Zug. Nochmal!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blunder"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bijna — er is een betere zet. Probeer opnieuw."
           }
         }
       }
     },
-    "Cancel" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abbrechen"
+    "Compare": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergleichen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Annuleren"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vergelijken"
           }
         }
       }
     },
-    "Checking…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Prüfe…"
+    "Continue last game": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte Partie fortsetzen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Controleren…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laatste partij hervatten"
           }
         }
       }
     },
-    "Choose destination" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ziel wählen"
+    "Couldn't evaluate — try again.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konnte nicht bewerten — nochmal versuchen."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies bestemming"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kon niet evalueren — probeer opnieuw."
           }
         }
       }
     },
-    "Close" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Schließen"
+    "DEBUG": {},
+    "Dice": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sluiten"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen"
           }
         }
       }
     },
-    "Close — there's a better move. Try again." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Knapp — es gibt einen besseren Zug. Nochmal!"
+    "Dice %@ · %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel %1$@ · %2$@"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bijna — er is een betere zet. Probeer opnieuw."
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Dice %1$@ · %2$@"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen %1$@ · %2$@"
+          }
         }
       }
-    },
-    "Compare" : {
-
     },
-    "Continue last game" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Letzte Partie fortsetzen"
+    "Dice %@ · %@ — find a better move": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel %1$@ · %2$@ — finde einen besseren Zug"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Laatste partij hervatten"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Dice %1$@ · %2$@ — find a better move"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen %1$@ · %2$@ — vind een betere zet"
+          }
         }
       }
     },
-    "Couldn't evaluate — try again." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Konnte nicht bewerten — nochmal versuchen."
+    "Dice %lld · %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel %1$lld · %2$lld"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kon niet evalueren — probeer opnieuw."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen %1$lld · %2$lld"
           }
         }
       }
     },
-    "d=%@ %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "d=%1$@ %2$@"
+    "Dice %lld · %lld — find a better move": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel %1$lld · %2$lld — finde einen besseren Zug"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "d=%1$@ %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen %1$lld · %2$lld — vind een betere zet"
+          }
+        }
+      }
+    },
+    "Dice roll automatically at the start of your turn.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel fallen automatisch zu Beginn deines Zuges."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "d=%1$@ %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dobbelstenen gooien automatisch aan het begin van jouw beurt."
           }
         }
       }
     },
-    "DEBUG" : {
-
+    "Display": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzeige"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weergave"
+          }
+        }
+      }
     },
-    "Dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel"
+    "Done": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gereed"
           }
         }
       }
     },
-    "Dice %@ · %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel %1$@ · %2$@"
+    "Drill": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Übung"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Dice %1$@ · %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oefening"
           }
+        }
+      }
+    },
+    "Drill blunders": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drill starten"
+          }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen %1$@ · %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drill starten"
           }
         }
       }
     },
-    "Dice %@ · %@ — find a better move" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel %1$@ · %2$@ — finde einen besseren Zug"
+    "Drill complete": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drill abgeschlossen"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Dice %1$@ · %2$@ — find a better move"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drill voltooid"
+          }
+        }
+      }
+    },
+    "Enter Tavtav's dice": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtavs Würfel eingeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen %1$@ · %2$@ — vind een betere zet"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voer Tavtavs dobbelstenen in"
           }
         }
       }
     },
-    "Dice %lld · %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel %1$lld · %2$lld"
+    "Enter manually": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuell eingeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen %1$lld · %2$lld"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handmatig invoeren"
           }
         }
       }
     },
-    "Dice %lld · %lld — find a better move" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel %1$lld · %2$lld — finde einen besseren Zug"
+    "Enter your dice": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deine Würfel eingeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen %1$lld · %2$lld — vind een betere zet"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voer je dobbelstenen in"
           }
         }
       }
     },
-    "Dice roll automatically at the start of your turn." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel fallen automatisch zu Beginn deines Zuges."
+    "Excellent — that's the best move!": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgezeichnet — das ist der beste Zug!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen gooien automatisch aan het begin van jouw beurt."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uitstekend — dat is de beste zet!"
           }
         }
       }
     },
-    "Display" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Anzeige"
+    "Finding your blunders…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suche grobe Patzer…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weergave"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blunders zoeken…"
           }
         }
       }
     },
-    "Done" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fertig"
+    "First move": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erster Zug"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gereed"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eerste zet"
           }
         }
       }
     },
-    "Drill" : {
-
+    "Game · ": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partie · "
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partij · "
+          }
+        }
+      }
     },
-    "Drill blunders" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drill starten"
+    "Gameplay": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spieloptionen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drill starten"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gameplay"
           }
         }
       }
     },
-    "Drill complete" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drill abgeschlossen"
+    "Give up": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Drill voltooid"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeven"
           }
         }
       }
     },
-    "Enter manually" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuell eingeben"
+    "Great — very close to optimal.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sehr gut — fast optimal."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Handmatig invoeren"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heel goed — bijna optimaal."
           }
         }
       }
     },
-    "Enter Tavtav's dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtavs Würfel eingeben"
+    "History": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verlauf"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voer Tavtavs dobbelstenen in"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geschiedenis"
           }
         }
       }
     },
-    "Enter your dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Würfel eingeben"
+    "Human vs Tavtav": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mensch gegen Tavtav"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voer je dobbelstenen in"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mens tegen Tavtav"
           }
         }
       }
     },
-    "Excellent — that's the best move!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ausgezeichnet — das ist der beste Zug!"
+    "I start": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ich beginne"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uitstekend — dat is de beste zet!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ik begin"
           }
         }
       }
     },
-    "Finding your blunders…" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Suche grobe Patzer…"
+    "I'm sure": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ja, aufgeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blunders zoeken…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ja, opgeven"
           }
         }
       }
     },
-    "First move" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Erster Zug"
+    "Keep playing": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiterspielen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eerste zet"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doorgaan"
           }
         }
       }
     },
-    "Game · " : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partie · "
+    "Last 20": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte 20"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partij · "
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laatste 20"
           }
         }
       }
     },
-    "Gameplay" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spieloptionen"
+    "Make your move on the board.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mach deinen Zug auf dem Brett."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gameplay"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Doe je zet op het bord."
           }
         }
       }
     },
-    "Give up" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aufgeben"
+    "Manual entry": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manuell"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opgeven"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Handmatig"
           }
         }
       }
     },
-    "Great — very close to optimal." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sehr gut — fast optimal."
+    "Move %@ of %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zug %1$@ von %2$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Move %1$@ of %2$@"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Heel goed — bijna optimaal."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zet %1$@ van %2$@"
           }
         }
       }
     },
-    "History" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verlauf"
+    "Move %lld of %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zug %1$lld von %2$lld"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geschiedenis"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zet %1$lld van %2$lld"
           }
         }
       }
     },
-    "Human vs Tavtav" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mensch gegen Tavtav"
+    "Move history": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zugverlauf"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mens tegen Tavtav"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zetgeschiedenis"
           }
         }
       }
     },
-    "I start" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ich beginne"
+    "My Record": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meine Bilanz"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ik begin"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mijn record"
           }
         }
       }
     },
-    "I'm sure" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ja, aufgeben"
+    "My blunders": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Meine Fehler"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ja, opgeven"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mijn blunders"
           }
         }
       }
     },
-    "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das iPad würfelt für dich, oder gib deine eigenen Würfel ein. Die KI würfelt immer selbst."
+    "Name": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Het iPad gooit voor jou, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Naam"
           }
         }
       }
     },
-    "Keep playing" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weiterspielen"
+    "Name this save so you can find it on the start screen.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib einen Namen ein, um die Partie auf dem Startbildschirm zu finden."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Doorgaan"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geef een naam in zodat je de partij op het startscherm kunt vinden."
           }
         }
       }
     },
-    "Last 20" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Letzte 20"
+    "Next": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Laatste 20"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volgende"
           }
         }
       }
     },
-    "Make your move on the board." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mach deinen Zug auf dem Brett."
+    "Next →": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiter →"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Doe je zet op het bord."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verder →"
           }
         }
       }
     },
-    "Manual entry" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuell"
+    "No blunders to drill — well played!": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine groben Patzer — gut gespielt!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Handmatig"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen blunders — goed gespeeld!"
           }
         }
       }
     },
-    "Move %@ of %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zug %1$@ von %2$@"
+    "No blunders — nicely played!": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine groben Patzer — gut gespielt!"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Move %1$@ of %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen blunders — goed gespeeld!"
+          }
+        }
+      }
+    },
+    "No games yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Partien"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zet %1$@ van %2$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nog geen partijen"
           }
         }
       }
     },
-    "Move %lld of %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zug %1$lld von %2$lld"
+    "No moves to review.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Züge zum Analysieren."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zet %1$lld van %2$lld"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen zetten om te analyseren."
           }
         }
       }
     },
-    "Move history" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zugverlauf"
+    "No moves yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Züge"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zetgeschiedenis"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nog geen zetten"
           }
         }
       }
     },
-    "My Record" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Meine Bilanz"
+    "None": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kein"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Mijn record"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen"
           }
         }
       }
     },
-    "Name" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Name"
+    "Not available with manual dice entry.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht verfügbar bei manueller Würfeleingabe."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Naam"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niet beschikbaar bij handmatige invoer."
           }
         }
       }
     },
-    "Name this save so you can find it on the start screen." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gib einen Namen ein, um die Partie auf dem Startbildschirm zu finden."
+    "Not quite — think a little harder.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht ganz — überleg nochmal."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geef een naam in zodat je de partij op het startscherm kunt vinden."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Niet helemaal — denk nog eens na."
           }
         }
       }
     },
-    "Next" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weiter"
+    "Only move available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einzig möglicher Zug"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Volgende"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enige mogelijke zet"
           }
         }
       }
     },
-    "No blunders — nicely played!" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine groben Patzer — gut gespielt!"
+    "Opening Roll": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswürfeln, wer anfängt"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geen blunders — goed gespeeld!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Openingsworp"
           }
         }
       }
     },
-    "No blunders to drill — well played!" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine groben Patzer — gut gespielt!"
+    "Opening roll": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auswürfeln"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geen blunders — goed gespeeld!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Openingsworp"
           }
         }
       }
     },
-    "No games yet" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch keine Partien"
+    "Or choose manually:": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oder manuell wählen:"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nog geen partijen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Of kies handmatig:"
           }
         }
       }
     },
-    "No moves to review." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Keine Züge zum Analysieren."
+    "Pick a checker": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stein wählen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geen zetten om te analyseren."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies een steen"
           }
         }
       }
     },
-    "No moves yet" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Noch keine Züge"
+    "Pick a colour to always play, or choose at the start of every game.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wähle eine Farbe, mit der du immer spielst, oder entscheide am Anfang jeder Partie neu."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nog geen zetten"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies een kleur om altijd te spelen, of kies aan het begin van elke partij."
           }
         }
       }
     },
-    "None" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kein"
+    "Play %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als %@ spielen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spelen als %@"
           }
         }
       }
     },
-    "Not available with manual dice entry." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht verfügbar bei manueller Würfeleingabe."
+    "Play Again": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal spielen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Niet beschikbaar bij handmatige invoer."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opnieuw spelen"
           }
         }
       }
     },
-    "Not quite — think a little harder." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht ganz — überleg nochmal."
+    "Play a game to start your record.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spiele eine Partie, um deine Bilanz zu starten."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Niet helemaal — denk nog eens na."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speel een partij om je record te starten."
           }
         }
       }
     },
-    "Only move available" : {
-
+    "Play as": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spielen als"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spelen als"
+          }
+        }
+      }
     },
-    "Opening roll" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auswürfeln"
+    "Play vs AI": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gegen AI spielen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Openingsworp"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Spelen tegen AI"
           }
         }
       }
     },
-    "Opening Roll" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auswürfeln, wer anfängt"
+    "Prev": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorherige"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Openingsworp"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorige"
           }
         }
       }
     },
-    "Or choose manually:" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Oder manuell wählen:"
+    "Random": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zufällig"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Of kies handmatig:"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Willekeurig"
           }
         }
       }
     },
-    "Pick a checker" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stein wählen"
+    "Red": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rot"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies een steen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rood"
           }
         }
       }
     },
-    "Pick a colour to always play, or choose at the start of every game." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wähle eine Farbe, mit der du immer spielst, oder entscheide am Anfang jeder Partie neu."
+    "Resign": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgeben"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies een kleur om altijd te spelen, of kies aan het begin van elke partij."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeven"
           }
         }
       }
     },
-    "Play %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Als %@ spielen"
+    "Review game": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partie analysieren"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen als %@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partij analyseren"
           }
         }
       }
     },
-    "Play a game to start your record." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spiele eine Partie, um deine Bilanz zu starten."
+    "Review needs the AI model, which isn’t available.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyse benötigt das AI-Modell, das nicht verfügbar ist."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speel een partij om je record te starten."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Analyse vereist het AI-model, dat niet beschikbaar is."
           }
         }
       }
     },
-    "Play Again" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nochmal spielen"
+    "Roll automatically, or enter your own dice each turn. The AI always rolls its own.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch würfeln oder eigene Würfel eingeben. Die AI würfelt immer selbst."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opnieuw spelen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch gooien, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
           }
         }
       }
     },
-    "Play as" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spielen als"
+    "Rolling…": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfelt…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen als"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gooien…"
           }
         }
       }
     },
-    "Play vs AI" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gegen AI spielen"
+    "Save": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speichern"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen tegen AI"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opslaan"
           }
         }
       }
     },
-    "Prev" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vorherige"
+    "Save game": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partie speichern"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vorige"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partij opslaan"
           }
         }
       }
     },
-    "Random" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zufällig"
+    "Saved games": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gespeicherte Partien"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Willekeurig"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opgeslagen partijen"
           }
         }
       }
     },
-    "Red" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rot"
+    "Settings": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Einstellungen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rood"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instellingen"
           }
         }
       }
     },
-    "Resign" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aufgeben"
+    "Show on board": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf Brett zeigen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opgeven"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonen op bord"
           }
         }
       }
     },
-    "Review game" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partie analysieren"
+    "Show solution": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lösung zeigen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partij analyseren"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oplossing tonen"
           }
         }
       }
     },
-    "Review needs the AI model, which isn’t available." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse benötigt das AI-Modell, das nicht verfügbar ist."
+    "Show your live chance of winning during the game.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt deine aktuelle Gewinnchance während der Partie."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Analyse vereist het AI-model, dat niet beschikbaar is."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toont je actuele winstkans tijdens het spel."
           }
         }
       }
     },
-    "Roll automatically, or enter your own dice each turn. The AI always rolls its own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch würfeln oder eigene Würfel eingeben. Die AI würfelt immer selbst."
+    "Skip": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Überspringen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch gooien, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overslaan"
           }
         }
       }
     },
-    "Rolling…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfelt…"
+    "Slow dice roll and one-by-one checker hops on the AI's turn.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Langsamer Würfelwurf und einzelne Steine bei AI-Zügen."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gooien…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Langzame dobbelworp en één-voor-één stenen bij AI-beurten."
           }
         }
       }
     },
-    "Save" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Speichern"
+    "Solved %lld of %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld von %2$lld gelöst"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opslaan"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld van %2$lld opgelost"
           }
         }
       }
     },
-    "Save game" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partie speichern"
+    "Streak": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serie"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Partij opslaan"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reeks"
           }
         }
       }
     },
-    "Saved games" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gespeicherte Partien"
+    "TAVLI": {},
+    "Tap dice to roll": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Würfel antippen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opgeslagen partijen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tik op de dobbelstenen"
           }
         }
       }
     },
-    "Settings" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einstellungen"
+    "Tap the board to roll": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippe zum Würfeln"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Instellingen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tik op het bord om te gooien"
           }
         }
       }
     },
-    "Show on board" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auf Brett zeigen"
+    "Tavli": {},
+    "Tavtav goes first!": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav beginnt!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tonen op bord"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav begint!"
           }
         }
       }
     },
-    "Show solution" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lösung zeigen"
+    "Tavtav played": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav spielte"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Oplossing tonen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav speelde"
           }
         }
       }
     },
-    "Show your live chance of winning during the game." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zeigt deine aktuelle Gewinnchance während der Partie."
+    "Tavtav played the best ✓": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav spielte den besten ✓"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toont je actuele winstkans tijdens het spel."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav speelde de beste ✓"
           }
         }
       }
     },
-    "Skip" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Überspringen"
+    "Tavtav starts": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav beginnt"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Overslaan"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav begint"
           }
         }
       }
     },
-    "Slow dice roll and one-by-one checker hops on the AI's turn." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Langsamer Würfelwurf und einzelne Steine bei AI-Zügen."
+    "Tavtav thinking…": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav denkt nach…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Langzame dobbelworp en één-voor-één stenen bij AI-beurten."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tavtav denkt na…"
           }
         }
       }
     },
-    "Solved %lld of %lld" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld von %2$lld gelöst"
+    "The opening roll decides who starts, unless you force a side.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der Eröffnungswurf entscheidet, wer beginnt, außer du legst eine Seite fest."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld van %2$lld opgelost"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "De openingsworp beslist wie begint, tenzij je een kant forceert."
           }
         }
       }
     },
-    "Streak" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Serie"
+    "Tie (%lld vs %lld) — rolling again…": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unentschieden (%1$lld : %2$lld) — nochmal…"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reeks"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gelijkspel (%1$lld vs %2$lld) — opnieuw gooien…"
           }
         }
       }
     },
-    "Tap dice to roll" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel antippen"
+    "Top moves": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top-Züge"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tik op de dobbelstenen"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Topzetten"
           }
         }
       }
     },
-    "Tap the board to roll" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tippe zum Würfeln"
+    "Try again": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nochmal versuchen"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tik op het bord om te gooien"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opnieuw proberen"
           }
         }
       }
     },
-    "Tavli" : {
-
+    "Turn: %@  Dice: %@,%@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zug: %1$@  Würfel: %2$@,%3$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "Turn: %1$@  Dice: %2$@,%3$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beurt: %1$@  Dobbelstenen: %2$@,%3$@"
+          }
+        }
+      }
     },
-    "TAVLI" : {
-
+    "Undo": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rückgängig"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ongedaan maken"
+          }
+        }
+      }
     },
-    "Tavtav goes first!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt!"
+    "W": {},
+    "White": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weiß"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wit"
           }
         }
       }
     },
-    "Tavtav starts" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav beginnt"
+    "Win chance": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gewinnchance"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav begint"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Winstkans"
           }
         }
       }
     },
-    "Tavtav thinking…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt nach…"
+    "Win chance through the game": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gewinnchance im Spielverlauf"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tavtav denkt na…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Winstkans tijdens het spel"
           }
         }
       }
     },
-    "The opening roll decides who starts, unless you force a side." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Der Eröffnungswurf entscheidet, wer beginnt, außer du legst eine Seite fest."
+    "Win-probability bar": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gewinnchancen-Balken"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "De openingsworp beslist wie begint, tenzij je een kant forceert."
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Winstkans-balk"
           }
         }
       }
     },
-    "Tie (%lld vs %lld) — rolling again…" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unentschieden (%1$lld : %2$lld) — nochmal…"
+    "You": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gelijkspel (%1$lld vs %2$lld) — opnieuw gooien…"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jij"
           }
         }
       }
     },
-    "Top moves" : {
-
+    "You go first!": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du beginnst!"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jij begint!"
+          }
+        }
+      }
     },
-    "Turn: %@  Dice: %@,%@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zug: %1$@  Würfel: %2$@,%3$@"
+    "You played": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Zug"
           }
         },
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Turn: %1$@  Dice: %2$@,%3$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jouw zet"
           }
+        }
+      }
+    },
+    "You start": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ich beginne"
+          }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beurt: %1$@  Dobbelstenen: %2$@,%3$@"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ik begin"
           }
         }
       }
     },
-    "Undo" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rückgängig"
+    "You still have a %@%% chance of winning. Are you sure you want to give up?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du hast noch eine Gewinnchance von %@%%. Möchtest du wirklich aufgeben?"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ongedaan maken"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je hebt nog %@%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
           }
         }
       }
     },
-    "W" : {
-
+    "You still have a %lld%% chance of winning. Are you sure you want to give up?": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du hast noch eine Gewinnchance von %lld%%. Möchtest du wirklich aufgeben?"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je hebt nog %lld%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
+          }
+        }
+      }
     },
-    "White" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weiß"
+    "You tried": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du versuchtest"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wit"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jij probeerde"
           }
         }
       }
     },
-    "Win chance" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gewinnchance"
+    "You win!": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Du gewinnst!"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Winstkans"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jij wint!"
           }
         }
       }
     },
-    "Win chance through the game" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gewinnchance im Spielverlauf"
+    "Your move": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dein Zug"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Winstkans tijdens het spel"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jouw zet"
           }
         }
       }
     },
-    "Win-probability bar" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gewinnchancen-Balken"
+    "Yours": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deiner"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Winstkans-balk"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jouwe"
           }
         }
       }
     },
-    "You go first!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du beginnst!"
+    "best": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bester"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jij begint!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "beste"
           }
         }
       }
     },
-    "You played" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dein Zug"
+    "both": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "beide"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jouw zet"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "beide"
           }
         }
       }
     },
-    "You start" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ich beginne"
+    "d=%@ %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "d=%1$@ %2$@"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ik begin"
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "d=%1$@ %2$@"
           }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "d=%1$@ %2$@"
+          }
         }
       }
     },
-    "You still have a %@%% chance of winning. Are you sure you want to give up?" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du hast noch eine Gewinnchance von %@%%. Möchtest du wirklich aufgeben?"
+    "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own.": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das iPad würfelt für dich, oder gib deine eigenen Würfel ein. Die KI würfelt immer selbst."
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je hebt nog %@%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Het iPad gooit voor jou, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
           }
         }
       }
     },
-    "You still have a %lld%% chance of winning. Are you sure you want to give up?" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du hast noch eine Gewinnchance von %lld%%. Möchtest du wirklich aufgeben?"
+    "played": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gespielt"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je hebt nog %lld%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "gespeeld"
           }
         }
       }
     },
-    "You win!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du gewinnst!"
+    "· Blunder %@ of %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Grober Patzer %1$@ von %2$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "new",
+            "value": "· Blunder %1$@ of %2$@"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jij wint!"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Blunder %1$@ van %2$@"
           }
         }
       }
     },
-    "Your move" : {
-
+    "· Blunder %lld of %lld": {
+      "extractionState": "stale",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Grober Patzer %1$lld von %2$lld"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "· Blunder %1$lld van %2$lld"
+          }
+        }
+      }
     },
-    "Yours" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deiner"
+    "—": {},
+    "−%@ win chance": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−%@ Gewinnchance"
           }
         },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jouwe"
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "−%@ winstkans"
           }
         }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }
