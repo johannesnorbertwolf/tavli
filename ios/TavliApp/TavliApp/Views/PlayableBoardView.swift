@@ -371,26 +371,6 @@ struct MoveHighlightView: View {
         return best ? CaramelPalette.hlBest : CaramelPalette.hl
     }
 
-    /// Ring colours for one source point, one entry per lifted checker (#133): green
-    /// for each lift you played that the best move also makes (matched by
-    /// destination), then blue for the best's remaining lifts from this point (it
-    /// wants a checker off here, you sent a different one), then amber for any extra
-    /// you lifted that the best wouldn't.
-    private static func ringColors(playedLifts: [[Int]], bestLifts: [[Int]]) -> [SwiftUI.Color] {
-        var bestToCounts: [Int: Int] = [:]
-        for b in bestLifts { bestToCounts[b[1], default: 0] += 1 }
-        var green = 0, playedUnmatched = 0
-        for p in playedLifts {
-            if let c = bestToCounts[p[1]], c > 0 { bestToCounts[p[1]] = c - 1; green += 1 }
-            else { playedUnmatched += 1 }
-        }
-        let bestUnmatched = bestToCounts.values.reduce(0, +)
-        let yellow = max(0, playedUnmatched - bestUnmatched)
-        return Array(repeating: CaramelPalette.hlBoth, count: green)
-             + Array(repeating: CaramelPalette.hlBest, count: bestUnmatched)
-             + Array(repeating: CaramelPalette.hl, count: yellow)
-    }
-
     var body: some View {
         Canvas { context, size in
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
@@ -404,14 +384,19 @@ struct MoveHighlightView: View {
                                    best: best?.targets.contains(t) ?? false)
                 drawTarget(&context, geo: geo, point: t, color: c, s: s)
             }
-            // Source rings, coloured per lifted checker.
-            let bestLifts = best?.lifts ?? []
-            let sources = Set(played.lifts.map { $0[0] }).union(bestLifts.map { $0[0] })
-            for src in sources {
-                let colors = Self.ringColors(
-                    playedLifts: played.lifts.filter { $0[0] == src },
-                    bestLifts: bestLifts.filter { $0[0] == src })
-                drawSourceRings(&context, geo: geo, point: src, colors: colors, s: s)
+            // Source rings, coloured **per point**: a point used as a source by both
+            // your move and the best move is green — even if your checker went the
+            // wrong way — so it's clear which points you started from (#133). The ring
+            // count is the most pieces lifted from there by either move.
+            let playedSources = played.lifts.map { $0[0] }
+            let bestSources = (best?.lifts ?? []).map { $0[0] }
+            for src in Set(playedSources).union(bestSources) {
+                let color = Self.color(played: playedSources.contains(src),
+                                       best: bestSources.contains(src))
+                let count = max(playedSources.filter { $0 == src }.count,
+                                bestSources.filter { $0 == src }.count)
+                drawSourceRings(&context, geo: geo, point: src,
+                                colors: Array(repeating: color, count: count), s: s)
             }
         }
         .aspectRatio(1, contentMode: .fit)
