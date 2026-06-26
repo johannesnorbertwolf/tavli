@@ -22,12 +22,13 @@ struct GameReviewView: View {
 
     /// Index of the evaluated move currently shown (clamped to the streamed set).
     @State private var index = 0
-    /// Which move, if any, is highlighted on the board.
-    @State private var overlay: MoveOverlay = .best
+    /// Whether the board compares your move against the best, or shows yours alone.
+    /// Always shows your move (#133); `.both` overlays the best move too.
+    @State private var overlay: MoveOverlay = .your
     /// Drives the drill, launched full-screen from the review (#63).
     @State private var showDrill = false
 
-    enum MoveOverlay: Hashable { case none, your, best }
+    enum MoveOverlay: Hashable { case your, both }
 
     init(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) {
         self.record = record
@@ -143,13 +144,11 @@ struct GameReviewView: View {
         ZStack {
             BoardView(flipped: flipped)
             CheckersView(stacks: eval.boardStacks, flipped: flipped)
-            if overlay != .none {
-                let move = overlay == .your ? eval.playedMove : eval.bestMove
-                TargetHighlightView(targets: targets(of: move), style: .frame, flipped: flipped)
-                    .allowsHitTesting(false)
-                SourceRingView(selectedPoint: move.first?.first, stacks: eval.boardStacks, flipped: flipped)
-                    .allowsHitTesting(false)
-            }
+            // Always show your move (amber); `.both` overlays the best move (blue),
+            // with shared elements in green (#133).
+            MoveHighlightView(playedMove: eval.playedMove,
+                              bestMove: overlay == .both ? eval.bestMove : nil,
+                              stacks: eval.boardStacks, flipped: flipped)
         }
         .aspectRatio(1, contentMode: .fit)
     }
@@ -218,13 +217,23 @@ struct GameReviewView: View {
                 }
             }
 
-            // Highlight selector — what to draw on the board.
-            Picker("Show on board", selection: $overlay) {
-                Text("Best").tag(MoveOverlay.best)
-                Text("Yours").tag(MoveOverlay.your)
-                Text("None").tag(MoveOverlay.none)
+            // Highlight selector — your move alone, or compared against the best.
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Show on board", selection: $overlay) {
+                    Text("Your move").tag(MoveOverlay.your)
+                    Text("Compare").tag(MoveOverlay.both)
+                }
+                .pickerStyle(.segmented)
+                if overlay == .both {
+                    HStack(spacing: 14) {
+                        legendDot(CaramelPalette.hl, "yours")
+                        legendDot(CaramelPalette.hlBest, "best")
+                        legendDot(CaramelPalette.hlBoth, "both")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                }
             }
-            .pickerStyle(.segmented)
 
             // Navigation + drill.
             HStack(spacing: 12) {
@@ -272,8 +281,12 @@ struct GameReviewView: View {
 
     // ── Formatting ────────────────────────────────────────────────────────────
 
-    private func targets(of move: [[Int]]) -> Set<Int> {
-        Set(move.compactMap { $0.count == 2 ? $0[1] : nil })
+    /// A small colour swatch + label for the compare legend (#133).
+    private func legendDot(_ color: SColor, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 10, height: 10)
+            Text(label)
+        }
     }
     private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
     private func moveText(_ pairs: [[Int]]) -> String {

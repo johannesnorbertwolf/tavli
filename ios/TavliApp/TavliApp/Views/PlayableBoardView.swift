@@ -319,6 +319,117 @@ struct SourceRingView: View {
     }
 }
 
+/// Review/drill move highlighter (#133). Renders a *whole move* with the Caramel
+/// highlight language — amber ring on each source point's moved checkers, amber
+/// frame on each landing triangle — extended three ways the live `SourceRingView`
+/// / `TargetHighlightView` pair did not:
+///
+///  1. **Every source is highlighted**, not just the first half-move's. A compound
+///     move (two half-moves, or up to four under a Pasch double) rings all of them.
+///  2. **Pass-through points are skipped.** A point that is both a source *and* a
+///     goal within the move is where a checker merely hops over — it gets no
+///     highlight (e.g. a single checker 13→9→5→1 marks only source 13 and target 1).
+///  3. **Only the moved checkers are ringed** — the count of half-moves leaving a
+///     point (usually one, up to four with doubles), taken from the top of the
+///     stack — not every checker sitting there.
+///
+/// Pass a non-nil `bestMove` to compare: the played move draws amber, the best move
+/// blue, and any element belonging to **both** draws green (you played the best
+/// there). With `bestMove == nil` only the played move is shown, all amber.
+struct MoveHighlightView: View {
+    /// The move to show in amber ("your move"). May be empty (e.g. a drill solution
+    /// that only wants the blue best move).
+    let playedMove: [[Int]]
+    /// The best move to compare against, in blue; `nil` hides it (show yours only).
+    let bestMove: [[Int]]?
+    /// Pre-move per-slot stacks, so rings track the real checker positions.
+    let stacks: [[TavliEngine.Color]]
+    var flipped: Bool = false
+
+    /// Source points (after removing pass-through hops) mapped to the number of
+    /// checkers moved from each, plus the set of landing points.
+    private struct Marks { var sources: [Int: Int]; var targets: Set<Int> }
+
+    private static func marks(of move: [[Int]]) -> Marks {
+        let pairs = move.filter { $0.count == 2 }
+        let froms = pairs.map { $0[0] }
+        let tos = pairs.map { $0[1] }
+        // A point used as both a source and a goal is a hop-over — highlight neither.
+        let passThrough = Set(froms).intersection(Set(tos))
+        var sources: [Int: Int] = [:]
+        for f in froms where !passThrough.contains(f) { sources[f, default: 0] += 1 }
+        return Marks(sources: sources, targets: Set(tos).subtracting(passThrough))
+    }
+
+    /// Amber when only the played move owns an element, blue when only the best move,
+    /// green when both.
+    private static func color(played: Bool, best: Bool) -> SwiftUI.Color {
+        if played && best { return CaramelPalette.hlBoth }
+        return best ? CaramelPalette.hlBest : CaramelPalette.hl
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
+            let s = geo.scale
+            let played = Self.marks(of: playedMove)
+            let best = bestMove.map { Self.marks(of: $0) }
+
+            // Targets first (under the source rings, so a shared point's ring reads).
+            for t in played.targets.union(best?.targets ?? []) {
+                let c = Self.color(played: played.targets.contains(t),
+                                   best: best?.targets.contains(t) ?? false)
+                drawTarget(&context, geo: geo, point: t, color: c, s: s)
+            }
+            let bestSources = best.map { Set($0.sources.keys) } ?? []
+            for src in Set(played.sources.keys).union(bestSources) {
+                let pCount = played.sources[src]
+                let bCount = best?.sources[src]
+                let c = Self.color(played: pCount != nil, best: bCount != nil)
+                drawSourceRings(&context, geo: geo, point: src,
+                                count: max(pCount ?? 0, bCount ?? 0), color: c, s: s)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .allowsHitTesting(false)
+    }
+
+    /// Frame the landing triangle (1…24) or the bear-off tray box (0/25).
+    private func drawTarget(_ context: inout GraphicsContext, geo: BoardGeometry,
+                            point n: Int, color: SwiftUI.Color, s: CGFloat) {
+        if n >= 1 && n <= 24 {
+            let pt = geo.point(n)
+            var tri = Path()
+            tri.move(to: pt.baselineLeft)
+            tri.addLine(to: pt.baselineRight)
+            tri.addLine(to: pt.tip)
+            tri.closeSubpath()
+            context.stroke(tri, with: .color(color),
+                           style: StrokeStyle(lineWidth: 5 * s, lineJoin: .round))
+        } else if n == 0 || n == 25 {
+            let tray = geo.point(n).hitRect.insetBy(dx: 5 * s, dy: 10 * s)
+            context.stroke(Path(roundedRect: tray, cornerRadius: 8 * s),
+                           with: .color(color), lineWidth: 5 * s)
+        }
+    }
+
+    /// Ring the top `count` checkers of the source point (the ones lifted off).
+    private func drawSourceRings(_ context: inout GraphicsContext, geo: BoardGeometry,
+                                 point n: Int, count: Int, color: SwiftUI.Color, s: CGFloat) {
+        guard n >= 1 && n <= 24, count > 0 else { return }
+        let r = geo.checkerRadius
+        let visible = min(stacks[n].count, 5)
+        let lo = max(0, visible - count)
+        for slot in lo..<visible {
+            let c = geo.checkerCenter(point: n, slot: slot)
+            let ringR = r + 3.2 * s
+            let ring = Path(ellipseIn: CGRect(x: c.x - ringR, y: c.y - ringR,
+                                              width: 2 * ringR, height: 2 * ringR))
+            context.stroke(ring, with: .color(color), lineWidth: 3.4 * s)
+        }
+    }
+}
+
 // ── Previews ─────────────────────────────────────────────────────────────────
 
 @MainActor

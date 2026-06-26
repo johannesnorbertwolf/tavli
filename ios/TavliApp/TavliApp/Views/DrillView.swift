@@ -304,9 +304,6 @@ private struct DrillCard: View {
     let onShowSolution: () -> Void
     let onAdvance: () -> Void
 
-    private var bestFrom: Int? { eval.bestMove.first?.first }
-    private var bestTargets: Set<Int> { Set(eval.bestMove.compactMap { $0.count == 2 ? $0[1] : nil }) }
-
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
@@ -344,10 +341,10 @@ private struct DrillCard: View {
         ZStack {
             PlayableBoardView(session: session, flipped: flipped)
             if showingSolution {
-                TargetHighlightView(targets: bestTargets, style: .frame, flipped: flipped)
-                    .allowsHitTesting(false)
-                SourceRingView(selectedPoint: bestFrom, stacks: eval.boardStacks, flipped: flipped)
-                    .allowsHitTesting(false)
+                // The best move, with every source ringed and pass-through hops
+                // skipped (#133). Drawn blue as the "best" colour.
+                MoveHighlightView(playedMove: [], bestMove: eval.bestMove,
+                                  stacks: eval.boardStacks, flipped: flipped)
             }
         }
         .aspectRatio(1, contentMode: .fit)
