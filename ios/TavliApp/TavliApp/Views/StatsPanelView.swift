@@ -13,7 +13,7 @@ struct StatsPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Human vs Tavtav")
+            Text("Human vs TavTav")
                 .font(ChromeType.statsTitle)
                 .foregroundStyle(Palette.ink)
 

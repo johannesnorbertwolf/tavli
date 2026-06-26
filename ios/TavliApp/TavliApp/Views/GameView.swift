@@ -28,6 +28,21 @@ struct GameView: View {
     var onSave: (String) -> Void = { _ in }
     /// Auto-save the in-progress game after every move (#61). Defaults to a no-op so `#Preview`s compile.
     var onAutosave: () -> Void = {}
+    /// Weltsensation tournament hook: when non-nil, the win overlay's primary action
+    /// becomes "Zurück zum Turnier" (calling this) instead of "Play Again", and the
+    /// game-over verdict switches to German. Leaves the normal app untouched when nil.
+    var tournamentExit: (() -> Void)? = nil
+    /// Weltsensation: the AI opponent's display name (the real, possibly-renamed
+    /// player), used by the German loss verdict. Only consulted in tournament mode.
+    var tournamentOpponentName: String? = nil
+    /// Whether the chrome shows the Back affordance. The normal app keeps it (returns
+    /// to the picker); the tournament hides it (#: the only way out of a game is to
+    /// give up, which concedes the match but keeps the game resumable).
+    var showsBackButton: Bool = true
+    /// Override for the "give up" confirmation's final action. When set (tournament),
+    /// the player concedes-and-leaves instead of the default in-place resignation:
+    /// the handler records the loss, keeps the in-progress game saved, and exits.
+    var onGiveUp: (() -> Void)? = nil
 
     @State private var showingSaveDialog = false
     @State private var saveName = ""
@@ -137,10 +152,9 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
 
-                    // Portrait keeps the debug toggle floating top-trailing — it sits
-                    // over the empty band, clear of the single top bar. (Landscape
-                    // docks it inside the panel so it can't cover the chrome, #101.)
-                    VStack(alignment: .trailing, spacing: 8) {
+                    // The TavTav logo gets the top-right as its own tile; the debug
+                    // toggle (and its pane) move to the top-LEFT band to clear it.
+                    VStack(alignment: .leading, spacing: 8) {
                         DebugToggleButton(isOn: $showDebugPane)
                         if showDebugPane {
                             DebugOverlay(session: session,
@@ -148,9 +162,18 @@ struct GameView: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.15), value: showDebugPane)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
+
+                    // Logo tile, top-right corner — floats over the empty band so it
+                    // never pushes the board down.
+                    TavTavLogo()
+                        .frame(width: 180)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(.top, 8)
+                        .padding(.trailing, 16)
+                        .allowsHitTesting(false)
                 }
 
                 if case .gameOver(let winner) = session.phase {
@@ -162,7 +185,9 @@ struct GameView: View {
                     WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
-                                   onDrill: { showDrill = true })
+                                   onDrill: { showDrill = true },
+                                   tournamentExit: tournamentExit,
+                                   mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
             .sheet(isPresented: $showHistory) {
@@ -205,13 +230,18 @@ struct GameView: View {
             } message: {
                 Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
             }
-            // Standard confirmation (#74). Confirming ends the game (AI recorded as
-            // winner) and clears the auto-save slot via `onAutosave` — the same path a
-            // played-out loss takes through the per-move auto-save hook below.
+            // Standard confirmation (#74). The default ends the game in place (AI
+            // recorded as winner) and clears the auto-save slot via `onAutosave`. In
+            // the tournament `onGiveUp` takes over: it concedes the match but keeps
+            // the in-progress game saved (resumable) and returns to the tournament.
             .alert("Are you sure you want to give up?", isPresented: $showSurrenderConfirm) {
                 Button("Give up", role: .destructive) {
-                    session.surrender()
-                    onAutosave()
+                    if let onGiveUp {
+                        onGiveUp()
+                    } else {
+                        session.surrender()
+                        onAutosave()
+                    }
                 }
                 Button("Keep playing", role: .cancel) {}
             }
@@ -248,9 +278,16 @@ struct GameView: View {
     }
 
     /// Game-over verdict from the human's perspective (#101): the human's own
-    /// win is celebrated directly; an AI win names the winning color.
+    /// win is celebrated directly; an AI win names the winning color. In a
+    /// Weltsensation tournament game the verdict is German instead — a win is the
+    /// "Sensationell!" flourish, a loss names the AI opponent.
     private func verdict(_ winner: TavliEngine.Color) -> String {
-        winner == humanColor ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
+        let humanWon = winner == humanColor
+        if tournamentExit != nil {
+            if humanWon { return "Sensationell!" }
+            return "\(tournamentOpponentName ?? "TavTav") war stärker."
+        }
+        return humanWon ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
     }
 
     /// Seed the field with a timestamped default and open the naming dialog.
@@ -291,8 +328,11 @@ struct GameView: View {
     // Resign live here (not floating over the board), with Undo/Done beneath them.
     private var sidePanel: some View {
         VStack(spacing: 14) {
+            TavTavLogoTile()
             HStack {
-                BackButton(action: onBack)
+                if showsBackButton {
+                    BackButton(action: onBack)
+                }
                 SettingsButton { showSettings = true }
                 Spacer(minLength: 0)
                 DebugToggleButton(isOn: $showDebugPane)
@@ -337,7 +377,9 @@ struct GameView: View {
     // counters trailing. The turn status lives down by the board, not here.
     private var portraitTopBar: some View {
         HStack(spacing: 8) {
-            BackButton(action: onBack)
+            if showsBackButton {
+                BackButton(action: onBack)
+            }
             SettingsButton { showSettings = true }
             if !session.isTerminal {
                 SaveButton(action: presentSaveDialog)
@@ -345,9 +387,9 @@ struct GameView: View {
                     .disabled(!session.canSurrender)
                     .opacity(session.canSurrender ? 1 : 0.4)
             }
-            Spacer(minLength: 16)
             BorneOffView(session: session, color: .white)
             BorneOffView(session: session, color: .black)
+            Spacer(minLength: 16)
         }
     }
 }
@@ -473,7 +515,7 @@ private struct TurnIndicatorView: View {
         case .awaitingRoll:      return String(localized: "\(name)'s turn")
         case .picking:           return String(localized: "Pick a checker")
         case .moving:            return String(localized: "Choose destination")
-        case .aiThinking:        return String(localized: "Tavtav thinking…")
+        case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
         case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         }
@@ -485,7 +527,7 @@ private struct TurnIndicatorView: View {
     private var diceSubtitle: String? {
         if diceMode == .manual {
             let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-            return isAITurn ? String(localized: "Enter Tavtav's dice") : String(localized: "Enter your dice")
+            return isAITurn ? String(localized: "Enter TavTav's dice") : String(localized: "Enter your dice")
         }
         return autoRoll ? nil : String(localized: "Tap dice to roll")
     }
@@ -582,19 +624,33 @@ private struct WinOverlayView: View {
     let onHistory: () -> Void
     let onReview: () -> Void
     let onDrill: () -> Void
+    /// Tournament mode (#weltsensation): when set, the primary action returns to
+    /// the tournament instead of replaying the game.
+    var tournamentExit: (() -> Void)? = nil
+    /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
+    /// `nil` in human-vs-human games (no mascot shown).
+    var mascot: TavTavPersona? = nil
 
     var body: some View {
         VStack(spacing: 28) {
+            if let mascot {
+                TavTavAvatar(persona: mascot, size: 108)
+            }
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
-            StatsPanelView(stats: stats)
+            // The personal Human-vs-AI record is the main app's; it's never written
+            // from the tournament flow (so it would always read "No games yet").
+            // Hide it in tournament mode.
+            if tournamentExit == nil {
+                StatsPanelView(stats: stats)
+            }
             Button {
-                onNewGame()
+                if let tournamentExit { tournamentExit() } else { onNewGame() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Play Again")
+                    Image(systemName: tournamentExit == nil ? "arrow.clockwise" : "trophy.fill")
+                    Text(tournamentExit == nil ? "Play Again" : "Zurück zum Turnier")
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 4)
