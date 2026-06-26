@@ -347,24 +347,37 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   so the review timeline runs unbroken to the final move instead of stopping short at the first
   forced bear-off ply. Earlier the `len(moves) <= 1` skip dropped them and the review visibly
   ended before the real game end.
+- **`GameReview.analyzeProgressive(record:agent:humanColor:depths:…onEvaluation:onPassComplete:progress:)`**
+  (#103) — deepening analysis that streams. Replays the record **once** into a list of `PlyContext`
+  (each captures a human ply's pre-move `boardStacks`, dice, mover, played pairs), then scores them
+  in passes: **1-ply** over all plies first (so the graph + drill are usable immediately), then
+  **2-ply** for everything except plies already a clear blunder (`relativeGap ≥ 20% & absoluteGap ≥
+  2%`), then **3-ply** for the ones still too close to call (a gap in a band around the 10%
+  threshold). Each pass rebuilds an isolated board from the stored stacks (no live `Move`/`Point`
+  kept across passes). Every (re)scored ply is emitted via `onEvaluation` carrying its current
+  `depth`; the consumer **keys by `plyNumber`** and replaces shallower results. `onPassComplete(pass,
+  depth)` fires per finished pass (pass 0 = the 1-ply base). Forced plies (`hadChoice == false`)
+  never deepen.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
   `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
-  ply the UI labels "Only move available" rather than praising), plus derived `relativeGap`
+  ply the UI labels "Only move available" rather than praising), `depth` (the search depth this
+  result was scored at — 1/2/3 under progressive analysis), plus derived `relativeGap`
   `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
 - **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
-  those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters
-  at any threshold (the iPad UI fixes it at **10%**, matching the CLI default; a configurable one is
-  tracked in #77).
+  those whose relative gap meets the threshold. The consumer filters at any threshold (the iPad UI
+  fixes it at **10%**, matching the CLI default; a configurable one is tracked in #77).
 
-The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
-task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
-found (the panel notes it's still analyzing) while the rest are scored in the background; on
-completion the model settles on the authoritative full set returned by `analyze`. The screen is a
-**full-screen, board-centric** mode (a `fullScreenCover` from the win overlay): the position the
-player faced fills the screen, with a panel (played→best + win-prob gap, a Best/Yours/None move
-overlay) and Prev/Next/swipe to page through blunders. The drill is launched the same way (full
-screen), with the already-streamed blunders handed over as a precomputed `GameReviewResult`.
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyzeProgressive` on a
+detached task and streams results back via `onEvaluation`, **upserting by `plyNumber`** so a deeper
+pass replaces the shallower result in place. The pager opens as soon as the first ply is scored; the
+win-probability graph and the drill become available once the 1-ply base pass completes
+(`firstPassComplete`, set from `onPassComplete(pass: 0)`), while the 2-/3-ply passes refine live (a
+small spinner by the move counter shows until all passes finish). The screen is a **full-screen,
+board-centric** mode (a `fullScreenCover` from the win overlay): the position the player faced fills
+the screen, with a panel (played→best + win-prob gap, the Your-move/Compare overlay) and
+Prev/Next/swipe to page through moves. The drill is launched the same way, with the current
+`GameReviewResult` handed over as a precomputed result.
 
 ## Post-game drill (#63)
 

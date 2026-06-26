@@ -29,10 +29,15 @@ public struct PlyEvaluation: Sendable {
     /// well. Forced plies are still evaluated and shown so the review timeline runs
     /// unbroken to the final move (#131).
     public let hadChoice: Bool
+    /// Search depth this evaluation was scored at. Progressive analysis (#103) emits
+    /// each ply first at depth 1, then re-emits it deeper (2, then 3 for the close
+    /// calls); consumers key by `plyNumber` and replace with the deeper result.
+    public let depth: Int
 
     public init(plyNumber: Int, die1: Int, die2: Int, boardStacks: [[Color]],
                 mover: Color, playedMove: [[Int]], playedScore: Float,
-                bestMove: [[Int]], bestScore: Float, hadChoice: Bool = true) {
+                bestMove: [[Int]], bestScore: Float, hadChoice: Bool = true,
+                depth: Int = 2) {
         self.plyNumber = plyNumber
         self.die1 = die1
         self.die2 = die2
@@ -43,6 +48,7 @@ public struct PlyEvaluation: Sendable {
         self.bestMove = bestMove
         self.bestScore = bestScore
         self.hadChoice = hadChoice
+        self.depth = depth
     }
 
     /// Relative shortfall of the played move vs the best, `(best - played)/best`,
@@ -181,6 +187,154 @@ public enum GameReview {
         }
 
         return GameReviewResult(evaluations: evaluations)
+    }
+
+    // ── Progressive analysis (#103) ──────────────────────────────────────────────
+
+    /// One human ply, captured during a single replay so the deepening passes can
+    /// re-score it without replaying the whole game again. The board is rebuilt from
+    /// `boardStacks` on demand (as `Agent.scoreCandidate` does), so no live `Move` or
+    /// `Point` reference is held across passes.
+    private struct PlyContext {
+        let plyNumber: Int
+        let die1: Int
+        let die2: Int
+        let boardStacks: [[Color]]
+        let mover: Color
+        let playedPairs: [[Int]]
+    }
+
+    /// Progressive, deepening analysis (#103). Scores every human ply at **1-ply
+    /// first** — so the caller can show the full win-probability graph and a playable
+    /// drill immediately — then re-scores in the background at **2-ply**, skipping
+    /// plies already clearly lost causes, and finally at **3-ply** for the ones still
+    /// too close to call. Each (re)scored ply is streamed via `onEvaluation` with its
+    /// current `depth`; the consumer keys by `plyNumber` and replaces shallower
+    /// results. `onPassComplete(pass, depth)` fires when a whole pass finishes (pass 0
+    /// = the 1-ply base, after which the graph/drill are complete).
+    ///
+    /// Returns the final, deepest result. Mirrors `analyze`'s per-ply selection and
+    /// board reconstruction exactly — only the depth schedule differs.
+    public static func analyzeProgressive(
+        record: GameRecord,
+        agent: Agent,
+        humanColor: Color,
+        depths: [Int] = [1, 2, 3],
+        config: GameConfig = .standard,
+        searchConfig: SearchConfig = .standard,
+        onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
+        onPassComplete: (@Sendable (_ pass: Int, _ depth: Int) -> Void)? = nil,
+        progress: (@Sendable (_ done: Int, _ total: Int, _ pass: Int) -> Void)? = nil
+    ) -> GameReviewResult {
+        let contexts = replayContexts(record: record, humanColor: humanColor, config: config)
+        guard !depths.isEmpty else { return GameReviewResult(evaluations: []) }
+
+        // Current best evaluation per ply, keyed by plyNumber, preserving play order.
+        var current: [Int: PlyEvaluation] = [:]
+        let order = contexts.map(\.plyNumber)
+
+        for (pass, depth) in depths.enumerated() {
+            var done = 0
+            for ctx in contexts {
+                let refine = pass == 0 || shouldRefine(current[ctx.plyNumber], pass: pass)
+                if refine, let eval = evaluate(ctx, agent: agent, depth: depth,
+                                               config: config, searchConfig: searchConfig) {
+                    current[ctx.plyNumber] = eval
+                    onEvaluation?(eval)
+                }
+                done += 1
+                progress?(done, contexts.count, pass)
+            }
+            onPassComplete?(pass, depth)
+        }
+
+        let evaluations = order.compactMap { current[$0] }
+        return GameReviewResult(evaluations: evaluations)
+    }
+
+    /// Replay the record once, capturing each human non-pass ply's pre-move position.
+    private static func replayContexts(record: GameRecord, humanColor: Color,
+                                       config: GameConfig) -> [PlyContext] {
+        let board = GameBoard(config: config)
+        board.initializeBoard()
+        let upper = board.boardSize + 1
+        var contexts: [PlyContext] = []
+        var mover = record.startingPlayer
+
+        for (index, ply) in record.plies.enumerated() {
+            if mover == humanColor && !ply.halfMoves.isEmpty {
+                contexts.append(PlyContext(
+                    plyNumber: index + 1, die1: ply.die1, die2: ply.die2,
+                    boardStacks: board.captureStacks(), mover: mover,
+                    playedPairs: ply.halfMoves))
+            }
+            for pair in ply.halfMoves where pair.count == 2 {
+                let from = pair[0], to = pair[1]
+                guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
+                board.points[from].pop()
+                board.points[to].push(mover)
+            }
+            if board.hasWon(mover) { break }
+            mover = mover.opponent
+        }
+        return contexts
+    }
+
+    /// Score one captured ply at `depth` against a board rebuilt from its stacks.
+    /// Returns `nil` only if the recorded move can't be matched to a legal move
+    /// (mirrors `analyze`'s guards), so the ply is simply left at its prior depth.
+    private static func evaluate(_ ctx: PlyContext, agent: Agent, depth: Int,
+                                 config: GameConfig, searchConfig: SearchConfig) -> PlyEvaluation? {
+        let board = GameBoard(config: config)
+        for (i, pieces) in ctx.boardStacks.enumerated() where i < board.points.count {
+            board.setPoint(i, pieces: pieces)
+        }
+        let dice = Dice(numberOfSides: config.dieSides)
+        dice.set(ctx.die1, ctx.die2)
+        let legal = PossibleMoves(board: board, color: ctx.mover, dice: dice).findMoves()
+        guard !legal.isEmpty,
+              let scores = try? agent.evaluateMovesNply(
+                  board, legal, color: ctx.mover, depth: depth,
+                  beamThreshold: searchConfig.beamThreshold,
+                  relativeCutoff: searchConfig.relativeCutoff,
+                  maxBranch: searchConfig.maxBranch, deadline: nil),
+              let bestIdx = argmax(scores),
+              let playedIdx = matchRecorded(ctx.playedPairs, legal) else { return nil }
+        return PlyEvaluation(
+            plyNumber: ctx.plyNumber, die1: ctx.die1, die2: ctx.die2,
+            boardStacks: ctx.boardStacks, mover: ctx.mover,
+            playedMove: ctx.playedPairs, playedScore: scores[playedIdx],
+            bestMove: pairs(of: legal[bestIdx]), bestScore: scores[bestIdx],
+            hadChoice: legal.count > 1, depth: depth)
+    }
+
+    // Deepening cutoffs (#103). Pass 1 (→2-ply) re-scores everything except plies
+    // already a clear blunder at the shallower depth (extra depth won't change the
+    // verdict). Pass 2 (→3-ply) re-scores only the ones still too close to call —
+    // a played-vs-best gap in a band around the 10% blunder threshold.
+    private static let clearBlunderRelative = 0.20
+    private static let clearBlunderAbsolute = 0.02
+    private static let closeBandLowRelative = 0.05
+    private static let closeBandHighRelative = 0.15
+    private static let closeBandAbsolute = 0.005
+
+    /// Whether a ply currently at `current` warrants re-scoring deeper on `pass`.
+    /// `internal` (not `private`) so the cutoff rules can be unit-tested without the
+    /// minutes-long model inference a full deepening pass costs.
+    static func shouldRefine(_ current: PlyEvaluation?, pass: Int) -> Bool {
+        guard let e = current, e.hadChoice else { return false }   // forced ⇒ never deepen
+        switch pass {
+        case 1:   // → 2-ply: skip the already-clear blunders
+            let clearlyBad = e.relativeGap >= clearBlunderRelative
+                && e.absoluteGap >= clearBlunderAbsolute
+            return !clearlyBad
+        case 2:   // → 3-ply: only the borderline calls
+            return e.absoluteGap >= closeBandAbsolute
+                && e.relativeGap >= closeBandLowRelative
+                && e.relativeGap <= closeBandHighRelative
+        default:
+            return true
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `MoveBuilder` | Incrementally composes a `Move` from half-moves against the live board; order-independent "bag" model; Pasch multi-hop + non-Pasch unmerge. |
 | `SearchConfig` / `Agent` search (#58) | On-device multi-ply expectimax: 2-ply baseline + anytime deepening on an isolated board copy. Leaf scoring mirrors the CLI; root strategy is iOS-specific. See `REFERENCE.md`. |
 | `GameRecord` / `GameSave.swift` | Canonical per-game value type + Codable wire format. Replay-based saves: store move history only, never board state (model-independent). |
-| `GameReview.swift` (#62, #63) | Post-game blunder analysis: replays a `GameRecord`, re-ranks every human ply at 2-ply, returns the moves that fell ≥10% short of the AI's best (streamed via `onEvaluation`). On-device port of the CLI `review` command. Also exposes `Agent.scoreCandidate` (single-move grading for the drill). See `REFERENCE.md`. |
+| `GameReview.swift` (#62, #63, #103) | Post-game blunder analysis: replays a `GameRecord` and re-ranks every human ply, returning the moves that fell ≥10% short of the AI's best. `analyzeProgressive` deepens 1→2→3-ply and streams each ply via `onEvaluation` (keyed by `plyNumber`, deeper replaces shallower) so the graph/drill are usable after the 1-ply pass; `analyze` is the original single-pass form. Also exposes `Agent.scoreCandidate` (single-move grading for the drill). See `REFERENCE.md`. |
 | `SaveStore.swift` | File-backed JSON saves under `Documents/SavedGames`; one overwritten autosave slot + named manual saves; synchronous IO; schema-versioned. |
 | `HumanGameStats.swift` | iPad analogue of the CLI human-record summary + its file-backed log/store (`HumanStatsStore`). |
 

@@ -165,8 +165,9 @@ struct GameReviewView: View {
             }
 
             // Win-probability trajectory across the whole game, with blunders ringed
-            // (#105). Shown once the full set is in (needs ≥2 points to trace a line).
-            if finished, model.chartEvaluations.count >= 2 {
+            // (#105). Shown as soon as the 1-ply base pass is in (#103) — the deeper
+            // passes refine it in place (needs ≥2 points to trace a line).
+            if model.firstPassComplete, model.chartEvaluations.count >= 2 {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Win chance through the game")
                         .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
@@ -184,6 +185,7 @@ struct GameReviewView: View {
                         .foregroundStyle(ChromeTheme.ink)
                     if isBlunder { BlunderBadge() }
                     if !finished {
+                        // Deeper passes still refining in the background (#103).
                         ProgressView().controlSize(.small)
                     }
                 }
@@ -311,6 +313,9 @@ final class GameReviewModel: ObservableObject {
     }
 
     @Published var phase: Phase = .analyzing(done: 0, total: 0)
+    /// True once the 1-ply base pass has scored every ply (#103) — the win-probability
+    /// graph and the drill are complete from here, while 2-/3-ply refine in place.
+    @Published private(set) var firstPassComplete = false
 
     /// `play/loop.py` default — flag moves ≥10% worse than the best.
     private let threshold = 0.10
@@ -341,6 +346,7 @@ final class GameReviewModel: ObservableObject {
         self.finished = true
         self.allEvaluations = trajectory
         self.blunders = trajectory.filter { $0.isBlunder(threshold: threshold) }
+        self.firstPassComplete = true
     }
 
     func run(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) async {
@@ -350,23 +356,35 @@ final class GameReviewModel: ObservableObject {
         guard let agent else { phase = .unavailable; return }
 
         let result = await Task.detached(priority: .userInitiated) { [weak self] in
-            GameReview.analyze(
+            GameReview.analyzeProgressive(
                 record: record, agent: agent, humanColor: humanColor,
                 onEvaluation: { eval in Task { @MainActor in self?.ingest(eval) } },
-                progress: { done, total in Task { @MainActor in self?.report(done: done, total: total) } }
+                onPassComplete: { pass, _ in Task { @MainActor in self?.passComplete(pass) } },
+                progress: { done, total, _ in Task { @MainActor in self?.report(done: done, total: total) } }
             )
         }.value
 
         finish(with: result)
     }
 
-    /// A streamed evaluation: record it for the all-moves review and open the pager
-    /// as soon as the first move is scored (blunders are tracked for flagging).
+    /// A streamed evaluation: upsert it by ply number (a deeper pass replaces the
+    /// shallower result, #103) and open the pager as soon as the first move is scored.
+    /// Blunders are recomputed from the current set so they track the latest depth.
     private func ingest(_ eval: PlyEvaluation) {
         guard !finished else { return }
-        allEvaluations.append(eval)
-        if eval.isBlunder(threshold: threshold) { blunders.append(eval) }
+        if let idx = allEvaluations.firstIndex(where: { $0.plyNumber == eval.plyNumber }) {
+            allEvaluations[idx] = eval
+        } else {
+            allEvaluations.append(eval)
+            allEvaluations.sort { $0.plyNumber < $1.plyNumber }
+        }
+        blunders = allEvaluations.filter { $0.isBlunder(threshold: threshold) }
         phase = .reviewing(finished: false)
+    }
+
+    /// The 1-ply base pass (pass 0) is done: the graph + drill are now complete (#103).
+    private func passComplete(_ pass: Int) {
+        if pass == 0 { firstPassComplete = true }
     }
 
     private func report(done: Int, total: Int) {
@@ -377,6 +395,7 @@ final class GameReviewModel: ObservableObject {
     /// still be in flight, so take everything straight from the returned result).
     private func finish(with result: GameReviewResult) {
         finished = true
+        firstPassComplete = true
         allEvaluations = result.evaluations
         blunders = result.blunders(threshold: threshold)
         phase = allEvaluations.isEmpty ? .nothingToReview : .reviewing(finished: true)

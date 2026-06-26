@@ -252,6 +252,93 @@ final class GameReviewTests: XCTestCase {
         }
     }
 
+    // MARK: - Progressive analysis (#103)
+
+    /// The 1-ply **base pass** covers every human non-pass ply, through the last one,
+    /// at depth 1 (like `analyze`'s coverage but cheap — no 2-/3-ply model inference).
+    /// Restricting `depths` to `[1]` keeps this in the seconds, not minutes, range.
+    func testProgressiveBasePassCoversEveryPly() {
+        var game: (plies: [PlyRecord], humanNonPass: Int, lastHumanPly: Int)?
+        for seed in UInt64(0)..<80 {
+            let g = playOutGame(seed: seed)
+            if g.finished && g.sawForcedHumanPly {
+                game = (g.plies, g.humanNonPass, g.lastHumanPly); break
+            }
+        }
+        guard let game else { return XCTFail("no finished game with a forced ply in 0..<80") }
+        let record = GameRecord(startingPlayer: .white, aiColor: .black, plies: game.plies)
+
+        final class Box: @unchecked Sendable { var passes: [Int] = []; var plies = Set<Int>() }
+        let box = Box()
+        let result = GameReview.analyzeProgressive(
+            record: record, agent: Self.agent, humanColor: .white, depths: [1],
+            onEvaluation: { e in box.plies.insert(e.plyNumber) },
+            onPassComplete: { pass, _ in box.passes.append(pass) })
+
+        XCTAssertEqual(result.evaluations.count, game.humanNonPass)
+        XCTAssertEqual(result.evaluations.last?.plyNumber, game.lastHumanPly)
+        XCTAssertEqual(box.plies.count, game.humanNonPass)
+        XCTAssertEqual(box.passes, [0])
+        XCTAssertTrue(result.evaluations.allSatisfy { $0.depth == 1 })
+    }
+
+    /// A ply re-emits deeper across passes: the same `plyNumber` arrives at depth 1
+    /// then depth 2, `onPassComplete` fires per pass, and the final result carries the
+    /// deeper score. One opening ply at `[1, 2]` so it stays cheap.
+    func testProgressiveReEmitsPlyDeeper() {
+        let (moves, _) = openingScores(color: .white, die1: 6, die2: 5)
+        let record = GameRecord(
+            startingPlayer: .white, aiColor: .black,
+            plies: [PlyRecord(die1: 6, die2: 5, halfMoves: pairs(of: moves[0]))]
+        )
+        final class Box: @unchecked Sendable { var depths: [Int] = []; var passes: [Int] = [] }
+        let box = Box()
+        let result = GameReview.analyzeProgressive(
+            record: record, agent: Self.agent, humanColor: .white, depths: [1, 2],
+            onEvaluation: { e in box.depths.append(e.depth) },
+            onPassComplete: { pass, _ in box.passes.append(pass) })
+
+        XCTAssertEqual(result.evaluations.count, 1)
+        XCTAssertEqual(box.passes, [0, 1])
+        XCTAssertEqual(box.depths, [1, 2], "the ply is emitted at depth 1, then re-emitted at depth 2")
+        XCTAssertEqual(result.evaluations[0].depth, 2)
+    }
+
+    /// The deepening cutoffs (`shouldRefine`) — pure logic, no model. Pass 1 (→2-ply)
+    /// re-scores everything but the already-clear blunders; pass 2 (→3-ply) only the
+    /// borderline calls; forced plies never deepen.
+    func testProgressiveRefinementCutoffs() {
+        func ev(played: Float, best: Float, hadChoice: Bool = true) -> PlyEvaluation {
+            PlyEvaluation(plyNumber: 1, die1: 1, die2: 2, boardStacks: [], mover: .white,
+                          playedMove: [], playedScore: played, bestMove: [], bestScore: best,
+                          hadChoice: hadChoice, depth: 1)
+        }
+        // Forced ply: never deepened on any pass.
+        let forced = ev(played: 0.5, best: 0.5, hadChoice: false)
+        XCTAssertFalse(GameReview.shouldRefine(forced, pass: 1))
+        XCTAssertFalse(GameReview.shouldRefine(forced, pass: 2))
+
+        // Clear blunder (rel 30%, abs 15%): skipped at 2-ply and 3-ply.
+        let clearBlunder = ev(played: 0.35, best: 0.50)
+        XCTAssertFalse(GameReview.shouldRefine(clearBlunder, pass: 1))
+        XCTAssertFalse(GameReview.shouldRefine(clearBlunder, pass: 2))
+
+        // Borderline (rel 10%, abs 5%): refined at both 2-ply and 3-ply.
+        let borderline = ev(played: 0.45, best: 0.50)
+        XCTAssertTrue(GameReview.shouldRefine(borderline, pass: 1))
+        XCTAssertTrue(GameReview.shouldRefine(borderline, pass: 2))
+
+        // Best played (zero gap): refined at 2-ply (could shift), not 3-ply.
+        let best = ev(played: 0.50, best: 0.50)
+        XCTAssertTrue(GameReview.shouldRefine(best, pass: 1))
+        XCTAssertFalse(GameReview.shouldRefine(best, pass: 2))
+
+        // Tiny miss below the close band (rel 3%): refined at 2-ply, not 3-ply.
+        let tiny = ev(played: 0.485, best: 0.50)
+        XCTAssertTrue(GameReview.shouldRefine(tiny, pass: 1))
+        XCTAssertFalse(GameReview.shouldRefine(tiny, pass: 2))
+    }
+
     // MARK: - Board reconstruction
 
     /// The captured `boardStacks` is the position *before* the move — for the first
