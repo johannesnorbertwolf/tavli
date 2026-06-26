@@ -243,50 +243,50 @@
         }
       }
     },
-    "Tavtav goes first!" : {
+    "TavTav goes first!" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav beginnt!"
+            "value" : "TavTav beginnt!"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav begint!"
+            "value" : "TavTav begint!"
           }
         }
       }
     },
-    "Tavtav starts" : {
+    "TavTav starts" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav beginnt"
+            "value" : "TavTav beginnt"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav begint"
+            "value" : "TavTav begint"
           }
         }
       }
     },
-    "Tavtav thinking…" : {
+    "TavTav thinking…" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav denkt nach…"
+            "value" : "TavTav denkt nach…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtav denkt na…"
+            "value" : "TavTav denkt na…"
           }
         }
       }
@@ -865,18 +865,18 @@
         }
       }
     },
-    "Enter Tavtav's dice" : {
+    "Enter TavTav's dice" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tavtavs Würfel eingeben"
+            "value" : "TavTavs Würfel eingeben"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Voer Tavtavs dobbelstenen in"
+            "value" : "Voer TavTavs dobbelstenen in"
           }
         }
       }
@@ -1032,18 +1032,18 @@
         }
       }
     },
-    "Human vs Tavtav" : {
+    "Human vs TavTav" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mensch gegen Tavtav"
+            "value" : "Mensch gegen TavTav"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mens tegen Tavtav"
+            "value" : "Mens tegen TavTav"
           }
         }
       }
