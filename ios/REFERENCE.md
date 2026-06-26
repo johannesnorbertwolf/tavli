@@ -396,8 +396,9 @@ reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_
 The app side (`DrillView` + `@MainActor DrillModel`) analyzes (or takes a precomputed
 `GameReviewResult` from the review screen), seeds a card per blunder, wires `onMoveAttempt` to grade
 off the main actor, reveals the best move with `SourceRingView`/`TargetHighlightView`, and tracks
-solved/skipped for the "Drill complete" summary. Launchable from the win overlay and the review
-screen.
+solved/skipped for the "Drill complete" summary. Launched **from the review screen** (#130) — the
+win overlay offers Review only; the in-review "Drill blunders" button hands over the already-computed
+`GameReviewResult`, so the drill never re-analyzes.
 
 ## Layout
 
