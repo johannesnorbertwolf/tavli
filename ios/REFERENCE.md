@@ -357,7 +357,11 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   kept across passes). Every (re)scored ply is emitted via `onEvaluation` carrying its current
   `depth`; the consumer **keys by `plyNumber`** and replaces shallower results. `onPassComplete(pass,
   depth)` fires per finished pass (pass 0 = the 1-ply base). Forced plies (`hadChoice == false`)
-  never deepen.
+  never deepen. With **`includeOpponent: true`** (#132) the AI's plies are evaluated too, so the
+  review can step through and annotate them — but only on the 1-ply base pass; opponent plies are
+  not deepened (precise ranking is what matters for *your* blunders, and deepening both sides would
+  double the cost). Each evaluation carries its `mover`, so the consumer keeps blunder flagging and
+  the drill to the human's own plies.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
   `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
@@ -376,8 +380,11 @@ win-probability graph and the drill become available once the 1-ply base pass co
 small spinner by the move counter shows until all passes finish). The screen is a **full-screen,
 board-centric** mode (a `fullScreenCover` from the win overlay): the position the player faced fills
 the screen, with a panel (played→best + win-prob gap, the Your-move/Compare overlay) and
-Prev/Next/swipe to page through moves. The drill is launched the same way, with the current
-`GameReviewResult` handed over as a precomputed result.
+Prev/Next/swipe to page through moves. Both sides' moves are shown (#132): each card is tagged You
+or **Tavtav** (the AI persona), opponent cards annotate Tavtav's played/best, and an "All moves /
+My blunders" toggle jumps navigation only between your own blunders. Blunder flagging, the chart
+rings, and the drill stay scoped to the human's plies (filtered by `mover == humanColor`). The drill
+is launched the same way, with the current `GameReviewResult` handed over as a precomputed result.
 
 ## Post-game drill (#63)
 

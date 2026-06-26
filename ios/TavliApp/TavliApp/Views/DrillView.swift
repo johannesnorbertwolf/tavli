@@ -223,7 +223,9 @@ final class DrillModel: ObservableObject {
             return
         }
 
-        blunders = result.blunders(threshold: 0.10)
+        // Only the human's own blunders are drillable — opponent plies may now be in
+        // the result too (#132).
+        blunders = result.evaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: 0.10) }
         guard !blunders.isEmpty else { phase = .empty; return }
         loadCard(0)
         phase = .drilling

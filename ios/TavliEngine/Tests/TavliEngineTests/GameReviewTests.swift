@@ -339,6 +339,44 @@ final class GameReviewTests: XCTestCase {
         XCTAssertFalse(GameReview.shouldRefine(tiny, pass: 2))
     }
 
+    /// With `includeOpponent`, the AI's plies are evaluated too (#132) — included in
+    /// play order, but kept at the 1-ply base depth while the human's plies deepen.
+    /// Without it, only the human's plies appear.
+    func testProgressiveOpponentMovesIncludedButNotDeepened() {
+        // Build a two-ply record: White's opening, then Black's reply, each a real
+        // choice. Black's legal moves come from the board after White's move.
+        let board = GameBoard(config: Self.config)
+        board.initializeBoard()
+        let dice = Dice(numberOfSides: Self.config.dieSides)
+        dice.set(6, 5)
+        let whiteMove = PossibleMoves(board: board, color: .white, dice: dice).findMoves()[0]
+        let wPairs = pairs(of: whiteMove)
+        for p in wPairs { board.points[p[0]].pop(); board.points[p[1]].push(.white) }
+        dice.set(4, 3)
+        let blackMove = PossibleMoves(board: board, color: .black, dice: dice).findMoves()[0]
+        let record = GameRecord(
+            startingPlayer: .white, aiColor: .black,
+            plies: [PlyRecord(die1: 6, die2: 5, halfMoves: wPairs),
+                    PlyRecord(die1: 4, die2: 3, halfMoves: pairs(of: blackMove))]
+        )
+
+        let withOpp = GameReview.analyzeProgressive(
+            record: record, agent: Self.agent, humanColor: .white,
+            depths: [1, 2], includeOpponent: true)
+        XCTAssertEqual(withOpp.evaluations.count, 2)
+        let white = withOpp.evaluations.first { $0.mover == .white }
+        let black = withOpp.evaluations.first { $0.mover == .black }
+        XCTAssertNotNil(black, "the opponent's ply should be included")
+        XCTAssertEqual(white?.depth, 2, "the human's ply deepens to 2-ply")
+        XCTAssertEqual(black?.depth, 1, "the opponent's ply stays at the 1-ply base")
+
+        let humanOnly = GameReview.analyzeProgressive(
+            record: record, agent: Self.agent, humanColor: .white,
+            depths: [1, 2], includeOpponent: false)
+        XCTAssertEqual(humanOnly.evaluations.count, 1)
+        XCTAssertTrue(humanOnly.evaluations.allSatisfy { $0.mover == .white })
+    }
+
     // MARK: - Board reconstruction
 
     /// The captured `boardStacks` is the position *before* the move — for the first

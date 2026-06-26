@@ -27,6 +27,8 @@ struct GameReviewView: View {
     @State private var overlay: MoveOverlay = .your
     /// Drives the drill, launched full-screen from the review (#63).
     @State private var showDrill = false
+    /// When on, Prev/Next/swipe jump only between your own blunders (#132).
+    @State private var onlyBlunders = false
 
     enum MoveOverlay: Hashable { case your, both }
 
@@ -59,6 +61,16 @@ struct GameReviewView: View {
                 .padding(20)
         }
         .task { await model.run(record: record, agent: agent, humanColor: humanColor) }
+        .onChange(of: onlyBlunders) { _, on in
+            // Snap to the blunder nearest the current move when switching to the
+            // blunders-only filter, so you don't land on a hidden non-blunder (#132).
+            guard on else { return }
+            let plies = model.chartEvaluations
+            let blunderIdx = plies.indices.filter { model.blunderPlies.contains(plies[$0].plyNumber) }
+            if let nearest = blunderIdx.min(by: { abs($0 - index) < abs($1 - index) }) {
+                index = nearest
+            }
+        }
         .fullScreenCover(isPresented: $showDrill) {
             DrillView(record: record, precomputed: model.result,
                       agent: agent, humanColor: humanColor)
@@ -156,6 +168,8 @@ struct GameReviewView: View {
     private func panel(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
                        onScrub: @escaping (Int) -> Void) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
+        let isHuman = eval.mover == humanColor
+        let mover = isHuman ? "You" : "Tavtav"
         return VStack(alignment: .leading, spacing: 18) {
             // Reassurance headline when the whole game had no blunders (#105).
             if finished, model.blunderPlies.isEmpty {
@@ -183,6 +197,8 @@ struct GameReviewView: View {
                     Text("Move \(i + 1) of \(count)")
                         .font(.title3.bold())
                         .foregroundStyle(ChromeTheme.ink)
+                    // Whose move this is — your own, or the AI opponent's (#132).
+                    MoverChip(label: mover, isHuman: isHuman)
                     if isBlunder { BlunderBadge() }
                     if !finished {
                         // Deeper passes still refining in the background (#103).
@@ -197,7 +213,7 @@ struct GameReviewView: View {
             // Played vs best, with the win-prob gap — emphasized red for a blunder,
             // muted for a small miss, or a best-move note when you matched the AI.
             VStack(alignment: .leading, spacing: 10) {
-                moveLine(label: "You played", move: eval.playedMove,
+                moveLine(label: "\(mover) played", move: eval.playedMove,
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
                 if !eval.hadChoice {
                     // Forced ply: a single legal move, so there was nothing to choose.
@@ -213,7 +229,7 @@ struct GameReviewView: View {
                         .font(.callout.bold())
                         .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
                 } else {
-                    Text("Best move played ✓")
+                    Text(isHuman ? "Best move played ✓" : "Tavtav played the best ✓")
                         .font(.callout.bold())
                         .foregroundStyle(ReviewTint.best)
                 }
@@ -228,7 +244,7 @@ struct GameReviewView: View {
                 .pickerStyle(.segmented)
                 if overlay == .both {
                     HStack(spacing: 14) {
-                        legendDot(CaramelPalette.hl, "yours")
+                        legendDot(CaramelPalette.hl, "played")
                         legendDot(CaramelPalette.hlBest, "best")
                         legendDot(CaramelPalette.hlBoth, "both")
                     }
@@ -237,14 +253,26 @@ struct GameReviewView: View {
                 }
             }
 
+            // Step through all plies (both sides), or jump only between your own
+            // blunders so the opponent's moves don't make navigation tedious (#132).
+            if !model.blunderPlies.isEmpty {
+                Picker("Step through", selection: $onlyBlunders) {
+                    Text("All moves").tag(false)
+                    Text("My blunders").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+
             // Navigation + drill.
+            let prev = navIndex(from: i, dir: -1)
+            let next = navIndex(from: i, dir: 1)
             HStack(spacing: 12) {
-                Button { index = max(0, i - 1) } label: { Label("Prev", systemImage: "chevron.left") }
+                Button { index = prev } label: { Label("Prev", systemImage: "chevron.left") }
                     .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(i == 0).opacity(i == 0 ? 0.4 : 1)
-                Button { index = min(count - 1, i + 1) } label: { Label("Next", systemImage: "chevron.right") }
+                    .disabled(prev == i).opacity(prev == i ? 0.4 : 1)
+                Button { index = next } label: { Label("Next", systemImage: "chevron.right") }
                     .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(i >= count - 1).opacity(i >= count - 1 ? 0.4 : 1)
+                    .disabled(next == i).opacity(next == i ? 0.4 : 1)
             }
             // Drilling is offered whenever the game had blunders to drill.
             if !model.blunderPlies.isEmpty {
@@ -266,13 +294,29 @@ struct GameReviewView: View {
         }
     }
 
-    /// Left/right swipe pages between blunders.
+    /// Next index in `dir` (+1/−1). In "My blunders" mode, skip to the next ply that
+    /// is one of your blunders; otherwise step by one. Returns the same index when
+    /// there's nowhere to go (so callers can disable the button) (#132).
+    private func navIndex(from i: Int, dir: Int) -> Int {
+        let plies = model.chartEvaluations
+        guard !plies.isEmpty else { return i }
+        if onlyBlunders, !model.blunderPlies.isEmpty {
+            var j = i + dir
+            while j >= 0 && j < plies.count {
+                if model.blunderPlies.contains(plies[j].plyNumber) { return j }
+                j += dir
+            }
+            return i
+        }
+        return min(max(i + dir, 0), plies.count - 1)
+    }
+
+    /// Left/right swipe pages through moves (honoring the blunders-only filter).
     private func pagingGesture(count: Int, current i: Int) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                if value.translation.width < 0 { index = min(count - 1, i + 1) }
-                else { index = max(0, i - 1) }
+                index = navIndex(from: i, dir: value.translation.width < 0 ? 1 : -1)
             }
     }
 
@@ -319,6 +363,8 @@ final class GameReviewModel: ObservableObject {
 
     /// `play/loop.py` default — flag moves ≥10% worse than the best.
     private let threshold = 0.10
+    /// The human under review — only this side's plies count as blunders (#132).
+    private var humanColor: TavliEngine.Color = .white
     private var blunders: [PlyEvaluation] = []
     /// Every evaluated human ply, in play order — the win-probability chart's data
     /// source (#105). A superset of `blunders` (this same list filtered at `threshold`).
@@ -352,12 +398,14 @@ final class GameReviewModel: ObservableObject {
     func run(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) async {
         guard !started else { return }   // `.task` can re-fire; analyze once
         started = true
+        self.humanColor = humanColor
 
         guard let agent else { phase = .unavailable; return }
 
         let result = await Task.detached(priority: .userInitiated) { [weak self] in
             GameReview.analyzeProgressive(
                 record: record, agent: agent, humanColor: humanColor,
+                includeOpponent: true,
                 onEvaluation: { eval in Task { @MainActor in self?.ingest(eval) } },
                 onPassComplete: { pass, _ in Task { @MainActor in self?.passComplete(pass) } },
                 progress: { done, total, _ in Task { @MainActor in self?.report(done: done, total: total) } }
@@ -378,7 +426,7 @@ final class GameReviewModel: ObservableObject {
             allEvaluations.append(eval)
             allEvaluations.sort { $0.plyNumber < $1.plyNumber }
         }
-        blunders = allEvaluations.filter { $0.isBlunder(threshold: threshold) }
+        blunders = allEvaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: threshold) }
         phase = .reviewing(finished: false)
     }
 
@@ -397,7 +445,7 @@ final class GameReviewModel: ObservableObject {
         finished = true
         firstPassComplete = true
         allEvaluations = result.evaluations
-        blunders = result.blunders(threshold: threshold)
+        blunders = result.evaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: threshold) }
         phase = allEvaluations.isEmpty ? .nothingToReview : .reviewing(finished: true)
     }
 }
@@ -454,6 +502,21 @@ private struct BlunderBadge: View {
         .foregroundStyle(CaramelPalette.hlEdge)
         .background(CaramelPalette.hl.opacity(0.22), in: Capsule())
         .overlay(Capsule().stroke(CaramelPalette.hlEdge.opacity(0.55), lineWidth: 1))
+    }
+}
+
+/// Whose move a review card is — "You" (amber) or the AI persona "Tavtav" (#132).
+private struct MoverChip: View {
+    let label: String
+    let isHuman: Bool
+    var body: some View {
+        let tint = isHuman ? ChromeTheme.undoTint : ReviewTint.best
+        Text(label)
+            .font(.caption.bold())
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .foregroundStyle(tint)
+            .background(tint.opacity(0.18), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.5), lineWidth: 1))
     }
 }
 

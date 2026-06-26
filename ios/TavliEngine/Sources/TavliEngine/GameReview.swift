@@ -215,18 +215,26 @@ public enum GameReview {
     ///
     /// Returns the final, deepest result. Mirrors `analyze`'s per-ply selection and
     /// board reconstruction exactly — only the depth schedule differs.
+    /// - Parameter includeOpponent: also evaluate the opponent's (AI's) plies, so the
+    ///   review can step through and annotate them too (#132). Opponent plies are
+    ///   scored on the 1-ply base pass only — they are not deepened (the precise
+    ///   ranking matters for *your* blunders, and deepening both sides would double the
+    ///   expensive work). Each evaluation carries its `mover`, so the consumer keeps
+    ///   blunder flagging / the drill to the human's own plies.
     public static func analyzeProgressive(
         record: GameRecord,
         agent: Agent,
         humanColor: Color,
         depths: [Int] = [1, 2, 3],
+        includeOpponent: Bool = false,
         config: GameConfig = .standard,
         searchConfig: SearchConfig = .standard,
         onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         onPassComplete: (@Sendable (_ pass: Int, _ depth: Int) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int, _ pass: Int) -> Void)? = nil
     ) -> GameReviewResult {
-        let contexts = replayContexts(record: record, humanColor: humanColor, config: config)
+        let contexts = replayContexts(record: record, humanColor: humanColor,
+                                      config: config, includeOpponent: includeOpponent)
         guard !depths.isEmpty else { return GameReviewResult(evaluations: []) }
 
         // Current best evaluation per ply, keyed by plyNumber, preserving play order.
@@ -236,9 +244,12 @@ public enum GameReview {
         for (pass, depth) in depths.enumerated() {
             var done = 0
             for ctx in contexts {
-                let refine = pass == 0 || shouldRefine(current[ctx.plyNumber], pass: pass)
-                if refine, let eval = evaluate(ctx, agent: agent, depth: depth,
-                                               config: config, searchConfig: searchConfig) {
+                // The 1-ply base scores every ply (both sides). Deeper passes refine
+                // only the human's plies — opponent plies stay at depth 1 (#132).
+                let mayDeepen = ctx.mover == humanColor && shouldRefine(current[ctx.plyNumber], pass: pass)
+                if pass == 0 || mayDeepen,
+                   let eval = evaluate(ctx, agent: agent, depth: depth,
+                                       config: config, searchConfig: searchConfig) {
                     current[ctx.plyNumber] = eval
                     onEvaluation?(eval)
                 }
@@ -252,9 +263,11 @@ public enum GameReview {
         return GameReviewResult(evaluations: evaluations)
     }
 
-    /// Replay the record once, capturing each human non-pass ply's pre-move position.
+    /// Replay the record once, capturing each scored ply's pre-move position. By
+    /// default only the human's non-pass plies; with `includeOpponent`, the AI's too.
     private static func replayContexts(record: GameRecord, humanColor: Color,
-                                       config: GameConfig) -> [PlyContext] {
+                                       config: GameConfig,
+                                       includeOpponent: Bool = false) -> [PlyContext] {
         let board = GameBoard(config: config)
         board.initializeBoard()
         let upper = board.boardSize + 1
@@ -262,7 +275,7 @@ public enum GameReview {
         var mover = record.startingPlayer
 
         for (index, ply) in record.plies.enumerated() {
-            if mover == humanColor && !ply.halfMoves.isEmpty {
+            if !ply.halfMoves.isEmpty, includeOpponent || mover == humanColor {
                 contexts.append(PlyContext(
                     plyNumber: index + 1, die1: ply.die1, die2: ply.die2,
                     boardStacks: board.captureStacks(), mover: mover,
