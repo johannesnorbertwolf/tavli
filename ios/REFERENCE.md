@@ -395,10 +395,12 @@ the player to find a better move **on the real board**. It reuses #62's blunder 
 
 - **Attempt mode** (`onMoveAttempt: (@MainActor (Move) -> Void)?`). When set, the session runs in
   attempt mode: completing a move (via the normal `commitHalfMove`/`confirm` tap flow) reports it
-  to the hook and then **rolls it back** to the pre-move position (`board.undoHalfMove` per built
-  half-move, then `beginTurn()` re-arms `.picking` at the same dice) instead of recording it and
-  advancing the turn. `record.plies`/`undoHistory` and the turn are left untouched, so a finished
-  game's record is never mutated and the player can re-attempt the position indefinitely. Both
+  to the hook instead of recording it and advancing the turn. `record.plies`/`undoHistory` and the
+  turn are left untouched, so a finished game's record is never mutated. By default the move is then
+  **rolled back** immediately (`board.undoHalfMove` per built half-move, then `beginTurn()` re-arms
+  `.picking` at the same dice) so the player can re-attempt. With **`holdAttempts == true`** (#114)
+  the move instead **stays on the board** (input locked: selection/legal-moves cleared) and
+  `heldAttempt` holds it; `retryAttempt()` is the explicit rollback (undo + `beginTurn()`). Both
   completion sites funnel through one private `completeMove()`; with the hook nil (normal play)
   behaviour is unchanged.
 - **Drill seeder** (`GameSession.drill(boardStacks:die1:die2:mover:agent:config:)`). Stands up a

@@ -36,6 +36,31 @@ final class GameSessionDrillTests: XCTestCase {
         XCTAssertFalse(s.selectableSources.isEmpty, "position re-armed for another attempt")
     }
 
+    /// With `holdAttempts`, a completed attempt stays on the board (input locked) and
+    /// only `retryAttempt()` rolls it back to the pre-move position (#114).
+    func testHoldAttemptKeepsPositionUntilRetry() {
+        let s = GameSession(startingPlayer: .white)
+        s.setManualDice(3, 5)
+        let before = s.game.board.points.map(\.pieces)
+        var reported = 0
+        s.onMoveAttempt = { _ in reported += 1 }
+        s.holdAttempts = true
+
+        s.commitHalfMove(from: 1, to: 4)
+        s.commitHalfMove(from: 4, to: 9)
+
+        XCTAssertEqual(reported, 1)
+        XCTAssertNotNil(s.heldAttempt, "the attempt is held on the board")
+        XCTAssertNotEqual(s.game.board.points.map(\.pieces), before, "board shows the move's result")
+        XCTAssertTrue(s.selectableSources.isEmpty, "input is locked while an attempt is held")
+
+        s.retryAttempt()
+        XCTAssertNil(s.heldAttempt)
+        XCTAssertEqual(s.game.board.points.map(\.pieces), before, "rolled back to the pre-move position")
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertFalse(s.selectableSources.isEmpty, "re-armed for another attempt")
+    }
+
     /// Two attempts in a row both fire and both leave the position pristine.
     func testAttemptModeAllowsRepeatedTries() {
         let s = GameSession(startingPlayer: .white)
