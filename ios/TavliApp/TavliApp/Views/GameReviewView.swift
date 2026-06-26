@@ -198,7 +198,14 @@ struct GameReviewView: View {
             VStack(alignment: .leading, spacing: 10) {
                 moveLine(label: "You played", move: eval.playedMove,
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
-                if eval.absoluteGap >= 0.005 {
+                if !eval.hadChoice {
+                    // Forced ply: a single legal move, so there was nothing to choose.
+                    // Shown so the timeline reaches the final move (#131), but never
+                    // praised or flagged as a miss.
+                    Text("Only move available")
+                        .font(.callout.bold())
+                        .foregroundStyle(ChromeKit.inkSecondary)
+                } else if eval.absoluteGap >= 0.005 {
                     moveLine(label: "Best move", move: eval.bestMove,
                              pct: Double(eval.bestScore), tint: ReviewTint.best)
                     Text("−\(percent(eval.absoluteGap)) win chance")

@@ -23,10 +23,16 @@ public struct PlyEvaluation: Sendable {
     public let bestMove: [[Int]]
     /// Win probability for `mover` of the best move.
     public let bestScore: Float
+    /// Whether the position offered a real choice (more than one legal move). When
+    /// `false` the ply was forced — a single legal move — so `playedMove == bestMove`
+    /// and the UI should label it a no-decision rather than imply the player chose
+    /// well. Forced plies are still evaluated and shown so the review timeline runs
+    /// unbroken to the final move (#131).
+    public let hadChoice: Bool
 
     public init(plyNumber: Int, die1: Int, die2: Int, boardStacks: [[Color]],
                 mover: Color, playedMove: [[Int]], playedScore: Float,
-                bestMove: [[Int]], bestScore: Float) {
+                bestMove: [[Int]], bestScore: Float, hadChoice: Bool = true) {
         self.plyNumber = plyNumber
         self.die1 = die1
         self.die2 = die2
@@ -36,6 +42,7 @@ public struct PlyEvaluation: Sendable {
         self.playedScore = playedScore
         self.bestMove = bestMove
         self.bestScore = bestScore
+        self.hadChoice = hadChoice
     }
 
     /// Relative shortfall of the played move vs the best, `(best - played)/best`,
@@ -56,9 +63,11 @@ public struct PlyEvaluation: Sendable {
     }
 }
 
-/// The result of reviewing a finished game: every human ply that offered a real
-/// choice (more than one legal move), re-evaluated. `blunders(threshold:)` filters
-/// to the ones worth flagging.
+/// The result of reviewing a finished game: every human ply that actually moved,
+/// re-evaluated, in play order — including forced single-legal-move plies (flagged
+/// `hadChoice: false`) so the timeline runs unbroken to the final move (#131).
+/// `blunders(threshold:)` filters to the ones worth flagging (forced plies have a
+/// zero gap and never flag).
 public struct GameReviewResult: Sendable {
     public let evaluations: [PlyEvaluation]
 
@@ -79,9 +88,10 @@ public struct GameReviewResult: Sendable {
 public enum GameReview {
     /// Replay `record` and evaluate each human ply.
     ///
-    /// Mirrors `_collect_blunders`: a ply is evaluated only when it's the human's
-    /// move, was not a forced pass, and offered more than one legal move (a single
-    /// legal move is no decision). Every legal move is ranked at `depth` via
+    /// Mirrors `_collect_blunders`: a ply is evaluated when it's the human's move and
+    /// was not a forced pass. Forced single-legal-move plies are evaluated too (and
+    /// marked `hadChoice: false`) so the review reaches the final move — they just
+    /// carry a zero gap (#131). Every legal move is ranked at `depth` via
     /// `Agent.evaluateMovesNply` — the same parity-validated multi-ply scoring the
     /// live AI uses, with no wall-clock deadline since analysis is offline. The
     /// board is advanced by replaying the recorded half-moves in place, exactly as
@@ -122,8 +132,13 @@ public enum GameReview {
                 dice.set(ply.die1, ply.die2)
                 let legal = PossibleMoves(board: board, color: mover, dice: dice).findMoves()
 
-                // A single legal move is no decision (matches `len(moves) <= 1`).
-                if legal.count > 1,
+                // Evaluate every ply that actually moved, including forced
+                // single-legal-move plies (`legal.count == 1`). Those are common in
+                // the bear-off endgame; dropping them made the review timeline stop
+                // short of the real game end (#131). A forced ply scores its one move
+                // (best == played, zero gap) and is flagged `hadChoice: false` so the
+                // UI marks it a no-decision rather than implying a good choice.
+                if !legal.isEmpty,
                    let scores = try? agent.evaluateMovesNply(
                        board, legal, color: mover, depth: depth,
                        beamThreshold: searchConfig.beamThreshold,
@@ -142,7 +157,8 @@ public enum GameReview {
                         playedMove: ply.halfMoves,
                         playedScore: scores[playedIdx],
                         bestMove: pairs(of: legal[bestIdx]),
-                        bestScore: scores[bestIdx]
+                        bestScore: scores[bestIdx],
+                        hadChoice: legal.count > 1
                     )
                     evaluations.append(evaluation)
                     onEvaluation?(evaluation)
@@ -170,9 +186,8 @@ public enum GameReview {
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     /// Number of human plies that `analyze` will evaluate: the human's own,
-    /// non-pass plies. (Single-legal-move plies are still counted here — they are
-    /// only skipped during scoring, which doesn't change the progress denominator
-    /// materially and keeps this a cheap, replay-free pass.)
+    /// non-pass plies — forced single-legal-move plies included, since those are now
+    /// evaluated too (#131). A cheap, replay-free pass that matches the emitted count.
     private static func humanPlyCount(record: GameRecord, humanColor: Color) -> Int {
         var mover = record.startingPlayer
         var count = 0

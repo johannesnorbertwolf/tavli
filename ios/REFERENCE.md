@@ -333,9 +333,8 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
 - **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:onEvaluation:progress:)`** —
   replays the record from the initial position, advancing the board by applying each ply's recorded
   half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
-  At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
-  **more than one legal move** (a single legal move is no decision — mirrors the CLI's
-  `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
+  At each ply where it's the **human's** move and the move was **not a forced pass** (empty
+  half-moves), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
   (default **2** — fast, and the depth on-device play uses; the same parity-validated scoring the
   live AI uses), with **no wall-clock deadline** since analysis is offline. `evaluateMovesNply`
   capture/restores stacks, so the working board is never corrupted. The played move is located among
@@ -343,10 +342,15 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   order may differ from the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find`
   match). `onEvaluation` fires per evaluated ply **as it is scored** (lets the UI stream blunders —
   show the first one immediately while the rest are still being found); `progress` fires once per
-  evaluated human ply with `(done, total)`.
+  evaluated human ply with `(done, total)`. **Forced single-legal-move plies are evaluated too**
+  (#131): they score their one move (best == played, zero gap) and are flagged `hadChoice: false`,
+  so the review timeline runs unbroken to the final move instead of stopping short at the first
+  forced bear-off ply. Earlier the `len(moves) <= 1` skip dropped them and the review visibly
+  ended before the real game end.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
-  `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
+  `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
+  ply the UI labels "Only move available" rather than praising), plus derived `relativeGap`
   `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
 - **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
   those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters

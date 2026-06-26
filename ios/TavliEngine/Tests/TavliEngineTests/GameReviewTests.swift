@@ -29,9 +29,67 @@ final class GameReviewTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Deterministic generator so a played-out game (and any failure) is reproducible.
+    private struct LCG: RandomNumberGenerator {
+        var state: UInt64
+        init(_ seed: UInt64) { state = seed &+ 0x9E3779B97F4A7C15 }
+        mutating func next() -> UInt64 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            return z ^ (z >> 31)
+        }
+    }
+
     /// `[from, to]` half-move pairs of a move, in stored order.
     private func pairs(of move: Move) -> [[Int]] {
         move.halfMoves.map { [$0.from.position, $0.to.position] }
+    }
+
+    /// Deterministically play a full game (always the first legal move) from `seed`,
+    /// recording every ply. Advances the board with the same in-place pop/push that
+    /// `GameReview.analyze` replays with, so the analyzer reconstructs an identical
+    /// board and every recorded move stays legal. Reports how many human (White)
+    /// non-pass plies there were, the ply number of the last one, whether White ever
+    /// faced a forced single legal move, and whether the game finished.
+    private func playOutGame(seed: UInt64)
+        -> (plies: [PlyRecord], humanNonPass: Int, lastHumanPly: Int,
+            sawForcedHumanPly: Bool, finished: Bool) {
+        let board = GameBoard(config: Self.config)
+        board.initializeBoard()
+        let dice = Dice(numberOfSides: Self.config.dieSides)
+        var rng = LCG(seed)
+
+        var plies: [PlyRecord] = []
+        var mover: Color = .white
+        var humanNonPass = 0
+        var lastHumanPly = 0
+        var sawForced = false
+        var finished = false
+
+        while plies.count < 600 {
+            let d1 = Int.random(in: 1...Self.config.dieSides, using: &rng)
+            let d2 = Int.random(in: 1...Self.config.dieSides, using: &rng)
+            dice.set(d1, d2)
+            let legal = PossibleMoves(board: board, color: mover, dice: dice).findMoves()
+            let chosen = legal.first.map { pairs(of: $0) } ?? []
+            plies.append(PlyRecord(die1: d1, die2: d2, halfMoves: chosen))
+
+            if mover == .white && !chosen.isEmpty {
+                humanNonPass += 1
+                lastHumanPly = plies.count   // 1-based ply index
+                if legal.count == 1 { sawForced = true }
+            }
+
+            for pair in chosen where pair.count == 2 {
+                board.points[pair[0]].pop()
+                board.points[pair[1]].push(mover)
+            }
+            if board.hasWon(mover) { finished = true; break }
+            mover = mover.opponent
+        }
+        return (plies, humanNonPass, lastHumanPly, sawForced, finished)
     }
 
     /// The opening position's legal moves for `color` under a fixed roll, plus
@@ -154,6 +212,44 @@ final class GameReviewTests: XCTestCase {
         )
         let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
         XCTAssertTrue(result.evaluations.isEmpty)
+    }
+
+    /// Regression for #131: the review must not stop short of the end. Every human
+    /// non-pass ply of a finished game — including the forced single-legal-move plies
+    /// that dominate the bear-off endgame — is represented, and the final human ply
+    /// is among them. Plays a full game out (deterministic, first-legal-move) so the
+    /// endgame's forced plies actually occur, then checks coverage against the count
+    /// of human non-pass plies. Forced plies are flagged `hadChoice == false`.
+    func testForcedEndgamePliesAreNotDropped() {
+        // Play games from successive seeds until one contains a forced (single legal
+        // move) White ply, so the fix is genuinely exercised — forced plies are
+        // common in the bear-off endgame but not guaranteed for any single seed.
+        var game: (plies: [PlyRecord], humanNonPass: Int, lastHumanPly: Int, finished: Bool)?
+        for seed in UInt64(0)..<80 {
+            let g = playOutGame(seed: seed)
+            if g.finished && g.sawForcedHumanPly {
+                game = (g.plies, g.humanNonPass, g.lastHumanPly, g.finished)
+                break
+            }
+        }
+        guard let game else {
+            return XCTFail("no seed in 0..<80 produced a finished game with a forced White ply")
+        }
+
+        let record = GameRecord(startingPlayer: .white, aiColor: .black, plies: game.plies)
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
+
+        // Every human non-pass ply is represented — none dropped for being forced.
+        XCTAssertEqual(result.evaluations.count, game.humanNonPass,
+                       "forced single-move plies must not be dropped from the review")
+        // The review reaches the final human move.
+        XCTAssertEqual(result.evaluations.last?.plyNumber, game.lastHumanPly,
+                       "review must include the last human ply, not stop short")
+        // Forced plies are flagged and carry a zero gap (never a blunder).
+        for e in result.evaluations where !e.hadChoice {
+            XCTAssertEqual(e.absoluteGap, 0, accuracy: 1e-6)
+            XCTAssertFalse(e.isBlunder(threshold: 0.0))
+        }
     }
 
     // MARK: - Board reconstruction
