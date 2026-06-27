@@ -58,6 +58,11 @@ struct PlayableBoardView: View {
     /// the human enters the dice via the chrome's `ManualDiceControl` instead.
     var manualDiceEntry: Bool = false
 
+    /// When false, all board input — tap-to-roll, tap/drag to move — is blocked,
+    /// while rendering and incoming-move animation continue. Online play (#134) sets
+    /// this to lock the board on the opponent's turn.
+    var interactive: Bool = true
+
     /// Translation (points) past which a press is treated as a drag, not a tap.
     private let dragThreshold: CGFloat = 10
 
@@ -142,6 +147,9 @@ struct PlayableBoardView: View {
             .accessibilityValue(boardSignature)
         }
         .aspectRatio(1, contentMode: .fit)
+        // Online (#134): lock the board on the opponent's turn — blocks tap-to-roll
+        // and tap/drag while letting the incoming move animate.
+        .disabled(!interactive)
     }
 
     /// Compact per-point checker counts, exposed for UI tests to assert board

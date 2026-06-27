@@ -592,10 +592,10 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
   (no `await`) well before any game can end, so the hook is always armed in time. Observing
   `statsStore` re-renders `RootView` when a game is recorded, so the win overlay and picker read
   fresh `stats`.
-- **`ModePickerView(store:stats:onSelect:onResume:)`** (#101) — `#ece6dc` background, a large
+- **`ModePickerView(store:stats:onSelect:onResume:onPlayOnline:)`** (#101) — `#ece6dc` background, a large
   Cormorant Garamond "Tavli" wordmark, then **one primary `playCard`** (a `.chromeCard` titled
   "Play vs AI" holding two `ColorChoiceButton`s side by side — tapping a color starts that
-  game), a quiet **`recordRow`** (#64; chart icon + "My Record" + current `Ws – Ls` or "No
+  game), a secondary **`onlineButton`** (#134; "Play Online" → the Game Center lobby), a quiet **`recordRow`** (#64; chart icon + "My Record" + current `Ws – Ls` or "No
   games yet" + chevron; full-width `secondary` button) that presents the **`statsSheet`** — a
   fitted sheet (`.presentationDetents([.height(480)])`, drag indicator) with a "My Record"
   header + explicit **Done** button around `StatsPanelView(stats:)` — and (#61) a

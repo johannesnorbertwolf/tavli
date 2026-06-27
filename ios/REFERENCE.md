@@ -308,6 +308,49 @@ The app wiring (autosave after every move and on background, auto-resume on laun
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
 `Views/CLAUDE.md`.
 
+## Online multiplayer (#134, Game Center)
+
+Two people on separate devices play over the internet via **Game Center turn-based matches**
+(`GKTurnBasedMatch`) — no server to run. The whole feature rests on the replay-based state
+model above: **a match's entire state is its ply log**, so sync, persistence, and reconnection
+are all "decode + replay", with no board state to reconcile.
+
+- **The match data is an `OnlineMatchPayload` (`OnlineMatch.swift`, engine).** `{ schemaVersion,
+  startingPlayer (raw "W"/"B"), colorByPlayerID: [gamePlayerID → raw colour], plies: [PlyRecord] }`
+  — the same `PlyRecord` wire type as a save, plus an explicit colour assignment so each device
+  computes its own side independent of turn order. `encoded()`/`decoded(from:)` (rejecting a newer
+  `schemaVersion`), `newPlies(since:)` (the diff applied during live play), and `gameSave()` (a
+  `GameSave` view for the rebuild path). Stored verbatim in `GKTurnBasedMatch.matchData`; a full
+  game is a few KB, far under Game Center's limit. Covered by `OnlineMatchTests`.
+
+- **Applying a remote ply — `GameSession.applyRemoteMove(_:) -> Bool` (#134).** An online game is an
+  ordinary **human-vs-human** session (`aiColor == nil`); a networked move is structurally the AI
+  move the session already animates, so it funnels through the same path (`animateAITurn`, or a
+  synchronous apply when `animationTimings.off`). The ply carries its own dice (the active player
+  rolled locally and broadcast them); the receiver sets those dice, regenerates the legal moves, and
+  **validates by outcome** — the ply is legal iff applying it reaches the same board as some legal
+  move. Outcome comparison (not half-move identity) is required because the *same* physical move is
+  recorded differently by side: a single-checker two-die move is stored **merged** (`1→9`) by the
+  move generator but **unmerged** (`1→4,4→9`) when a human plays it via `MoveBuilder`, and both
+  replay to the identical position. Returns `false` without mutating on an illegal/malformed ply or
+  one arriving outside `.awaitingRoll` (a desync) — the coordinator then rebuilds from the
+  authoritative log. An empty `halfMoves` is a forced pass, legal only when there are no legal moves.
+  Covered by `GameSessionRemoteTests` (accept/reject/pass/Pasch + exact equivalence with `replay`).
+
+- **The bridge — `GameKitCoordinator` (`TavliApp/Online/`, app target, `@MainActor`).** Owns all
+  `GameKit` plumbing: authentication, the matchmaker invite UI, the turn-event listener, and one HvH
+  `GameSession`. **Inbound** — `receivedTurnEventFor` decodes the payload and either rebuilds the
+  session from the log (first open / reconnection, via `resume`) or applies only `newPlies(since:)`
+  through `applyRemoteMove` (live update, animated). **Outbound** — it observes `session.$record`;
+  when a new ply's mover is the local colour, it `endTurn`s with the re-encoded payload (or
+  `endMatchInTurn` with outcomes on a winning ply). Colours: creator plays White and moves first
+  (deliberately simple for v1); the creator persists the opening payload with `saveCurrentTurn` so
+  the joiner can read its colour before the first move. **Dice** stay local-roll-and-broadcast;
+  there is no shared RNG. Not covered by `swift test` (GameKit needs a signed build + two devices +
+  sandbox accounts) — verified manually; the codec and `applyRemoteMove` it calls are tested
+  headlessly. UI wiring (lobby, online turn lock, "Leave match", back-to-lobby win overlay) is in
+  `Views/CLAUDE.md`.
+
 ## Human game stats (#64)
 
 `HumanGameStats.swift` is the iPad analogue of the CLI's post-game summary box / `human-stats`
