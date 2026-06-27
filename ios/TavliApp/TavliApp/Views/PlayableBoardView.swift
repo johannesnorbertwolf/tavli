@@ -384,19 +384,22 @@ struct MoveHighlightView: View {
                                    best: best?.targets.contains(t) ?? false)
                 drawTarget(&context, geo: geo, point: t, color: c, s: s)
             }
-            // Source rings, coloured **per point**: a point used as a source by both
-            // your move and the best move is green — even if your checker went the
-            // wrong way — so it's clear which points you started from (#133). The ring
-            // count is the most pieces lifted from there by either move.
+            // Source rings, coloured **per point by count** (#133): of the pieces
+            // lifted from a point, the number both moves agree on is green (regardless
+            // of where each went — a right point / wrong move still counts), any extra
+            // the best move lifts from there are blue, and any extra you lifted that the
+            // best wouldn't are amber. So played-1 / best-2 from one point reads as one
+            // green + one blue, not two green.
             let playedSources = played.lifts.map { $0[0] }
             let bestSources = (best?.lifts ?? []).map { $0[0] }
             for src in Set(playedSources).union(bestSources) {
-                let color = Self.color(played: playedSources.contains(src),
-                                       best: bestSources.contains(src))
-                let count = max(playedSources.filter { $0 == src }.count,
-                                bestSources.filter { $0 == src }.count)
-                drawSourceRings(&context, geo: geo, point: src,
-                                colors: Array(repeating: color, count: count), s: s)
+                let played = playedSources.filter { $0 == src }.count
+                let best = bestSources.filter { $0 == src }.count
+                let green = min(played, best)
+                let colors = Array(repeating: CaramelPalette.hlBoth, count: green)
+                    + Array(repeating: CaramelPalette.hlBest, count: best - green)   // best wants more off here
+                    + Array(repeating: CaramelPalette.hl, count: played - green)     // you lifted more than best
+                drawSourceRings(&context, geo: geo, point: src, colors: colors, s: s)
             }
         }
         .aspectRatio(1, contentMode: .fit)
