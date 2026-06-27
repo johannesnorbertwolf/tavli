@@ -23,7 +23,7 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 
 | Type | What it is |
 |---|---|
-| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); **animated AI turn** (#93: `AnimationTimings`, published `aiDiceRolling`/`aiHopInFlight`, hops land one at a time; `.off` = synchronous); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook; **attempt mode** (`onMoveAttempt`) + `drill(...)` seeder for the post-game drill (#63); **in-play analysis** (#146: `inPlayAnalysisEnabled` → `inPlayAnalysis` — opponent plies captured free from the AI search, human plies ranked at 2-ply in the background during thinking time, epoch-cancelled). |
+| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); **animated AI turn** (#93: `AnimationTimings`, published `aiDiceRolling`/`aiHopInFlight`, hops land one at a time; `.off` = synchronous); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook; **attempt mode** (`onMoveAttempt`) + `drill(...)` seeder for the post-game drill (#63); **in-play analysis** (#146: `inPlayAnalysisEnabled` → `inPlayAnalysis` — opponent plies captured free from the AI search, human plies ranked at 2-ply in the background during thinking time, epoch-cancelled); **online (#134)**: `applyRemoteMove` applies a networked opponent's ply through the same animated path, validating it by resulting-board outcome. |
 | `MoveBuilder` | Incrementally composes a `Move` from half-moves against the live board; order-independent "bag" model; Pasch multi-hop + non-Pasch unmerge. |
 | `SearchConfig` / `Agent` search (#58) | On-device multi-ply expectimax: 2-ply baseline + anytime deepening on an isolated board copy. Leaf scoring mirrors the CLI; root strategy is iOS-specific. See `REFERENCE.md`. |
 | `GameRecord` / `GameSave.swift` | Canonical per-game value type (+ stable `gameId`, #104) + Codable wire format. Replay-based saves: store move history only, never board state (model-independent). Schema **v2** (#104) adds an optional `analysis` array (`AnalysisEntry` per ply: played/best moves + scores + `depth`); a save without analysis stays a v1 file, so v1 readers load it unchanged. |
@@ -31,8 +31,16 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `SaveStore.swift` | File-backed JSON saves under `Documents/SavedGames`; one overwritten autosave slot + named manual saves; synchronous IO; reads any schema ≤ current (v1 + v2, #104). |
 | `GameLogStore.swift` (#104) | Append-only log of **every** finished game (one JSON file per `gameId` under `Documents/GameLog`), written from `GameSession.onGameOver` regardless of outcome/manual save. Reuses `GameSave` as the wire format; `attachAnalysis` patches a game's analysis back in after review so a later review/drill loads it via `GameReview.cachedResult` instead of recomputing. #146: the game-over write already carries `session.inPlayAnalysis`, so even the **first** review of a game played with analysis on loads cached and only refines. |
 | `HumanGameStats.swift` | iPad analogue of the CLI human-record summary + its file-backed log/store (`HumanStatsStore`). |
+| `OnlineMatch.swift` (#134) | `OnlineMatchPayload` — the Codable blob stored in a Game Center turn-based match's `matchData`: the ply log + a per-`gamePlayerID` colour map. Encode/decode (+ version gating), `newPlies(since:)` diff, `gameSave()` view. The whole online game state is this payload, so sync/resume/reconnect are "decode + replay". |
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
+
+**Online multiplayer (#134, Game Center).** The GameKit bridge — `GameKitCoordinator`
+(`TavliApp/Online/`, app target, not covered by `swift test`) — maps a `GKTurnBasedMatch` to one
+human-vs-human `GameSession`: it pushes each completed local turn with `endTurn` and feeds the
+opponent's plies in via `applyRemoteMove` (or rebuilds from the log via `resume` on reconnect).
+Needs the Game Center capability (`TavliApp.entitlements`), a real `DEVELOPMENT_TEAM`, and the app
+registered in App Store Connect with Game Center enabled. See `REFERENCE.md` for the full flow.
 
 ## Build the app
 

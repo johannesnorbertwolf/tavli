@@ -14,6 +14,11 @@ private typealias EngineColor = TavliEngine.Color
 /// opening roll; the roll result (or manual override) builds the session.
 struct RootView: View {
     @StateObject private var statsStore = HumanStatsStore()
+    /// Online multiplayer (#134). Lives at the root so its lifetime spans the lobby
+    /// and a live match; inert until the player opens the online lobby.
+    @StateObject private var online = GameKitCoordinator()
+    /// Whether the online lobby/game is on screen (entered from the mode picker).
+    @State private var showOnline = false
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
     /// Non-nil while the opening roll screen is showing (between mode picker and game).
@@ -49,7 +54,12 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if let session {
+            if showOnline {
+                // Online multiplayer (#134) is a self-contained branch: the coordinator
+                // owns its own session, so the offline save/resume/stats wiring below is
+                // bypassed entirely (online results don't touch the vs-AI record).
+                OnlineRootView(coordinator: online, onExit: { showOnline = false })
+            } else if let session {
                 GameView(
                     session: session,
                     stats: statsStore.stats,
@@ -80,7 +90,8 @@ struct RootView: View {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
                                onSelect: beginGame,
-                               onResume: resume)
+                               onResume: resume,
+                               onPlayOnline: { showOnline = true })
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -213,6 +224,8 @@ private struct ModePickerView: View {
     let stats: HumanGameStats
     let onSelect: (EngineColor) -> Void
     let onResume: (SaveMetadata) -> Void
+    /// Enter the online multiplayer lobby (#134).
+    let onPlayOnline: () -> Void
 
     @State private var saves: [SaveMetadata] = []
 
@@ -231,6 +244,7 @@ private struct ModePickerView: View {
                     .foregroundStyle(CaramelPalette.frameText)
 
                 playCard
+                onlineButton
                 recordRow
 
                 if !saves.isEmpty {
@@ -291,6 +305,22 @@ private struct ModePickerView: View {
             .frame(maxWidth: 392)
             .chromeCard(padding: 24)
         }
+    }
+
+    /// Enter online multiplayer (#134): a secondary action under the primary
+    /// "Play vs AI", so playing the AI stays the obvious default.
+    private var onlineButton: some View {
+        Button(action: onPlayOnline) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.2.fill")
+                Text("Play Online")
+                Spacer(minLength: 24)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
+        }
+        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
+        .frame(maxWidth: 440)
     }
 
     /// Quiet secondary row: current W–L at a glance, full panel on tap.
