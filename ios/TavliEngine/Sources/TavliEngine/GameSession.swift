@@ -894,6 +894,100 @@ public final class GameSession: ObservableObject {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
+    // ── Remote move (online multiplayer, #134) ──────────────────────────────────
+
+    /// Apply a single ply received from a networked opponent (a Game Center
+    /// turn-based match, #134). The session is a pure human-vs-human game
+    /// (`aiColor == nil`); a remote move is structurally the AI move we already
+    /// animate, so it funnels through the same presentation path — only the move's
+    /// source differs (the wire, not a search).
+    ///
+    /// The ply carries its own dice (the active player rolled locally and broadcast
+    /// them). We set those dice, regenerate the legal moves, and **validate by
+    /// outcome**: the ply is legal iff applying it reaches the same board as some
+    /// legal move for these dice. Outcome comparison (not half-move identity) is
+    /// required because the same physical move is recorded differently depending on
+    /// who composed it — a single-checker two-die move is stored *merged* (`1→9`) by
+    /// the move generator but *unmerged* (`1→4,4→9`) when a human plays it through
+    /// `MoveBuilder`; both replay to the identical position.
+    ///
+    /// Returns `false` without mutating the game when the ply is illegal, malformed,
+    /// or arrives outside `.awaitingRoll` (a desync); the caller should then rebuild
+    /// from the authoritative match log via `resume`. An empty `halfMoves` is a
+    /// forced pass, legal only when there are no legal moves.
+    @discardableResult
+    public func applyRemoteMove(_ ply: PlyRecord) -> Bool {
+        guard phase == .awaitingRoll else { return false }
+
+        game.dice.set(ply.die1, ply.die2)
+        let mover = game.currentPlayer
+        let legal = PossibleMoves(board: game.board, color: mover, dice: game.dice).findMoves()
+
+        // Forced pass: legal only when the mover genuinely has no move.
+        if ply.halfMoves.isEmpty {
+            guard legal.isEmpty else { return false }
+            moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
+            if animationTimings.isAnimated {
+                animateAITurn(move: nil, score: nil, diceRollStarted: Date(),
+                              rollDuration: 0, epoch: aiTurnEpoch)
+            } else {
+                recordTurn(mover: mover, move: nil)
+                finishTurn()
+            }
+            return true
+        }
+
+        guard let move = reconstructMove(ply, mover: mover),
+              isLegalOutcome(move, among: legal) else { return false }
+
+        moveBuilder = MoveBuilder(legalMoves: legal, board: game.board,
+                                  die1: ply.die1, die2: ply.die2)
+        if animationTimings.isAnimated {
+            animateAITurn(move: move, score: nil, diceRollStarted: Date(),
+                          rollDuration: 0, epoch: aiTurnEpoch)
+        } else {
+            game.board.apply(move)
+            recordTurn(mover: mover, move: move)
+            finishTurn()
+        }
+        return true
+    }
+
+    /// Rebuild a `Move` from a ply's `[from, to]` index pairs against the live board,
+    /// or `nil` if any pair is malformed or out of range. The half-moves hold the
+    /// board's live `Point` objects, so the move can be applied/animated directly.
+    private func reconstructMove(_ ply: PlyRecord, mover: Color) -> Move? {
+        let upper = game.board.boardSize + 1
+        var halfMoves: [HalfMove] = []
+        for pair in ply.halfMoves {
+            guard pair.count == 2 else { return nil }
+            let from = pair[0], to = pair[1]
+            guard (0...upper).contains(from), (0...upper).contains(to) else { return nil }
+            halfMoves.append(HalfMove(from: game.board.points[from],
+                                      to: game.board.points[to],
+                                      color: mover))
+        }
+        return halfMoves.isEmpty ? nil : Move(halfMoves)
+    }
+
+    /// Whether `move` reaches the same position as some legal move for the current
+    /// dice. Board mutations are bracketed by capture/restore so the live board is
+    /// left exactly as found regardless of which branch matches.
+    private func isLegalOutcome(_ move: Move, among legal: [Move]) -> Bool {
+        let before = game.board.captureStacks()
+        game.board.apply(move)
+        let target = game.board.captureStacks()
+        game.board.restoreStacks(before)
+
+        for candidate in legal {
+            game.board.apply(candidate)
+            let outcome = game.board.captureStacks()
+            game.board.restoreStacks(before)
+            if outcome == target { return true }
+        }
+        return false
+    }
+
     // ── Dice rolling ─────────────────────────────────────────────────────────
 
     /// Set the dice for the next ply. Pops a saved roll from `diceReplays` when

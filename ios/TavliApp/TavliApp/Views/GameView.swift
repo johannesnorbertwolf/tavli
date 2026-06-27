@@ -44,6 +44,22 @@ struct GameView: View {
     /// the handler records the loss, keeps the in-progress game saved, and exits.
     var onGiveUp: (() -> Void)? = nil
 
+    /// Online-match presentation context (#134). Non-nil switches the chrome into
+    /// online mode: the board locks on the opponent's turn, the turn status shows a
+    /// waiting state, Save/Resign collapse to a single "Leave match", and the win
+    /// overlay returns to the lobby instead of offering a rematch. The session itself
+    /// is an ordinary human-vs-human `GameSession`; only the chrome changes.
+    struct Online {
+        var localColor: TavliEngine.Color
+        var isLocalTurn: Bool
+        var opponentName: String
+        /// A transient status line (opponent left / match ended), or `nil`.
+        var banner: String?
+        /// Forfeit/leave the match and return to the lobby.
+        var onLeave: () -> Void
+    }
+    var online: Online? = nil
+
     @State private var showingSaveDialog = false
     @State private var saveName = ""
 
@@ -83,9 +99,32 @@ struct GameView: View {
 
     /// Manual dice entry is offered whenever a roll is awaited (#77). In manual
     /// mode the session also pauses on the AI's turn (#110), so this is true for
-    /// both players' rolls — the human enters the AI's dice too.
+    /// both players' rolls — the human enters the AI's dice too. Suppressed online
+    /// (#134): each side rolls its own dice; the opponent's arrive over the wire.
     private var manualDiceActive: Bool {
-        diceMode == .manual && session.phase == .awaitingRoll
+        online == nil && diceMode == .manual && session.phase == .awaitingRoll
+    }
+
+    /// Whether the local player may touch the board: always offline, only on the
+    /// local player's turn online (#134).
+    private var boardInteractive: Bool { online?.isLocalTurn ?? true }
+
+    /// Turn/phase status — the normal indicator, or an online "waiting for opponent"
+    /// state plus any transient banner (opponent left, match ended).
+    @ViewBuilder private var turnStatus: some View {
+        VStack(spacing: 6) {
+            if let online, !online.isLocalTurn, !session.isTerminal {
+                OnlineWaitingView(opponentName: online.opponentName)
+            } else {
+                TurnIndicatorView(session: session)
+            }
+            if let banner = online?.banner {
+                Text(banner)
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeTheme.surrenderTint)
+                    .multilineTextAlignment(.center)
+            }
+        }
     }
 
     var body: some View {
@@ -107,7 +146,8 @@ struct GameView: View {
                     // nothing floats over the board's frame.
                     HStack(spacing: 0) {
                         PlayableBoardView(session: session, flipped: flipped,
-                                          manualDiceEntry: diceMode == .manual)
+                                          manualDiceEntry: diceMode == .manual,
+                                          interactive: boardInteractive)
                             .padding(8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         sidePanel
@@ -130,20 +170,21 @@ struct GameView: View {
                             .padding(.horizontal, 16)
                         Spacer(minLength: 0)
                         VStack(spacing: 12) {
-                            TurnIndicatorView(session: session)
-                            if showWinProbability && !session.isTerminal {
+                            turnStatus
+                            if online == nil && showWinProbability && !session.isTerminal {
                                 WinProbabilityBar(session: session)
                             }
                             if manualDiceActive {
                                 ManualDiceControl(session: session)
                             }
-                            if !session.isTerminal {
+                            if !session.isTerminal && boardInteractive {
                                 ControlsView(session: session)
                             }
                         }
                         .padding(.horizontal, 16)
                         PlayableBoardView(session: session, flipped: flipped,
-                                          manualDiceEntry: diceMode == .manual)
+                                          manualDiceEntry: diceMode == .manual,
+                                          interactive: boardInteractive)
                             .padding(.horizontal, 8)
                             .layoutPriority(1)
                     }
@@ -184,6 +225,7 @@ struct GameView: View {
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
                                    tournamentExit: tournamentExit,
+                                   onlineExit: online?.onLeave,
                                    mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
@@ -254,8 +296,12 @@ struct GameView: View {
             // Manual-dice mode (#110) applies to both players: keep the session's
             // flag in sync so it pauses for the human to enter the AI's dice too.
             // Applied on entry and whenever the setting is toggled mid-game.
-            .onAppear { session.manualDiceEntry = diceMode == .manual }
+            // Manual-dice and auto-roll are offline-only (#134): online players each
+            // roll their own dice and the opponent's arrive over the wire, so the
+            // online session keeps its plain tap-to-roll regardless of these settings.
+            .onAppear { if online == nil { session.manualDiceEntry = diceMode == .manual } }
             .onChange(of: diceMode) { _, mode in
+                guard online == nil else { return }
                 session.manualDiceEntry = mode == .manual
                 // Leaving manual mode while the AI sits paused for its dice:
                 // let it roll automatically again (no-op on the human's turn).
@@ -263,8 +309,9 @@ struct GameView: View {
             }
             // Auto-roll (#116): keep the session in sync. When enabled mid-game
             // while awaiting a human roll, `start()` fires the roll immediately.
-            .onAppear { session.autoRoll = autoRoll }
+            .onAppear { if online == nil { session.autoRoll = autoRoll } }
             .onChange(of: autoRoll) { _, on in
+                guard online == nil else { return }
                 session.autoRoll = on
                 if on { session.start() }
             }
@@ -337,7 +384,7 @@ struct GameView: View {
                              width: nil)
             }
             VStack(spacing: 16) {
-                TurnIndicatorView(session: session)
+                turnStatus
                 HStack(spacing: 12) {
                     BorneOffView(session: session, color: .white)
                     BorneOffView(session: session, color: .black)
@@ -345,7 +392,7 @@ struct GameView: View {
             }
             .frame(maxWidth: .infinity)
             .chromeCard(padding: 16)
-            if showWinProbability && !session.isTerminal {
+            if online == nil && showWinProbability && !session.isTerminal {
                 WinProbabilityBar(session: session)
             }
             Spacer(minLength: 0)
@@ -353,15 +400,22 @@ struct GameView: View {
                 ManualDiceControl(session: session)
             }
             if !session.isTerminal {
-                HStack(spacing: 12) {
-                    SaveButton(action: presentSaveDialog)
-                    // Disabled (not hidden) while the AI thinks so the row layout
-                    // stays put; `canSurrender` gates both the button and the intent.
-                    SurrenderButton(action: onSurrenderTapped)
-                        .disabled(!session.canSurrender)
-                        .opacity(session.canSurrender ? 1 : 0.4)
+                if let online {
+                    // Online (#134): one "Leave match" action; in-turn controls only
+                    // when it's the local player's move.
+                    LeaveButton(action: online.onLeave)
+                    if online.isLocalTurn { ControlsView(session: session) }
+                } else {
+                    HStack(spacing: 12) {
+                        SaveButton(action: presentSaveDialog)
+                        // Disabled (not hidden) while the AI thinks so the row layout
+                        // stays put; `canSurrender` gates both the button and the intent.
+                        SurrenderButton(action: onSurrenderTapped)
+                            .disabled(!session.canSurrender)
+                            .opacity(session.canSurrender ? 1 : 0.4)
+                    }
+                    ControlsView(session: session)
                 }
-                ControlsView(session: session)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -376,10 +430,14 @@ struct GameView: View {
             }
             SettingsButton { showSettings = true }
             if !session.isTerminal {
-                SaveButton(action: presentSaveDialog)
-                SurrenderButton(action: onSurrenderTapped)
-                    .disabled(!session.canSurrender)
-                    .opacity(session.canSurrender ? 1 : 0.4)
+                if let online {
+                    LeaveButton(action: online.onLeave)
+                } else {
+                    SaveButton(action: presentSaveDialog)
+                    SurrenderButton(action: onSurrenderTapped)
+                        .disabled(!session.canSurrender)
+                        .opacity(session.canSurrender ? 1 : 0.4)
+                }
             }
             BorneOffView(session: session, color: .white)
             BorneOffView(session: session, color: .black)
@@ -445,6 +503,39 @@ private struct SettingsButton: View {
         }
         .buttonStyle(ChromeButton(role: .secondary))
         .accessibilityLabel("Settings")
+    }
+}
+
+/// Online (#134): forfeit the match and return to the lobby. The one exit from an
+/// online game (there is no local save to fall back on), so it carries the kit's
+/// destructive role like Resign.
+private struct LeaveButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "rectangle.portrait.and.arrow.right")
+                Text("Leave match")
+            }
+        }
+        .buttonStyle(ChromeButton(role: .destructive))
+    }
+}
+
+/// Online (#134): the status shown on the opponent's turn — a quiet spinner and the
+/// opponent's name, in place of the local turn/phase indicator.
+private struct OnlineWaitingView: View {
+    let opponentName: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("Waiting for \(opponentName)…")
+                .font(ChromeType.headline)
+                .foregroundStyle(ChromeTheme.ink)
+                .multilineTextAlignment(.center)
+        }
     }
 }
 
@@ -620,9 +711,27 @@ private struct WinOverlayView: View {
     /// Tournament mode (#weltsensation): when set, the primary action returns to
     /// the tournament instead of replaying the game.
     var tournamentExit: (() -> Void)? = nil
+    /// Online (#134): when set, the primary action returns to the lobby, and the
+    /// vs-AI record + Review (which needs a model the online session lacks) are hidden.
+    var onlineExit: (() -> Void)? = nil
     /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
     /// `nil` in human-vs-human games (no mascot shown).
     var mascot: TavTavPersona? = nil
+
+    /// The vs-AI record is the main app's, never written from tournament or online
+    /// games — hide it there so it doesn't read "No games yet".
+    private var showsStats: Bool { tournamentExit == nil && onlineExit == nil }
+    /// Review needs the bundled model the online session deliberately omits.
+    private var showsReview: Bool { onlineExit == nil }
+
+    private var primaryIcon: String {
+        if onlineExit != nil { return "arrow.left" }
+        return tournamentExit == nil ? "arrow.clockwise" : "trophy.fill"
+    }
+    private var primaryLabel: String {
+        if onlineExit != nil { return String(localized: "Back to lobby") }
+        return tournamentExit == nil ? String(localized: "Play Again") : "Zurück zum Turnier"
+    }
 
     var body: some View {
         VStack(spacing: 28) {
@@ -632,33 +741,34 @@ private struct WinOverlayView: View {
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
-            // The personal Human-vs-AI record is the main app's; it's never written
-            // from the tournament flow (so it would always read "No games yet").
-            // Hide it in tournament mode.
-            if tournamentExit == nil {
+            if showsStats {
                 StatsPanelView(stats: stats)
             }
             Button {
-                if let tournamentExit { tournamentExit() } else { onNewGame() }
+                if let onlineExit { onlineExit() }
+                else if let tournamentExit { tournamentExit() }
+                else { onNewGame() }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: tournamentExit == nil ? "arrow.clockwise" : "trophy.fill")
-                    Text(tournamentExit == nil ? "Play Again" : "Zurück zum Turnier")
+                    Image(systemName: primaryIcon)
+                    Text(primaryLabel)
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 4)
             }
             .buttonStyle(ChromeButton(role: .primary))
             HStack(spacing: 14) {
-                Button {
-                    onReview()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                        Text("Review game")
+                if showsReview {
+                    Button {
+                        onReview()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                            Text("Review game")
+                        }
                     }
+                    .buttonStyle(ChromeButton(role: .scrim))
                 }
-                .buttonStyle(ChromeButton(role: .scrim))
                 Button {
                     onHistory()
                 } label: {

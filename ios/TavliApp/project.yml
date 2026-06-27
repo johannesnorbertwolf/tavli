@@ -28,6 +28,7 @@ targets:
       - path: TavliApp
         excludes:
           - "**/*.md"
+          - "**/*.entitlements"
     resources:
       - path: TavliApp/Resources
     dependencies:
@@ -41,6 +42,10 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliApp
         INFOPLIST_FILE: TavliApp/Info.plist
+        # Game Center capability (#134). Signing the entitlement needs a real
+        # DEVELOPMENT_TEAM and the app registered in App Store Connect with Game
+        # Center enabled; compile-only builds pass CODE_SIGNING_ALLOWED=NO.
+        CODE_SIGN_ENTITLEMENTS: TavliApp/TavliApp.entitlements
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_TEAM: ""
         LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
