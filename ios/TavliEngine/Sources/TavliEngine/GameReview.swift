@@ -426,22 +426,32 @@ public enum GameReview {
         move.halfMoves.map { [$0.from.position, $0.to.position] }
     }
 
-    /// Index of the legal move whose half-moves match `recorded`, comparing the
-    /// `(from, to)` pairs as a multiset (order-independent — the recorded order
-    /// from `MoveBuilder` may differ from the generator's). The Swift analogue of
-    /// the CLI's structural `_pairs`/`_find` matching.
+    /// Index of the legal move with the same **net board effect** as `recorded`. The
+    /// move generator collapses a single checker's two-die move into one merged hop
+    /// (e.g. `13→4`), while the UI records the two stepped hops the player tapped
+    /// (`13→7→4`); comparing raw `(from,to)` pairs misses that, silently dropping the
+    /// ply (the "missing moves" bug — #132 made it visible). Matching by net delta
+    /// (which points lose/gain a checker) is robust to *how* the move was split, and
+    /// since the afterstate — and thus the score — depends only on that delta, it's
+    /// the correct key.
     private static func matchRecorded(_ recorded: [[Int]], _ moves: [Move]) -> Int? {
-        let target = sortedPairs(recorded)
-        for (i, move) in moves.enumerated() where sortedPairs(pairs(of: move)) == target {
+        let target = netDelta(recorded)
+        for (i, move) in moves.enumerated() where netDelta(pairs(of: move)) == target {
             return i
         }
         return nil
     }
 
-    /// Canonical (sorted) form of a pair list, for order-independent comparison.
-    private static func sortedPairs(_ pairs: [[Int]]) -> [[Int]] {
-        pairs.filter { $0.count == 2 }
-            .sorted { $0[0] != $1[0] ? $0[0] < $1[0] : $0[1] < $1[1] }
+    /// Net change a move makes to the board: `point → checker delta` (each `from`
+    /// loses one, each `to` gains one), with intermediate hop points cancelling to
+    /// zero and dropping out. `13→4` and `13→7→4` both yield `{13: -1, 4: +1}`.
+    private static func netDelta(_ pairs: [[Int]]) -> [Int: Int] {
+        var delta: [Int: Int] = [:]
+        for p in pairs where p.count == 2 {
+            delta[p[0], default: 0] -= 1
+            delta[p[1], default: 0] += 1
+        }
+        return delta.filter { $0.value != 0 }
     }
 }
 

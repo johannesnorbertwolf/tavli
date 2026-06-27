@@ -252,6 +252,24 @@ final class GameReviewTests: XCTestCase {
         }
     }
 
+    /// Regression: a single checker played as two stepped hops (1→4→9 with dice 3+5)
+    /// is recorded as `[[1,4],[4,9]]`, but the generator represents it as one merged
+    /// hop `[[1,9]]`. They have the same net board effect, so the ply must still be
+    /// matched and evaluated — not silently dropped (the "missing moves" bug that left
+    /// gaps in the review, visible as two opponent cards in a row once #132 showed
+    /// both sides).
+    func testSteppedSingleCheckerMoveMatchesMergedGeneratorMove() {
+        let record = GameRecord(
+            startingPlayer: .white, aiColor: .black,
+            plies: [PlyRecord(die1: 3, die2: 5, halfMoves: [[1, 4], [4, 9]])]
+        )
+        let result = GameReview.analyze(record: record, agent: Self.agent, humanColor: .white, depth: 2)
+        XCTAssertEqual(result.evaluations.count, 1,
+                       "a stepped single-checker move must match the merged generator move")
+        XCTAssertEqual(result.evaluations.first?.plyNumber, 1)
+        XCTAssertEqual(result.evaluations.first?.playedMove, [[1, 4], [4, 9]])
+    }
+
     // MARK: - Progressive analysis (#103)
 
     /// The 1-ply **base pass** covers every human non-pass ply, through the last one,
