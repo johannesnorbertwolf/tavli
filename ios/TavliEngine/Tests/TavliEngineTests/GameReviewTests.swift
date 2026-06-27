@@ -336,9 +336,10 @@ final class GameReviewTests: XCTestCase {
         XCTAssertFalse(GameReview.shouldRefine(forced, pass: 1))
         XCTAssertFalse(GameReview.shouldRefine(forced, pass: 2))
 
-        // Clear blunder (rel 30%, abs 15%): skipped at 2-ply and 3-ply.
+        // Clear blunder (rel 30%, abs 15%): still deepened at 2-ply (the best move must
+        // be accurate, #103), but not at 3-ply — the verdict is already clear.
         let clearBlunder = ev(played: 0.35, best: 0.50)
-        XCTAssertFalse(GameReview.shouldRefine(clearBlunder, pass: 1))
+        XCTAssertTrue(GameReview.shouldRefine(clearBlunder, pass: 1))
         XCTAssertFalse(GameReview.shouldRefine(clearBlunder, pass: 2))
 
         // Borderline (rel 10%, abs 5%): refined at both 2-ply and 3-ply.
@@ -358,9 +359,9 @@ final class GameReviewTests: XCTestCase {
     }
 
     /// With `includeOpponent`, the AI's plies are evaluated too (#132) — included in
-    /// play order, but kept at the 1-ply base depth while the human's plies deepen.
-    /// Without it, only the human's plies appear.
-    func testProgressiveOpponentMovesIncludedButNotDeepened() {
+    /// play order and deepened to 2-ply like the human's (a 1-ply best is too noisy),
+    /// but not to 3-ply. Without it, only the human's plies appear.
+    func testProgressiveOpponentMovesIncludedAndDeepenedToTwoPly() {
         // Build a two-ply record: White's opening, then Black's reply, each a real
         // choice. Black's legal moves come from the board after White's move.
         let board = GameBoard(config: Self.config)
@@ -386,7 +387,7 @@ final class GameReviewTests: XCTestCase {
         let black = withOpp.evaluations.first { $0.mover == .black }
         XCTAssertNotNil(black, "the opponent's ply should be included")
         XCTAssertEqual(white?.depth, 2, "the human's ply deepens to 2-ply")
-        XCTAssertEqual(black?.depth, 1, "the opponent's ply stays at the 1-ply base")
+        XCTAssertEqual(black?.depth, 2, "the opponent's ply also deepens to 2-ply")
 
         let humanOnly = GameReview.analyzeProgressive(
             record: record, agent: Self.agent, humanColor: .white,

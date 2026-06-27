@@ -216,11 +216,12 @@ public enum GameReview {
     /// Returns the final, deepest result. Mirrors `analyze`'s per-ply selection and
     /// board reconstruction exactly — only the depth schedule differs.
     /// - Parameter includeOpponent: also evaluate the opponent's (AI's) plies, so the
-    ///   review can step through and annotate them too (#132). Opponent plies are
-    ///   scored on the 1-ply base pass only — they are not deepened (the precise
-    ///   ranking matters for *your* blunders, and deepening both sides would double the
-    ///   expensive work). Each evaluation carries its `mover`, so the consumer keeps
-    ///   blunder flagging / the drill to the human's own plies.
+    ///   review can step through and annotate them too (#132). Opponent plies deepen to
+    ///   2-ply like the human's (a 1-ply best move is too noisy — it often disagrees
+    ///   with what the strong AI actually played), but not to 3-ply: we don't flag or
+    ///   drill the opponent, so the borderline-verdict refinement is the human's alone.
+    ///   Each evaluation carries its `mover`, so the consumer keeps blunder flagging /
+    ///   the drill to the human's own plies.
     public static func analyzeProgressive(
         record: GameRecord,
         agent: Agent,
@@ -244,10 +245,15 @@ public enum GameReview {
         for (pass, depth) in depths.enumerated() {
             var done = 0
             for ctx in contexts {
-                // The 1-ply base scores every ply (both sides). Deeper passes refine
-                // only the human's plies — opponent plies stay at depth 1 (#132).
-                let mayDeepen = ctx.mover == humanColor && shouldRefine(current[ctx.plyNumber], pass: pass)
-                if pass == 0 || mayDeepen,
+                // 1-ply base scores every ply. 2-ply refines *every* real-choice ply,
+                // both sides — even clear blunders, because the displayed best move
+                // must be accurate, and ranking the candidates is what finds it (#103).
+                // 3-ply is reserved for the human's still-borderline plies; opponent
+                // plies stop at 2-ply (we don't flag or drill them).
+                let opponentBeyond2ply = ctx.mover != humanColor && pass >= 2
+                let deepen = pass == 0
+                    || (!opponentBeyond2ply && shouldRefine(current[ctx.plyNumber], pass: pass))
+                if deepen,
                    let eval = evaluate(ctx, agent: agent, depth: depth,
                                        config: config, searchConfig: searchConfig) {
                     current[ctx.plyNumber] = eval
@@ -321,12 +327,10 @@ public enum GameReview {
             hadChoice: legal.count > 1, depth: depth)
     }
 
-    // Deepening cutoffs (#103). Pass 1 (→2-ply) re-scores everything except plies
-    // already a clear blunder at the shallower depth (extra depth won't change the
-    // verdict). Pass 2 (→3-ply) re-scores only the ones still too close to call —
-    // a played-vs-best gap in a band around the 10% blunder threshold.
-    private static let clearBlunderRelative = 0.20
-    private static let clearBlunderAbsolute = 0.02
+    // Deepening cutoffs (#103). Pass 1 (→2-ply) re-scores *every* real-choice ply, so
+    // the best move is accurate everywhere (clear blunders included). Pass 2 (→3-ply)
+    // re-scores only the ones still too close to call — a played-vs-best gap in a band
+    // around the 10% blunder threshold, where the extra depth can flip the verdict.
     private static let closeBandLowRelative = 0.05
     private static let closeBandHighRelative = 0.15
     private static let closeBandAbsolute = 0.005
@@ -337,10 +341,8 @@ public enum GameReview {
     static func shouldRefine(_ current: PlyEvaluation?, pass: Int) -> Bool {
         guard let e = current, e.hadChoice else { return false }   // forced ⇒ never deepen
         switch pass {
-        case 1:   // → 2-ply: skip the already-clear blunders
-            let clearlyBad = e.relativeGap >= clearBlunderRelative
-                && e.absoluteGap >= clearBlunderAbsolute
-            return !clearlyBad
+        case 1:   // → 2-ply: re-rank every real-choice ply for an accurate best move
+            return true
         case 2:   // → 3-ply: only the borderline calls
             return e.absoluteGap >= closeBandAbsolute
                 && e.relativeGap >= closeBandLowRelative

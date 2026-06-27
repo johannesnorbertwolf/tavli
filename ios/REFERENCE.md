@@ -365,17 +365,19 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   (#103) — deepening analysis that streams. Replays the record **once** into a list of `PlyContext`
   (each captures a human ply's pre-move `boardStacks`, dice, mover, played pairs), then scores them
   in passes: **1-ply** over all plies first (so the graph + drill are usable immediately), then
-  **2-ply** for everything except plies already a clear blunder (`relativeGap ≥ 20% & absoluteGap ≥
-  2%`), then **3-ply** for the ones still too close to call (a gap in a band around the 10%
-  threshold). Each pass rebuilds an isolated board from the stored stacks (no live `Move`/`Point`
-  kept across passes). Every (re)scored ply is emitted via `onEvaluation` carrying its current
-  `depth`; the consumer **keys by `plyNumber`** and replaces shallower results. `onPassComplete(pass,
-  depth)` fires per finished pass (pass 0 = the 1-ply base). Forced plies (`hadChoice == false`)
-  never deepen. With **`includeOpponent: true`** (#132) the AI's plies are evaluated too, so the
-  review can step through and annotate them — but only on the 1-ply base pass; opponent plies are
-  not deepened (precise ranking is what matters for *your* blunders, and deepening both sides would
-  double the cost). Each evaluation carries its `mover`, so the consumer keeps blunder flagging and
-  the drill to the human's own plies.
+  **2-ply** over **every real-choice ply** — clear blunders included, because the *displayed best
+  move* must be accurate and ranking the candidates is what finds it — then **3-ply** for only the
+  ones still too close to call (`absoluteGap ≥ 0.5%` and `relativeGap` in **5–15%**, the band around
+  the 10% threshold where the extra depth can flip the verdict). Each pass rebuilds an isolated
+  board from the stored stacks (no live `Move`/`Point` kept across passes). Every (re)scored ply is
+  emitted via `onEvaluation` carrying its current `depth`; the consumer **keys by `plyNumber`** and
+  replaces shallower results. `onPassComplete(pass, depth)` fires per finished pass (pass 0 = the
+  1-ply base). Forced plies (`hadChoice == false`) never deepen. With **`includeOpponent: true`**
+  (#132) the AI's plies are evaluated too, so the review can step through and annotate them — they
+  deepen to **2-ply** like the human's (a 1-ply best is too noisy to match what the strong AI
+  actually played) but **not to 3-ply** (only the human's plies are flagged/drilled, so the
+  borderline refinement is theirs alone). Each evaluation carries its `mover`, so the consumer keeps
+  blunder flagging and the drill to the human's own plies.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
   `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
