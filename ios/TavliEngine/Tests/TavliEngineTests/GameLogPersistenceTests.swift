@@ -76,6 +76,26 @@ final class GameSaveSchemaTests: XCTestCase {
         XCTAssertEqual(decoded.analysis, [entry])
     }
 
+    /// The `GameRecord` bridge carries in-play analysis through to a v2 file (#146,
+    /// the exact shape the game-over hook writes), and empty analysis stays v1.
+    func testRecordBridgeCarriesInPlayAnalysis() throws {
+        let record = GameRecord(startingPlayer: .white, aiColor: .black,
+                                plies: [PlyRecord(die1: 1, die2: 2, halfMoves: [[1, 3]])],
+                                outcome: .white, gameId: UUID())
+        let entries = [AnalysisEntry(plyNumber: 1, playedMove: [[1, 3]], playedScore: 0.5,
+                                     bestMove: [[1, 3]], bestScore: 0.5, depth: 2)]
+        let withAnalysis = GameSave(record: record, name: "g", analysis: entries)
+        let decoded = try decoder.decode(GameSave.self, from: encoder.encode(withAnalysis))
+        XCTAssertEqual(decoded.analysis, entries)
+        XCTAssertEqual(decoded.schemaVersion, 2)
+
+        let none = GameSave(record: record, name: "g", analysis: nil)
+        let obj = try JSONSerialization.jsonObject(
+            with: encoder.encode(none)) as! [String: Any]
+        XCTAssertEqual(obj["schemaVersion"] as? Int, 1)
+        XCTAssertNil(obj["analysis"])
+    }
+
     /// The `GameRecord` bridge carries gameId + outcome both ways.
     func testRecordBridgeCarriesIdAndOutcome() {
         let id = UUID()

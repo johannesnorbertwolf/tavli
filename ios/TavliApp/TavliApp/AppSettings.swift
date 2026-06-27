@@ -11,6 +11,9 @@ import TavliEngine
 /// opening-roll ceremony, auto dice, AI animation on, win-probability bar off. Each
 /// `@AppStorage` declaration in a view must carry the same default as the matching
 /// accessor here so view bindings and these reads agree.
+///
+/// Later additions set their own sensible default rather than "no change": in-play
+/// analysis (#146) defaults **on** so reviews open instantly out of the box.
 
 /// Which color the human plays. `.ask` keeps the per-game White/Black choice on the
 /// start screen; a fixed color skips that choice and is used for every new game.
@@ -87,6 +90,7 @@ enum SettingsKey {
     static let autoRoll           = "settings.autoRoll"
     static let aiAnimation        = "settings.aiAnimationEnabled"
     static let showWinProbability = "settings.showWinProbability"
+    static let inPlayAnalysis      = "settings.inPlayAnalysis"
 }
 
 /// Static, non-reactive reads of the persisted settings, for contexts where
@@ -117,6 +121,14 @@ enum AppSettings {
 
     static var showWinProbability: Bool {
         UserDefaults.standard.object(forKey: SettingsKey.showWinProbability) as? Bool ?? false
+    }
+
+    /// Whether to compute each ply's 2-ply analysis during play (#146), so the
+    /// post-game review opens instantly. Default **on** — the work fits the human's
+    /// idle thinking window and the AI's plies are captured for free from its search;
+    /// the user can disable it to save CPU/battery.
+    static var inPlayAnalysisEnabled: Bool {
+        UserDefaults.standard.object(forKey: SettingsKey.inPlayAnalysis) as? Bool ?? true
     }
 
     /// The animation timings a new or resumed session should use, honouring the

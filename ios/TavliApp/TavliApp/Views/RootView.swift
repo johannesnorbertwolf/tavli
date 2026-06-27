@@ -100,8 +100,13 @@ struct RootView: View {
                 // Persist EVERY finished game to the append-only log (#104), regardless
                 // of outcome or whether it was ever manually saved. `record.outcome` is
                 // already set by the time this hook fires. Synchronous, like the autosave.
+                // Carry the in-play 2-ply analysis (#146) so the review opens instantly;
+                // empty (analysis off / no model) keeps the file at schema v1.
                 let name = autosaveName.isEmpty ? Self.newAutosaveName() : autosaveName
-                try? gameLog.append(session.snapshot(name: name))
+                let entries = session.inPlayAnalysis
+                let save = GameSave(record: session.record, name: name,
+                                    analysis: entries.isEmpty ? nil : entries)
+                try? gameLog.append(save)
             }
         }
     }
@@ -144,7 +149,8 @@ struct RootView: View {
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
-                                   autoRoll: AppSettings.autoRoll)
+                                   autoRoll: AppSettings.autoRoll,
+                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
         s.start()
         session = s
     }
@@ -157,7 +163,8 @@ struct RootView: View {
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
-                                   autoRoll: AppSettings.autoRoll)
+                                   autoRoll: AppSettings.autoRoll,
+                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
         guard !s.isTerminal else {
             store.clearAutosave()
             return nil
@@ -189,7 +196,8 @@ struct RootView: View {
             aiColor: humanColor.opponent,
             animationTimings: AppSettings.animationTimings,
             manualDiceEntry: AppSettings.diceMode == .manual,
-            autoRoll: AppSettings.autoRoll
+            autoRoll: AppSettings.autoRoll,
+            inPlayAnalysis: AppSettings.inPlayAnalysisEnabled
         )
         session.start()
         return session
