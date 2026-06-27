@@ -222,6 +222,13 @@ public enum GameReview {
     ///   drill the opponent, so the borderline-verdict refinement is the human's alone.
     ///   Each evaluation carries its `mover`, so the consumer keeps blunder flagging /
     ///   the drill to the human's own plies.
+    /// - Parameter seed: pre-computed analysis to start from (#146). Each seeded ply is
+    ///   placed into the working set at its stored `depth`, and a pass **skips** any ply
+    ///   already at or beyond that pass's depth. So a full depth-2 seed (the in-play
+    ///   analysis written during the game) makes passes 0 and 1 no-ops and leaves only
+    ///   the human's borderline plies to refine at 3-ply — the review opens instantly
+    ///   with no visible 2-ply pass. An empty seed reproduces the original behaviour
+    ///   exactly, so pre-#146 logs and analysis-off games still review as before.
     public static func analyzeProgressive(
         record: GameRecord,
         agent: Agent,
@@ -230,6 +237,7 @@ public enum GameReview {
         includeOpponent: Bool = false,
         config: GameConfig = .standard,
         searchConfig: SearchConfig = .standard,
+        seed: [AnalysisEntry] = [],
         onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         onPassComplete: (@Sendable (_ pass: Int, _ depth: Int) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int, _ pass: Int) -> Void)? = nil
@@ -242,6 +250,22 @@ public enum GameReview {
         var current: [Int: PlyEvaluation] = [:]
         let order = contexts.map(\.plyNumber)
 
+        // Seed the working set from any pre-computed analysis (#146). Rebuild each entry
+        // against its replayed context (the same per-entry construction `cachedResult`
+        // uses) so its `boardStacks`/`hadChoice` are exactly what a fresh pass would
+        // produce; entries with no matching context (a malformed log) are ignored.
+        let ctxByPly = Dictionary(contexts.map { ($0.plyNumber, $0) },
+                                  uniquingKeysWith: { a, _ in a })
+        for entry in seed {
+            guard let ctx = ctxByPly[entry.plyNumber] else { continue }
+            current[entry.plyNumber] = PlyEvaluation(
+                plyNumber: entry.plyNumber, die1: ctx.die1, die2: ctx.die2,
+                boardStacks: ctx.boardStacks, mover: ctx.mover,
+                playedMove: entry.playedMove, playedScore: Float(entry.playedScore),
+                bestMove: entry.bestMove, bestScore: Float(entry.bestScore),
+                hadChoice: legalMoveCount(ctx, config: config) > 1, depth: entry.depth)
+        }
+
         for (pass, depth) in depths.enumerated() {
             var done = 0
             for ctx in contexts {
@@ -251,8 +275,11 @@ public enum GameReview {
                 // 3-ply is reserved for the human's still-borderline plies; opponent
                 // plies stop at 2-ply (we don't flag or drill them).
                 let opponentBeyond2ply = ctx.mover != humanColor && pass >= 2
-                let deepen = pass == 0
-                    || (!opponentBeyond2ply && shouldRefine(current[ctx.plyNumber], pass: pass))
+                // Skip a ply already scored at or beyond this depth (a seeded entry, or
+                // an earlier pass) so seeded work is never redone (#146).
+                let alreadyDeep = (current[ctx.plyNumber]?.depth ?? 0) >= depth
+                let deepen = !alreadyDeep && (pass == 0
+                    || (!opponentBeyond2ply && shouldRefine(current[ctx.plyNumber], pass: pass)))
                 if deepen,
                    let eval = evaluate(ctx, agent: agent, depth: depth,
                                        config: config, searchConfig: searchConfig) {
@@ -416,7 +443,9 @@ public enum GameReview {
     }
 
     /// Index of the maximum score (ties → lowest index), or nil when empty.
-    private static func argmax(_ scores: [Float]) -> Int? {
+    /// `internal` (not `private`) so `GameSession`'s in-play capture (#146) picks the
+    /// best move with the exact same tie-breaking the review uses.
+    static func argmax(_ scores: [Float]) -> Int? {
         guard !scores.isEmpty else { return nil }
         var best = 0
         for i in 1..<scores.count where scores[i] > scores[best] { best = i }
@@ -436,7 +465,10 @@ public enum GameReview {
     /// (which points lose/gain a checker) is robust to *how* the move was split, and
     /// since the afterstate — and thus the score — depends only on that delta, it's
     /// the correct key.
-    private static func matchRecorded(_ recorded: [[Int]], _ moves: [Move]) -> Int? {
+    ///
+    /// `internal` (not `private`) so `GameSession`'s in-play capture (#146) keys the
+    /// played move to its score with the exact same net-delta matching.
+    static func matchRecorded(_ recorded: [[Int]], _ moves: [Move]) -> Int? {
         let target = netDelta(recorded)
         for (i, move) in moves.enumerated() where netDelta(pairs(of: move)) == target {
             return i

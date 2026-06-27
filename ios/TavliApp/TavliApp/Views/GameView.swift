@@ -90,6 +90,7 @@ struct GameView: View {
     @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
+    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
 
     /// Above this human win probability, resigning first shows the preliminary
     /// "you can still win" alert before the standard confirmation (#74).
@@ -314,6 +315,13 @@ struct GameView: View {
                 guard online == nil else { return }
                 session.autoRoll = on
                 if on { session.start() }
+            }
+            // In-play analysis (#146): keep the session's flag in sync so toggling it
+            // mid-game takes effect from the next turn (the next human ranking / AI
+            // capture). No restart needed.
+            .onAppear { session.inPlayAnalysisEnabled = inPlayAnalysis }
+            .onChange(of: inPlayAnalysis) { _, on in
+                session.inPlayAnalysisEnabled = on
             }
         }
     }

@@ -424,32 +424,43 @@ final class GameReviewModel: ObservableObject {
         started = true
         self.humanColor = humanColor
 
-        // Reuse saved analysis if this game already has it (#104): a second review of
-        // the same game rebuilds the result locally — no model inference — and the
-        // drill, reached from here, gets the same cached result. Confirmed by the lack
-        // of an "Analyzing…" pass.
-        if let cached = gameLog.analysis(forGameId: record.gameId), !cached.isEmpty {
-            finish(with: GameReview.cachedResult(record: record, analysis: cached))
+        // Seed from any saved analysis (#104, #146): the in-play 2-ply analysis written
+        // during the game, or a full prior review. Restoring it up front opens the graph,
+        // pager and drill instantly — no model inference for these plies and no visible
+        // 2-ply "Analyzing…" pass (the phase is already `.reviewing`, so `report` stays
+        // quiet). With a complete 2-ply seed only the 3-ply borderline refinement remains.
+        let cached = gameLog.analysis(forGameId: record.gameId) ?? []
+        if !cached.isEmpty {
+            for eval in GameReview.cachedResult(record: record, analysis: cached).evaluations {
+                ingest(eval)
+            }
+            firstPassComplete = true
+        }
+
+        guard let agent else {
+            // No model: keep whatever we restored from cache; nothing more we can do.
+            if cached.isEmpty { phase = .unavailable } else { finish(with: result) }
             return
         }
 
-        guard let agent else { phase = .unavailable; return }
-
-        let result = await Task.detached(priority: .userInitiated) { [weak self] in
+        // Deepen on top of the seed: a full 2-ply seed makes the 1-/2-ply passes no-ops
+        // and only the human's borderline plies refine to 3-ply; an empty seed runs the
+        // original full 1→2→3-ply analysis (pre-#146 logs / analysis-off games).
+        let reviewed = await Task.detached(priority: .userInitiated) { [weak self] in
             GameReview.analyzeProgressive(
                 record: record, agent: agent, humanColor: humanColor,
-                includeOpponent: true,
+                includeOpponent: true, seed: cached,
                 onEvaluation: { eval in Task { @MainActor in self?.ingest(eval) } },
                 onPassComplete: { pass, _ in Task { @MainActor in self?.passComplete(pass) } },
                 progress: { done, total, _ in Task { @MainActor in self?.report(done: done, total: total) } }
             )
         }.value
 
-        finish(with: result)
-        // Write the analysis back so it never recomputes (#104). No-op if the game
-        // isn't logged (e.g. a preview/test record). Off the main actor — pure file IO.
+        finish(with: reviewed)
+        // Write the (possibly deepened) analysis back so it never recomputes (#104). No-op
+        // if the game isn't logged (e.g. a preview/test record). Off the main actor.
         let gameId = record.gameId
-        let entries = [AnalysisEntry](reviewResult: result)
+        let entries = [AnalysisEntry](reviewResult: reviewed)
         if !entries.isEmpty {
             let log = gameLog
             Task.detached { try? log.attachAnalysis(entries, forGameId: gameId) }

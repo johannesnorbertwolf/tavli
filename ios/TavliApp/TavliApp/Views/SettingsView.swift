@@ -19,6 +19,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
+    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
 
     var body: some View {
         ZStack {
@@ -58,6 +59,9 @@ struct SettingsView: View {
                         toggleRow("Win-probability bar",
                                   isOn: $showWinProbability,
                                   caption: "Show your live chance of winning during the game.")
+                        toggleRow("Analyze during play",
+                                  isOn: $inPlayAnalysis,
+                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Uses a little more battery.")
                     }
                 }
                 .padding(28)

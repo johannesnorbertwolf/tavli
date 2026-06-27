@@ -162,6 +162,36 @@ so the game flow is validated without a simulator.
   chosen **index**, which the main actor maps back to the live `Move` before applying. An
   out-of-range/`nil` index (Core ML failure) falls back to a random live move.
 
+- **In-play analysis (#146).** With `inPlayAnalysis: true` (settable as `inPlayAnalysisEnabled`,
+  default off in the engine, on via the app setting), `GameSession` accumulates each ply's 2-ply
+  analysis *while the game is played*, into `analysisByPly` (exposed sorted as
+  `inPlayAnalysis: [AnalysisEntry]`). The app logs it with the finished game so the review opens
+  instantly (see *Save & load*). Two free sources:
+  - **Opponent (AI) plies — captured from the AI's own search.** `getBestMove` already returns the
+    chosen move, its score, and the depth it reached; `playAITurn` threads `depth` through to
+    `applyAIMove`/`animateAITurn`, which call `captureAIAnalysis` right after `recordTurn`. The AI
+    plays its best, so the stored entry has `played == best`, `playedScore == bestScore == score`
+    (already the mover's win prob), and `depth` = the reached depth (2 under `.standard`). A forced
+    AI move (single legal move → `getBestMove`'s sentinel score 0) and the random/no-model fallback
+    are **not** captured (`legalMoves.count > 1` + non-nil score/depth guard); the review re-scores
+    those plies instead.
+  - **Human plies — ranked in the background during thinking time.** `beginTurn` (the single human
+    chokepoint) calls `startHumanAnalysis`: off the main actor, on an **isolated board copy** (same
+    `captureStacks`/`restoreStacks` isolation as the search), it runs the *same*
+    `evaluateMovesNply(depth: 2)` over the *same* `legalMoves` the review uses — so the captured
+    scores match a from-scratch review **exactly**. The result is staged in `humanAnalysisScores`
+    (aligned to `legalMoves`) only if the turn hasn't moved on (an `analysisEpoch` staleness check).
+    On commit, `completeMove` → `captureHumanAnalysis` keys the played move to its score (net-delta
+    match) and the best to the argmax via the reused `GameReview.matchRecorded`/`argmax`, storing a
+    `depth: 2` entry. If the ranking isn't ready (the player committed faster), nothing is stored
+    and the post-game review fills that ply in.
+  - **Cancellation.** `cancelHumanAnalysis` (cancel task, drop staged scores, bump `analysisEpoch`)
+    runs from `newGame` (which also clears `analysisByPly`), `surrender`, and `enterManualRoll`. A
+    within-turn `undo` deliberately does **not** cancel: the position returns to the same turn-start
+    the ranking was computed for, so it stays valid (no recompute on move edits). Covered by
+    `GameSessionAnalysisTests` (human capture == from-scratch review, opponent self-consistency,
+    cancellation, seeded refine, disabled = no-op).
+
 - **`SearchConfig`** — the leaf scoring + inner pruning mirror the CLI's `config/config.yml` search
   section (so move *evaluation* matches `./run.sh play`), but the **root search strategy is
   iOS-specific** (see `getBestMove` below). `timeBudget`↔`play_time_budget_s` (20s — now a *hard* cap),
@@ -303,6 +333,9 @@ tests, no model/fixtures needed):
   `attachAnalysis(_:forGameId:)` patches it back (bumping that file to v2). After a review,
   `GameReviewModel` writes its `analysis` back here, and on a later review/drill of the same game
   it loads the cached analysis and rebuilds via `GameReview.cachedResult` — no model, near-instant.
+  **In-play analysis (#146):** the game-over hook also writes `session.inPlayAnalysis` straight into
+  the logged game (`GameSave(record:name:analysis:)`, empty ⇒ stays v1), so the **first** review of a
+  game played with analysis on already loads cached and only refines (see *Post-game blunder review*).
 
 The app wiring (autosave after every move and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
@@ -421,6 +454,12 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   actually played) but **not to 3-ply** (only the human's plies are flagged/drilled, so the
   borderline refinement is theirs alone). Each evaluation carries its `mover`, so the consumer keeps
   blunder flagging and the drill to the human's own plies.
+  **`seed:` (#146)** — pre-computed analysis (the in-play 2-ply written during the game, or a full
+  prior review) to start from. Each seeded ply is placed into the working set at its stored `depth`,
+  and a pass **skips** any ply already at/beyond that pass's depth (`alreadyDeep`). So a complete
+  2-ply seed makes the 1-/2-ply passes no-ops and leaves only the human's borderline plies to refine
+  at 3-ply — the review opens with no visible 2-ply pass. An empty seed reproduces the original
+  full 1→2→3-ply behaviour exactly (pre-#146 logs / analysis-off games review unchanged).
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
   `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
@@ -431,9 +470,16 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   those whose relative gap meets the threshold. The consumer filters at any threshold (the iPad UI
   fixes it at **10%**, matching the CLI default; a configurable one is tracked in #77).
 
-The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyzeProgressive` on a
-detached task and streams results back via `onEvaluation`, **upserting by `plyNumber`** so a deeper
-pass replaces the shallower result in place. The pager opens as soon as the first ply is scored; the
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) first reads any saved analysis
+(`GameLogStore.analysis(forGameId:)` — the in-play 2-ply, #146, or a prior review, #104), **seeds**
+the view from it via `GameReview.cachedResult` (so the graph/pager/drill are instant) and passes it
+as `seed:` to `analyzeProgressive`. With a complete 2-ply seed only the 3-ply borderline refinement
+runs, and since the phase is already `.reviewing`, `report` never shows the "Analyzing…" pass. Then
+it runs `analyzeProgressive` on a detached task and streams results back via `onEvaluation`,
+**upserting by `plyNumber`** so a deeper pass replaces the shallower result in place, and writes the
+merged (possibly deepened) analysis back with `attachAnalysis`. With no seed (a game played with
+analysis off, or a pre-#146 log) it runs the full pass exactly as before. The pager opens as soon as
+the first ply is scored; the
 win-probability graph and the drill become available once the 1-ply base pass completes
 (`firstPassComplete`, set from `onPassComplete(pass: 0)`), while the 2-/3-ply passes refine live (a
 small spinner by the move counter shows until all passes finish). The screen is a **full-screen,
@@ -493,7 +539,7 @@ ios/
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
 │                                FixtureSupport, MoveBuilderTests, GameSessionTests,
 │                                GameSessionAITests, GameSessionAnimationTests,
-│                                GameSavePersistenceTests
+│                                GameSessionAnalysisTests, GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
