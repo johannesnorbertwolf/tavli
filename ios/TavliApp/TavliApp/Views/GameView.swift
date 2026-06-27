@@ -54,11 +54,9 @@ struct GameView: View {
     /// orientation can place the open pane where it fits.
     @State private var showDebugPane = false
 
-    /// Drives the post-game review sheet (#62).
+    /// Drives the post-game review sheet (#62). The drill (#63) is reached from
+    /// inside review (#130), so it has no separate trigger here.
     @State private var showReview = false
-
-    /// Drives the post-game drill sheet (#63).
-    @State private var showDrill = false
 
     /// Surrender flow (#74). `showWinProbWarning` is the preliminary "you can still
     /// win" alert (shown only when the human's win probability exceeds the threshold);
@@ -185,7 +183,6 @@ struct GameView: View {
                     WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
-                                   onDrill: { showDrill = true },
                                    tournamentExit: tournamentExit,
                                    mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
@@ -198,16 +195,13 @@ struct GameView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            // Review is the only post-game analysis entry (#130); the drill is
+            // launched from inside review (reusing its precomputed analysis) rather
+            // than as a parallel top-level choice.
             .fullScreenCover(isPresented: $showReview) {
                 GameReviewView(record: session.record,
                                agent: session.agent,
                                humanColor: humanColor)
-            }
-            .fullScreenCover(isPresented: $showDrill) {
-                DrillView(record: session.record,
-                          precomputed: nil,
-                          agent: session.agent,
-                          humanColor: humanColor)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
                 TextField("Name", text: $saveName)
@@ -623,7 +617,6 @@ private struct WinOverlayView: View {
     let onNewGame: () -> Void
     let onHistory: () -> Void
     let onReview: () -> Void
-    let onDrill: () -> Void
     /// Tournament mode (#weltsensation): when set, the primary action returns to
     /// the tournament instead of replaying the game.
     var tournamentExit: (() -> Void)? = nil
@@ -663,15 +656,6 @@ private struct WinOverlayView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "magnifyingglass")
                         Text("Review game")
-                    }
-                }
-                .buttonStyle(ChromeButton(role: .scrim))
-                Button {
-                    onDrill()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "target")
-                        Text("Drill blunders")
                     }
                 }
                 .buttonStyle(ChromeButton(role: .scrim))

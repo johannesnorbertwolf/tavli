@@ -177,8 +177,16 @@ final class SaveStoreTests: XCTestCase {
         XCTAssertEqual(list[0].plyCount, 1)
         XCTAssertFalse(list[0].isAutosave)
 
+        // A save without analysis is a v1 file (#104): the on-disk schemaVersion is
+        // derived from content, so compare the meaningful fields rather than the whole
+        // struct (the in-memory `currentSchemaVersion` default doesn't round-trip).
         let loaded = try store.load(filename: filename)
-        XCTAssertEqual(loaded, sample(name: "My Game", savedAt: loaded.savedAt))
+        XCTAssertEqual(loaded.name, "My Game")
+        XCTAssertEqual(loaded.startingPlayer, "B")
+        XCTAssertEqual(loaded.aiColor, "B")
+        XCTAssertEqual(loaded.history, sample(name: "My Game").history)
+        XCTAssertNil(loaded.analysis, "no analysis was attached")
+        XCTAssertEqual(loaded.schemaVersion, 1, "an analysis-free save stays a v1 file")
 
         try store.delete(filename: filename)
         XCTAssertTrue(store.list().isEmpty)
@@ -204,12 +212,17 @@ final class SaveStoreTests: XCTestCase {
     }
 
     func testIncompatibleSchemaIsSkippedAndThrows() throws {
-        var bad = sample(name: "future")
-        bad.schemaVersion = GameSave.currentSchemaVersion + 1
+        // `GameSave.encode` derives the version from content (v1/v2, #104), so to forge
+        // a file from a hypothetical *future* build, encode a valid save and patch the
+        // schemaVersion in the serialized JSON to one above what we understand.
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(sample(name: "future"))
+        var dict = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        dict["schemaVersion"] = GameSave.currentSchemaVersion + 1
+        let bumped = try JSONSerialization.data(withJSONObject: dict)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try encoder.encode(bad).write(to: dir.appendingPathComponent("future.json"))
+        try bumped.write(to: dir.appendingPathComponent("future.json"))
 
         XCTAssertTrue(store.list().isEmpty, "incompatible saves are hidden from the list")
         XCTAssertThrowsError(try store.load(filename: "future.json"))

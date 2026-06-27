@@ -55,6 +55,9 @@ class PlaySession:
         self._pending_dice: Optional[Tuple[int, int]] = None
         self.last_save_name: Optional[str] = None
         self.dirty_since_save: bool = False
+        # Path this game was auto-logged to once it ended (#104). Set by the loop on
+        # the first post-game entry; post-game review/drill patch analysis back here.
+        self.log_path = None
 
     @classmethod
     def new_game(cls, config, agent, ai_checkpoint_path, dice_mode, human_color, eval_depth):

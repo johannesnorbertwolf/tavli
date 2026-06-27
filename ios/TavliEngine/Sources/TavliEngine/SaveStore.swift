@@ -74,7 +74,12 @@ public final class SaveStore {
     private func read(_ url: URL) throws -> GameSave {
         let data = try Data(contentsOf: url)
         let save = try Self.decoder.decode(GameSave.self, from: data)
-        guard save.schemaVersion == GameSave.currentSchemaVersion else {
+        // Accept every schema up to the newest this build writes (#104): a v1 file
+        // (no analysis) and a v2 file (with analysis) both decode — `GameSave`'s
+        // tolerant decoder treats the missing v1 keys as absent. Only a *newer*
+        // version than we understand is skipped, so a forward-incompatible file from
+        // a future build can't be silently misread.
+        guard save.schemaVersion <= GameSave.currentSchemaVersion else {
             throw SaveStoreError.incompatibleSchema(save.schemaVersion)
         }
         return save

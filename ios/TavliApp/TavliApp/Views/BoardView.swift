@@ -227,6 +227,12 @@ enum CaramelPalette {
     static let hl = Color(hex: 0xf4b400)      // saturated amber: source ring + target frame
     static let hlEdge = Color(hex: 0x7a5400)
     static let hlFill = Color(hex: 0xf6c623)  // slightly lighter for the fill-mode target
+
+    // Review/drill move-comparison colors (#133): your move = amber (`hl`), the AI's
+    // best move = blue, and an element played *and* best = green. Chosen to read on
+    // both the ivory triangles and the mahogany frame.
+    static let hlBest = Color(hex: 0x2f7fd1)   // blue: the best move
+    static let hlBoth = Color(hex: 0x3fa64a)   // green: you played the best here
 }
 
 extension Color {

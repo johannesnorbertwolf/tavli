@@ -204,7 +204,23 @@ class TestAutoSaveOnLoadWhileDirty(unittest.TestCase):
 # --- post-terminal -----------------------------------------------------
 
 
-class TestPostTerminalRejectsPlay(unittest.TestCase):
+class _RedirectGameLog:
+    """Mixin: redirect the auto game-log dir (#104) into a temp dir for the duration
+    of the test, so terminal-reaching loop tests don't write into the working tree."""
+
+    def setUp(self):
+        super().setUp()
+        self._log_tmp = tempfile.TemporaryDirectory()
+        self._log_patch = patch.object(persistence, "GAME_LOG_DIR", Path(self._log_tmp.name))
+        self._log_patch.start()
+
+    def tearDown(self):
+        self._log_patch.stop()
+        self._log_tmp.cleanup()
+        super().tearDown()
+
+
+class TestPostTerminalRejectsPlay(_RedirectGameLog, unittest.TestCase):
     def _setup_one_move_from_win(self, s):
         b = s.game.board
         for i in range(0, b.board_size + 2):
@@ -248,7 +264,7 @@ class TestPostTerminalRejectsPlay(unittest.TestCase):
 # --- post-game review --------------------------------------------------
 
 
-class TestPostGameReview(unittest.TestCase):
+class TestPostGameReview(_RedirectGameLog, unittest.TestCase):
     def _setup_one_move_from_win(self, s):
         b = s.game.board
         for i in range(0, b.board_size + 2):
@@ -305,7 +321,7 @@ class TestPostGameReview(unittest.TestCase):
 # --- post-game drill ---------------------------------------------------
 
 
-class TestPostGameDrill(unittest.TestCase):
+class TestPostGameDrill(_RedirectGameLog, unittest.TestCase):
     def _setup_one_move_from_win(self, s):
         b = s.game.board
         for i in range(0, b.board_size + 2):

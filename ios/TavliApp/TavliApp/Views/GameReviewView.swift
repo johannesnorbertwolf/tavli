@@ -22,12 +22,15 @@ struct GameReviewView: View {
 
     /// Index of the evaluated move currently shown (clamped to the streamed set).
     @State private var index = 0
-    /// Which move, if any, is highlighted on the board.
-    @State private var overlay: MoveOverlay = .best
+    /// Whether the board compares your move against the best, or shows yours alone.
+    /// Always shows your move (#133); `.both` overlays the best move too.
+    @State private var overlay: MoveOverlay = .your
     /// Drives the drill, launched full-screen from the review (#63).
     @State private var showDrill = false
+    /// When on, Prev/Next/swipe jump only between your own blunders (#132).
+    @State private var onlyBlunders = false
 
-    enum MoveOverlay: Hashable { case none, your, best }
+    enum MoveOverlay: Hashable { case your, both }
 
     init(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) {
         self.record = record
@@ -58,6 +61,16 @@ struct GameReviewView: View {
                 .padding(20)
         }
         .task { await model.run(record: record, agent: agent, humanColor: humanColor) }
+        .onChange(of: onlyBlunders) { _, on in
+            // Snap to the blunder nearest the current move when switching to the
+            // blunders-only filter, so you don't land on a hidden non-blunder (#132).
+            guard on else { return }
+            let plies = model.chartEvaluations
+            let blunderIdx = plies.indices.filter { model.blunderPlies.contains(plies[$0].plyNumber) }
+            if let nearest = blunderIdx.min(by: { abs($0 - index) < abs($1 - index) }) {
+                index = nearest
+            }
+        }
         .fullScreenCover(isPresented: $showDrill) {
             DrillView(record: record, precomputed: model.result,
                       agent: agent, humanColor: humanColor)
@@ -143,13 +156,11 @@ struct GameReviewView: View {
         ZStack {
             BoardView(flipped: flipped)
             CheckersView(stacks: eval.boardStacks, flipped: flipped)
-            if overlay != .none {
-                let move = overlay == .your ? eval.playedMove : eval.bestMove
-                TargetHighlightView(targets: targets(of: move), style: .frame, flipped: flipped)
-                    .allowsHitTesting(false)
-                SourceRingView(selectedPoint: move.first?.first, stacks: eval.boardStacks, flipped: flipped)
-                    .allowsHitTesting(false)
-            }
+            // Always show your move (amber); `.both` overlays the best move (blue),
+            // with shared elements in green (#133).
+            MoveHighlightView(playedMove: eval.playedMove,
+                              bestMove: overlay == .both ? eval.bestMove : nil,
+                              stacks: eval.boardStacks, flipped: flipped)
         }
         .aspectRatio(1, contentMode: .fit)
     }
@@ -157,6 +168,8 @@ struct GameReviewView: View {
     private func panel(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
                        onScrub: @escaping (Int) -> Void) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
+        let isHuman = eval.mover == humanColor
+        let mover = isHuman ? "You" : "TavTav"
         return VStack(alignment: .leading, spacing: 18) {
             // Reassurance headline when the whole game had no blunders (#105).
             if finished, model.blunderPlies.isEmpty {
@@ -166,8 +179,9 @@ struct GameReviewView: View {
             }
 
             // Win-probability trajectory across the whole game, with blunders ringed
-            // (#105). Shown once the full set is in (needs ≥2 points to trace a line).
-            if finished, model.chartEvaluations.count >= 2 {
+            // (#105). Shown as soon as the 1-ply base pass is in (#103) — the deeper
+            // passes refine it in place (needs ≥2 points to trace a line).
+            if model.firstPassComplete, model.chartEvaluations.count >= 2 {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Win chance through the game")
                         .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
@@ -183,50 +197,93 @@ struct GameReviewView: View {
                     Text("Move \(i + 1) of \(count)")
                         .font(.title3.bold())
                         .foregroundStyle(ChromeTheme.ink)
+                    // Whose move this is — your own, or the AI opponent's (#132).
+                    MoverChip(label: mover, isHuman: isHuman)
                     if isBlunder { BlunderBadge() }
                     if !finished {
+                        // Deeper passes still refining in the background (#103).
                         ProgressView().controlSize(.small)
                     }
                 }
-                Text("Dice \(eval.die1) · \(eval.die2)")
-                    .font(.callout.monospaced())
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
-            }
-
-            // Played vs best, with the win-prob gap — emphasized red for a blunder,
-            // muted for a small miss, or a best-move note when you matched the AI.
-            VStack(alignment: .leading, spacing: 10) {
-                moveLine(label: "You played", move: eval.playedMove,
-                         pct: Double(eval.playedScore), tint: ChromeTheme.ink)
-                if eval.absoluteGap >= 0.005 {
-                    moveLine(label: "Best move", move: eval.bestMove,
-                             pct: Double(eval.bestScore), tint: ReviewTint.best)
-                    Text("−\(percent(eval.absoluteGap)) win chance")
-                        .font(.callout.bold())
-                        .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
-                } else {
-                    Text("Best move played ✓")
-                        .font(.callout.bold())
-                        .foregroundStyle(ReviewTint.best)
+                HStack(spacing: 8) {
+                    Text("Dice \(eval.die1) · \(eval.die2)")
+                        .font(.callout.monospaced())
+                        .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    // Which look-ahead depth this score is from (#103) — refines live
+                    // 1→2→3-ply, so you can see what you're looking at.
+                    DepthChip(depth: eval.depth)
                 }
             }
 
-            // Highlight selector — what to draw on the board.
-            Picker("Show on board", selection: $overlay) {
-                Text("Best").tag(MoveOverlay.best)
-                Text("Yours").tag(MoveOverlay.your)
-                Text("None").tag(MoveOverlay.none)
+            // Played vs best. For a ply with a choice we ALWAYS show the played line,
+            // the best line, and a status line — so (a) the panel height is constant as
+            // you page, keeping the controls below from jumping (#105/#132), and (b) the
+            // text agrees with the board: "best move played" shows only when the moves
+            // are actually identical, never just close in score (#103).
+            let playedIsBest = sameMove(eval.playedMove, eval.bestMove)
+            VStack(alignment: .leading, spacing: 10) {
+                // Distinct literal labels (not "\(mover) played") so they localize.
+                moveLine(label: isHuman ? "You played" : "TavTav played", move: eval.playedMove,
+                         pct: Double(eval.playedScore), tint: ChromeTheme.ink)
+                if eval.hadChoice {
+                    moveLine(label: "Best move", move: eval.bestMove,
+                             pct: Double(eval.bestScore), tint: ReviewTint.best)
+                    if playedIsBest {
+                        Text(isHuman ? "Best move played ✓" : "TavTav played the best ✓")
+                            .font(.callout.bold())
+                            .foregroundStyle(ReviewTint.best)
+                    } else {
+                        Text("−\(percent(eval.absoluteGap)) win chance")
+                            .font(.callout.bold())
+                            .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
+                    }
+                } else {
+                    // Forced ply: a single legal move, nothing to choose (#131).
+                    Text("Only move available")
+                        .font(.callout.bold())
+                        .foregroundStyle(ChromeKit.inkSecondary)
+                }
             }
-            .pickerStyle(.segmented)
+
+            // Highlight selector — your move alone, or compared against the best.
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Show on board", selection: $overlay) {
+                    Text("Your move").tag(MoveOverlay.your)
+                    Text("Compare").tag(MoveOverlay.both)
+                }
+                .pickerStyle(.segmented)
+                // Always laid out (hidden when not comparing) so the controls below
+                // don't shift when you toggle Compare (#132).
+                HStack(spacing: 14) {
+                    legendDot(CaramelPalette.hl, "played")
+                    legendDot(CaramelPalette.hlBest, "best")
+                    legendDot(CaramelPalette.hlBoth, "both")
+                }
+                .font(.caption)
+                .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                .opacity(overlay == .both ? 1 : 0)
+            }
+
+            // Step through all plies (both sides), or jump only between your own
+            // blunders so the opponent's moves don't make navigation tedious (#132).
+            if !model.blunderPlies.isEmpty {
+                Picker("Step through", selection: $onlyBlunders) {
+                    Text("All moves").tag(false)
+                    Text("My blunders").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
 
             // Navigation + drill.
+            let prev = navIndex(from: i, dir: -1)
+            let next = navIndex(from: i, dir: 1)
             HStack(spacing: 12) {
-                Button { index = max(0, i - 1) } label: { Label("Prev", systemImage: "chevron.left") }
+                Button { index = prev } label: { Label("Prev", systemImage: "chevron.left") }
                     .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(i == 0).opacity(i == 0 ? 0.4 : 1)
-                Button { index = min(count - 1, i + 1) } label: { Label("Next", systemImage: "chevron.right") }
+                    .disabled(prev == i).opacity(prev == i ? 0.4 : 1)
+                Button { index = next } label: { Label("Next", systemImage: "chevron.right") }
                     .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(i >= count - 1).opacity(i >= count - 1 ? 0.4 : 1)
+                    .disabled(next == i).opacity(next == i ? 0.4 : 1)
             }
             // Drilling is offered whenever the game had blunders to drill.
             if !model.blunderPlies.isEmpty {
@@ -248,13 +305,29 @@ struct GameReviewView: View {
         }
     }
 
-    /// Left/right swipe pages between blunders.
+    /// Next index in `dir` (+1/−1). In "My blunders" mode, skip to the next ply that
+    /// is one of your blunders; otherwise step by one. Returns the same index when
+    /// there's nowhere to go (so callers can disable the button) (#132).
+    private func navIndex(from i: Int, dir: Int) -> Int {
+        let plies = model.chartEvaluations
+        guard !plies.isEmpty else { return i }
+        if onlyBlunders, !model.blunderPlies.isEmpty {
+            var j = i + dir
+            while j >= 0 && j < plies.count {
+                if model.blunderPlies.contains(plies[j].plyNumber) { return j }
+                j += dir
+            }
+            return i
+        }
+        return min(max(i + dir, 0), plies.count - 1)
+    }
+
+    /// Left/right swipe pages through moves (honoring the blunders-only filter).
     private func pagingGesture(count: Int, current i: Int) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                if value.translation.width < 0 { index = min(count - 1, i + 1) }
-                else { index = max(0, i - 1) }
+                index = navIndex(from: i, dir: value.translation.width < 0 ? 1 : -1)
             }
     }
 
@@ -265,10 +338,23 @@ struct GameReviewView: View {
 
     // ── Formatting ────────────────────────────────────────────────────────────
 
-    private func targets(of move: [[Int]]) -> Set<Int> {
-        Set(move.compactMap { $0.count == 2 ? $0[1] : nil })
+    /// A small colour swatch + label for the compare legend (#133).
+    private func legendDot(_ color: SColor, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 10, height: 10)
+            Text(label)
+        }
     }
     private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
+    /// Whether two moves are the *same* move (order-independent), so the panel claims
+    /// "best move played" only when they genuinely match — not merely scoring alike,
+    /// which let the text disagree with the highlighted board move (#103).
+    private func sameMove(_ a: [[Int]], _ b: [[Int]]) -> Bool {
+        func norm(_ m: [[Int]]) -> [[Int]] {
+            m.filter { $0.count == 2 }.sorted { $0[0] != $1[0] ? $0[0] < $1[0] : $0[1] < $1[1] }
+        }
+        return norm(a) == norm(b)
+    }
     private func moveText(_ pairs: [[Int]]) -> String {
         guard !pairs.isEmpty else { return "(pass)" }
         return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
@@ -291,9 +377,14 @@ final class GameReviewModel: ObservableObject {
     }
 
     @Published var phase: Phase = .analyzing(done: 0, total: 0)
+    /// True once the 1-ply base pass has scored every ply (#103) — the win-probability
+    /// graph and the drill are complete from here, while 2-/3-ply refine in place.
+    @Published private(set) var firstPassComplete = false
 
     /// `play/loop.py` default — flag moves ≥10% worse than the best.
     private let threshold = 0.10
+    /// The human under review — only this side's plies count as blunders (#132).
+    private var humanColor: TavliEngine.Color = .white
     private var blunders: [PlyEvaluation] = []
     /// Every evaluated human ply, in play order — the win-probability chart's data
     /// source (#105). A superset of `blunders` (this same list filtered at `threshold`).
@@ -321,32 +412,68 @@ final class GameReviewModel: ObservableObject {
         self.finished = true
         self.allEvaluations = trajectory
         self.blunders = trajectory.filter { $0.isBlunder(threshold: threshold) }
+        self.firstPassComplete = true
     }
+
+    /// The append-only game log (#104). Holds the saved analysis: read it back to skip
+    /// re-analysis, and write the freshly computed analysis back into the same entry.
+    private let gameLog = GameLogStore.default()
 
     func run(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) async {
         guard !started else { return }   // `.task` can re-fire; analyze once
         started = true
+        self.humanColor = humanColor
+
+        // Reuse saved analysis if this game already has it (#104): a second review of
+        // the same game rebuilds the result locally — no model inference — and the
+        // drill, reached from here, gets the same cached result. Confirmed by the lack
+        // of an "Analyzing…" pass.
+        if let cached = gameLog.analysis(forGameId: record.gameId), !cached.isEmpty {
+            finish(with: GameReview.cachedResult(record: record, analysis: cached))
+            return
+        }
 
         guard let agent else { phase = .unavailable; return }
 
         let result = await Task.detached(priority: .userInitiated) { [weak self] in
-            GameReview.analyze(
+            GameReview.analyzeProgressive(
                 record: record, agent: agent, humanColor: humanColor,
+                includeOpponent: true,
                 onEvaluation: { eval in Task { @MainActor in self?.ingest(eval) } },
-                progress: { done, total in Task { @MainActor in self?.report(done: done, total: total) } }
+                onPassComplete: { pass, _ in Task { @MainActor in self?.passComplete(pass) } },
+                progress: { done, total, _ in Task { @MainActor in self?.report(done: done, total: total) } }
             )
         }.value
 
         finish(with: result)
+        // Write the analysis back so it never recomputes (#104). No-op if the game
+        // isn't logged (e.g. a preview/test record). Off the main actor — pure file IO.
+        let gameId = record.gameId
+        let entries = [AnalysisEntry](reviewResult: result)
+        if !entries.isEmpty {
+            let log = gameLog
+            Task.detached { try? log.attachAnalysis(entries, forGameId: gameId) }
+        }
     }
 
-    /// A streamed evaluation: record it for the all-moves review and open the pager
-    /// as soon as the first move is scored (blunders are tracked for flagging).
+    /// A streamed evaluation: upsert it by ply number (a deeper pass replaces the
+    /// shallower result, #103) and open the pager as soon as the first move is scored.
+    /// Blunders are recomputed from the current set so they track the latest depth.
     private func ingest(_ eval: PlyEvaluation) {
         guard !finished else { return }
-        allEvaluations.append(eval)
-        if eval.isBlunder(threshold: threshold) { blunders.append(eval) }
+        if let idx = allEvaluations.firstIndex(where: { $0.plyNumber == eval.plyNumber }) {
+            allEvaluations[idx] = eval
+        } else {
+            allEvaluations.append(eval)
+            allEvaluations.sort { $0.plyNumber < $1.plyNumber }
+        }
+        blunders = allEvaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: threshold) }
         phase = .reviewing(finished: false)
+    }
+
+    /// The 1-ply base pass (pass 0) is done: the graph + drill are now complete (#103).
+    private func passComplete(_ pass: Int) {
+        if pass == 0 { firstPassComplete = true }
     }
 
     private func report(done: Int, total: Int) {
@@ -357,8 +484,9 @@ final class GameReviewModel: ObservableObject {
     /// still be in flight, so take everything straight from the returned result).
     private func finish(with result: GameReviewResult) {
         finished = true
+        firstPassComplete = true
         allEvaluations = result.evaluations
-        blunders = result.blunders(threshold: threshold)
+        blunders = result.evaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: threshold) }
         phase = allEvaluations.isEmpty ? .nothingToReview : .reviewing(finished: true)
     }
 }
@@ -415,6 +543,34 @@ private struct BlunderBadge: View {
         .foregroundStyle(CaramelPalette.hlEdge)
         .background(CaramelPalette.hl.opacity(0.22), in: Capsule())
         .overlay(Capsule().stroke(CaramelPalette.hlEdge.opacity(0.55), lineWidth: 1))
+    }
+}
+
+/// The look-ahead depth a review score is from (#103): 1/2/3-ply, refining live.
+private struct DepthChip: View {
+    let depth: Int
+    var body: some View {
+        Text("\(depth)-ply")
+            .font(.caption2.bold().monospacedDigit())
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+            .background(ChromeTheme.ink.opacity(0.08), in: Capsule())
+            .accessibilityLabel("\(depth)-ply analysis")
+    }
+}
+
+/// Whose move a review card is — "You" (amber) or the AI persona "TavTav" (#132).
+private struct MoverChip: View {
+    let label: String
+    let isHuman: Bool
+    var body: some View {
+        let tint = isHuman ? ChromeTheme.undoTint : ReviewTint.best
+        Text(label)
+            .font(.caption.bold())
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .foregroundStyle(tint)
+            .background(tint.opacity(0.18), in: Capsule())
+            .overlay(Capsule().stroke(tint.opacity(0.5), lineWidth: 1))
     }
 }
 

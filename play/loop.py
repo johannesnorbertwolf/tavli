@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from domain.constants import WHITE, BLACK
+from domain.move import HalfMove, Move
 from play import parser, persistence, renderer
 from play.session import DiceMode, PlaySession
 
@@ -220,6 +221,10 @@ def _post_game(session: PlaySession, io: IO) -> Action:
     label = "White" if winner == WHITE else "Black"
     io.output(renderer.format_board(session.game.board))
     io.output(f"Game over. {label} wins.")
+    # Auto-log every finished game once, on the first post-game entry (#104). Separate
+    # from any explicit `save`; the path is kept so review/drill can patch analysis in.
+    if session.log_path is None:
+        session.log_path = persistence.log_game(session)
     while True:
         line = io.input("[u/undo, h/history, review [N], drill [N], save <n>, q] > ")
         cmd = parser.parse_command(line)
@@ -329,6 +334,11 @@ def _pairs(move) -> list:
     return [(h.src, h.dst) for h in move.halves]
 
 
+def _move_from_pairs(pairs: list) -> Move:
+    """Reconstruct a v2 Move from serialized [[src, dst], ...] pairs (#104)."""
+    return Move(tuple(HalfMove(int(src), int(dst)) for src, dst in pairs))
+
+
 def _find(expected_pairs: list, ranked: list) -> list:
     """Return the ranked entries whose move half-moves equal expected_pairs."""
     return [(m, s) for m, s in ranked if _pairs(m) == expected_pairs]
@@ -400,13 +410,73 @@ def _match_doubles_move(user_froms: list, ranked: list, die: int, sign: int) -> 
     return _find(expected, ranked)
 
 
+def _write_back_analysis(session: PlaySession, blunders: list) -> None:
+    """Persist freshly computed blunders to the logged game (#104), so a later review
+    loads them instead of recomputing. No-op when the game wasn't logged (e.g. tests
+    that drive review without a terminal log) or there's nothing to write."""
+    if session.log_path is None or not blunders:
+        return
+    analysis = persistence.blunders_to_analysis(blunders, session.eval_depth)
+    persistence.patch_analysis(session.log_path, analysis)
+
+
+def _blunders_from_cache(session: PlaySession, analysis: list) -> list:
+    """Reconstruct blunder dicts from saved analysis (#104) by replaying the game —
+    *no model inference*. Recovers each scored ply's dice and board rendering (the
+    parts not persisted) and pairs them with the stored played/best moves and scores.
+    Enough to render the review summary; the drill recomputes because it also needs the
+    full move ranking, which the analysis schema doesn't carry."""
+    by_ply = {int(e["plyNumber"]): e for e in analysis}
+    replay = _make_replay_session(session)
+    out = []
+    for snap in session.history[1:]:
+        ply_num = replay.ply_count() + 1
+        entry = by_ply.get(ply_num)
+        if entry is not None and not snap.was_pass and snap.move_played is not None:
+            out.append({
+                "ply_num": ply_num,
+                "dice": snap.dice_for_this_ply,
+                "board_str": renderer.format_board(replay.game.board),
+                "played_move": _move_from_pairs(entry["playedMove"]),
+                "played_score": float(entry["playedScore"]),
+                "best_move": _move_from_pairs(entry["bestMove"]),
+                "best_score": float(entry["bestScore"]),
+            })
+        replay.set_dice(*snap.dice_for_this_ply)
+        if snap.was_pass:
+            replay.commit_pass()
+        else:
+            replay.commit_move(snap.move_played)
+    return out
+
+
 def _handle_review(session: PlaySession, io: IO, threshold: float) -> None:
     if len(session.history) <= 1:
         io.output("no plies to review")
         return
 
     io.output(f"Post-game review — flagging moves >{threshold*100:.0f}% relative gap\n")
+
+    # Reuse saved analysis when this game already has it (#104) — replays to render but
+    # runs no model, so a second review is near-instant.
+    cached = persistence.load_analysis(session.log_path) if session.log_path else []
+    if cached:
+        io.output("(using saved analysis)")
+        blunders = _blunders_from_cache(session, cached)
+        for b in blunders:
+            io.output(renderer.format_blunder_block(
+                b["ply_num"], b["dice"], b["board_str"],
+                b["played_move"], b["played_score"],
+                b["best_move"], b["best_score"],
+            ))
+        if not blunders:
+            io.output(f"No blunders found above {threshold*100:.0f}% threshold — well played!")
+        else:
+            io.output(f"\n{len(blunders)} blunder(s) found.")
+        return
+
     blunders = _collect_blunders(session, threshold)
+    _write_back_analysis(session, blunders)
 
     for b in blunders:
         io.output(renderer.format_blunder_block(
@@ -423,6 +493,10 @@ def _handle_review(session: PlaySession, io: IO, threshold: float) -> None:
 
 def _handle_drill(session: PlaySession, io: IO, threshold: float) -> None:
     blunders = _collect_blunders(session, threshold)
+    # Persist the analysis so a later review reuses it (#104). The drill itself always
+    # recomputes — interactive grading needs the full per-ply move ranking, which the
+    # analysis schema (played/best only) doesn't store.
+    _write_back_analysis(session, blunders)
     if not blunders:
         io.output("No blunders to drill — well played!")
         return

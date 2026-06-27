@@ -93,8 +93,10 @@ struct DrillView: View {
             if let card = model.session, let eval = model.current {
                 DrillCard(session: card, eval: eval, flipped: flipped,
                           feedback: model.feedback, showingSolution: model.showingSolution,
-                          lastAttempt: model.lastAttempt,
+                          lastAttempt: model.lastAttempt, lastAttemptScore: model.lastAttemptScore,
+                          awaitingRetry: model.awaitingRetry,
                           solved: model.solvedThisCard,
+                          onTryAgain: { model.tryAgain() },
                           onShowSolution: { model.revealSolution() },
                           onAdvance: { model.advance() })
                 .id(model.index)   // fresh card (and board) per blunder
@@ -169,6 +171,10 @@ final class DrillModel: ObservableObject {
     /// The player's most recent attempt on this card, as `[from, to]` pairs (for
     /// showing what they actually played, in writing). `nil` until they move.
     @Published private(set) var lastAttempt: [[Int]]?
+    /// Win-probability score of `lastAttempt` (#114), shown alongside it.
+    @Published private(set) var lastAttemptScore: Float?
+    /// Whether a non-solving attempt is held on the board, awaiting "Try again" (#114).
+    @Published private(set) var awaitingRetry = false
     /// Whether the current card has been solved (a correct attempt was made).
     @Published private(set) var solvedThisCard = false
 
@@ -223,7 +229,9 @@ final class DrillModel: ObservableObject {
             return
         }
 
-        blunders = result.blunders(threshold: 0.10)
+        // Only the human's own blunders are drillable — opponent plies may now be in
+        // the result too (#132).
+        blunders = result.evaluations.filter { $0.mover == humanColor && $0.isBlunder(threshold: 0.10) }
         guard !blunders.isEmpty else { phase = .empty; return }
         loadCard(0)
         phase = .drilling
@@ -234,11 +242,14 @@ final class DrillModel: ObservableObject {
         feedback = .none
         showingSolution = false
         lastAttempt = nil
+        lastAttemptScore = nil
+        awaitingRetry = false
         solvedThisCard = false
         let b = blunders[i]
         let s = GameSession.drill(boardStacks: b.boardStacks, die1: b.die1, die2: b.die2,
                                   mover: b.mover, agent: agent)
         s.onMoveAttempt = { [weak self] move in self?.grade(move) }
+        s.holdAttempts = true   // keep the attempt on the board until "Try again" (#114)
         session = s
     }
 
@@ -258,22 +269,46 @@ final class DrillModel: ObservableObject {
     }
 
     private func applyFeedback(score: Float?, best: Float) {
-        guard let score else { feedback = .wrong(String(localized: "Couldn’t evaluate — try again.")); return }
+        lastAttemptScore = score
+        guard let score else {
+            awaitingRetry = true
+            feedback = .wrong(String(localized: "Couldn’t evaluate — try again."))
+            return
+        }
         let gap = Double(best - score)
         let correctThreshold = max(correctFloor, Double(best) * correctRelative)
         let closeThreshold = max(closeFloor, Double(best) * closeRelative)
         if gap <= correctThreshold {
+            // Solved: leave the move on the board (#114) — no retry, advance with "Next".
+            awaitingRetry = false
             if !solvedThisCard { solvedThisCard = true; solvedCount += 1 }
             feedback = .correct(gap < 0.001 ? String(localized: "Excellent — that’s the best move!")
                                             : String(localized: "Great — very close to optimal."))
         } else if gap <= closeThreshold {
+            awaitingRetry = true
             feedback = .close(String(localized: "Close — there’s a better move. Try again."))
         } else {
+            awaitingRetry = true
             feedback = .wrong(String(localized: "Not quite — think a little harder."))
         }
     }
 
-    func revealSolution() { showingSolution = true }
+    /// Roll the held attempt back to the start so the player can try again (#114).
+    func tryAgain() {
+        session?.retryAttempt()
+        awaitingRetry = false
+        lastAttempt = nil
+        lastAttemptScore = nil
+        feedback = .none
+    }
+
+    /// Reveal the best move. If an attempt is held, roll it back first so the solution
+    /// highlight (drawn from the pre-move position) lines up with the board (#114).
+    func revealSolution() {
+        if session?.heldAttempt != nil { session?.retryAttempt() }
+        awaitingRetry = false
+        showingSolution = true
+    }
 
     /// Move to the next blunder (or finish). A card left unsolved counts as skipped.
     func advance() {
@@ -300,12 +335,12 @@ private struct DrillCard: View {
     let showingSolution: Bool
     /// The player's latest attempt on this card, as `[from, to]` pairs (shown in writing).
     let lastAttempt: [[Int]]?
+    let lastAttemptScore: Float?
+    let awaitingRetry: Bool
     let solved: Bool
+    let onTryAgain: () -> Void
     let onShowSolution: () -> Void
     let onAdvance: () -> Void
-
-    private var bestFrom: Int? { eval.bestMove.first?.first }
-    private var bestTargets: Set<Int> { Set(eval.bestMove.compactMap { $0.count == 2 ? $0[1] : nil }) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -343,11 +378,19 @@ private struct DrillCard: View {
     private var board: some View {
         ZStack {
             PlayableBoardView(session: session, flipped: flipped)
-            if showingSolution {
-                TargetHighlightView(targets: bestTargets, style: .frame, flipped: flipped)
-                    .allowsHitTesting(false)
-                SourceRingView(selectedPoint: bestFrom, stacks: eval.boardStacks, flipped: flipped)
-                    .allowsHitTesting(false)
+            // Overlays are drawn from the pre-move position, so only show them when the
+            // board is actually there (no attempt held on it) (#114).
+            if session.heldAttempt == nil {
+                if showingSolution {
+                    // Compare what you played (yellow) against the best (blue), both
+                    // green where they agree (#133).
+                    MoveHighlightView(playedMove: eval.playedMove, bestMove: eval.bestMove,
+                                      stacks: eval.boardStacks, flipped: flipped)
+                } else if !solved {
+                    // The move you originally played — "you did this; find better" (#114).
+                    MoveHighlightView(playedMove: eval.playedMove, bestMove: nil,
+                                      stacks: eval.boardStacks, flipped: flipped)
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -373,42 +416,62 @@ private struct DrillCard: View {
         }
     }
 
-    /// Your move (once attempted) and the best move (once the solution is shown), in
-    /// writing — alongside the on-board halo.
+    /// The scores behind the drill (#114): the move you originally played and its win
+    /// chance, your latest attempt and its win chance, and — once revealed — the best
+    /// move with the gap. Mirrors the review's number language.
     @ViewBuilder
     private var movesPanel: some View {
-        if lastAttempt != nil || showingSolution {
-            VStack(alignment: .leading, spacing: 6) {
-                if let lastAttempt {
-                    moveRow(label: "You played", move: lastAttempt, tint: ChromeTheme.ink)
-                }
-                if showingSolution {
-                    moveRow(label: "Best move", move: eval.bestMove, tint: DrillTint.correct)
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            moveRow(label: "You played", move: eval.playedMove,
+                    pct: Double(eval.playedScore), tint: CaramelPalette.hl)
+            if let lastAttempt, let s = lastAttemptScore {
+                moveRow(label: "You tried", move: lastAttempt,
+                        pct: Double(s), tint: ChromeTheme.ink)
+            }
+            if showingSolution {
+                moveRow(label: "Best move", move: eval.bestMove,
+                        pct: Double(eval.bestScore), tint: CaramelPalette.hlBest)
+                Text("−\(percent(Double(eval.bestScore - eval.playedScore))) win chance vs your move")
+                    .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             }
         }
     }
 
-    private func moveRow(label: String, move: [[Int]], tint: SColor) -> some View {
+    private func moveRow(label: String, move: [[Int]], pct: Double, tint: SColor) -> some View {
         HStack(spacing: 8) {
             Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             Text(moveText(move)).font(.callout.monospaced().bold()).foregroundStyle(tint)
+            Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeTheme.ink.opacity(0.5))
         }
     }
+
+    private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
 
     private func moveText(_ pairs: [[Int]]) -> String {
         guard !pairs.isEmpty else { return "(pass)" }
         return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
     }
 
+    @ViewBuilder
     private var controls: some View {
         HStack(spacing: 16) {
-            Button("Show solution", action: onShowSolution)
-                .buttonStyle(DrillButton(tint: ChromeTheme.undoTint))
-                .disabled(showingSolution)
-                .opacity(showingSolution ? 0.4 : 1)
-            Button(solved ? "Next" : "Skip", action: onAdvance)
-                .buttonStyle(DrillButton(tint: ChromeTheme.doneTint))
+            if solved || showingSolution {
+                // Nothing more to do on this card — keep the result on the board (#114).
+                Button("Next →", action: onAdvance)
+                    .buttonStyle(DrillButton(tint: ChromeTheme.doneTint))
+            } else if awaitingRetry {
+                // An attempt is held on the board: reset to retry, or reveal the answer.
+                Button("Try again", action: onTryAgain)
+                    .buttonStyle(DrillButton(tint: ChromeTheme.doneTint))
+                Button("Show solution", action: onShowSolution)
+                    .buttonStyle(DrillButton(tint: ChromeTheme.undoTint))
+            } else {
+                // Before the first attempt.
+                Button("Show solution", action: onShowSolution)
+                    .buttonStyle(DrillButton(tint: ChromeTheme.undoTint))
+                Button("Skip", action: onAdvance)
+                    .buttonStyle(DrillButton(tint: ChromeTheme.undoTint))
+            }
         }
     }
 }

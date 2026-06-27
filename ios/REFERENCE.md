@@ -271,14 +271,18 @@ tests, no model/fixtures needed):
   color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
   reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
   for a new game) so the AI moves if it owns the turn.
-- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
-  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
-  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
-  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
-  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
-  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
-  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
-  `rawValue` (`"W"`/`"B"`).
+- **`GameSave.swift`** — the `GameRecord` value type (now with a stable `gameId: UUID`, #104) plus
+  the Codable wire format. `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave {
+  schemaVersion, gameId?, name, savedAt, startingPlayer, aiColor?, outcome?, history, analysis? }`.
+  **Schema versions (#104):** `currentSchemaVersion = 2`. A custom `Codable` keeps full back-compat —
+  decoding treats `gameId`/`outcome`/`analysis` as optional (a v1 file has none), and **encoding
+  derives the version from content**: a save *without* analysis is written at `schemaVersion: 1`
+  (byte-compatible with a v1 reader), gaining the `2` marker only once an `analysis` block is
+  attached. `AnalysisEntry { plyNumber, playedMove, playedScore, bestMove, bestScore, depth }` is the
+  durable per-ply analysis (no `boardStacks` — reconstructed by replay; scores as `Double`; field
+  names match the Python schema). `[AnalysisEntry](reviewResult:)` projects a `GameReviewResult`.
+  Bridges: `GameSave(record:name:savedAt:analysis:)` flattens (carrying `gameId`/`outcome`), and
+  `GameSave.record` reads back (a pre-#104 save gets a fresh `gameId`). Colors serialize as `rawValue`.
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
@@ -288,7 +292,17 @@ tests, no model/fixtures needed):
   newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
   **throws** `SaveStoreError.incompatibleSchema` on a version mismatch. `writeAutosave` /
   `loadAutosave` / `clearAutosave` manage the reserved slot; `writeManual` returns the generated
-  filename. `SaveStore.default()` roots it at `Documents/SavedGames`.
+  filename. `SaveStore.default()` roots it at `Documents/SavedGames`. Reads any schema **≤**
+  `currentSchemaVersion` (so v1 *and* v2 both load); only a *newer* version throws/skips (#104).
+- **`GameLogStore.swift`** (#104) — append-only log of **every finished game**, one JSON file per
+  `gameId` (`game-<uuid>.json`) under `Documents/GameLog`, written from `GameSession.onGameOver`
+  regardless of outcome or whether the game was ever manually saved (distinct from the single
+  resume autosave slot, which `SaveStore` keeps). Reuses `GameSave` as the wire format, so a logged
+  game is itself replayable. `append` writes/overwrites by id; `list()` returns `GameLogMetadata`
+  (adds outcome/aiColor/`hasAnalysis`); `analysis(forGameId:)` reads a game's saved analysis and
+  `attachAnalysis(_:forGameId:)` patches it back (bumping that file to v2). After a review,
+  `GameReviewModel` writes its `analysis` back here, and on a later review/drill of the same game
+  it loads the cached analysis and rebuilds via `GameReview.cachedResult` — no model, near-instant.
 
 The app wiring (autosave after every move and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
@@ -333,9 +347,8 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
 - **`GameReview.analyze(record:agent:humanColor:depth:config:searchConfig:onEvaluation:progress:)`** —
   replays the record from the initial position, advancing the board by applying each ply's recorded
   half-moves in place (identical to `GameSession.replay`, so reconstruction is model-independent).
-  At each ply where it's the **human's** move, the move was **not a forced pass**, and there is
-  **more than one legal move** (a single legal move is no decision — mirrors the CLI's
-  `len(moves) <= 1` skip), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
+  At each ply where it's the **human's** move and the move was **not a forced pass** (empty
+  half-moves), it ranks *every* legal move with `Agent.evaluateMovesNply` at `depth`
   (default **2** — fast, and the depth on-device play uses; the same parity-validated scoring the
   live AI uses), with **no wall-clock deadline** since analysis is offline. `evaluateMovesNply`
   capture/restores stacks, so the working board is never corrupted. The played move is located among
@@ -343,24 +356,51 @@ from the AI's best choice. SwiftUI-free (Foundation + Core ML via `Agent`), so i
   order may differ from the generator's; the Swift analogue of the CLI's structural `_pairs`/`_find`
   match). `onEvaluation` fires per evaluated ply **as it is scored** (lets the UI stream blunders —
   show the first one immediately while the rest are still being found); `progress` fires once per
-  evaluated human ply with `(done, total)`.
+  evaluated human ply with `(done, total)`. **Forced single-legal-move plies are evaluated too**
+  (#131): they score their one move (best == played, zero gap) and are flagged `hadChoice: false`,
+  so the review timeline runs unbroken to the final move instead of stopping short at the first
+  forced bear-off ply. Earlier the `len(moves) <= 1` skip dropped them and the review visibly
+  ended before the real game end.
+- **`GameReview.analyzeProgressive(record:agent:humanColor:depths:…onEvaluation:onPassComplete:progress:)`**
+  (#103) — deepening analysis that streams. Replays the record **once** into a list of `PlyContext`
+  (each captures a human ply's pre-move `boardStacks`, dice, mover, played pairs), then scores them
+  in passes: **1-ply** over all plies first (so the graph + drill are usable immediately), then
+  **2-ply** over **every real-choice ply** — clear blunders included, because the *displayed best
+  move* must be accurate and ranking the candidates is what finds it — then **3-ply** for only the
+  ones still too close to call (`absoluteGap ≥ 0.5%` and `relativeGap` in **5–15%**, the band around
+  the 10% threshold where the extra depth can flip the verdict). Each pass rebuilds an isolated
+  board from the stored stacks (no live `Move`/`Point` kept across passes). Every (re)scored ply is
+  emitted via `onEvaluation` carrying its current `depth`; the consumer **keys by `plyNumber`** and
+  replaces shallower results. `onPassComplete(pass, depth)` fires per finished pass (pass 0 = the
+  1-ply base). Forced plies (`hadChoice == false`) never deepen. With **`includeOpponent: true`**
+  (#132) the AI's plies are evaluated too, so the review can step through and annotate them — they
+  deepen to **2-ply** like the human's (a 1-ply best is too noisy to match what the strong AI
+  actually played) but **not to 3-ply** (only the human's plies are flagged/drilled, so the
+  borderline refinement is theirs alone). Each evaluation carries its `mover`, so the consumer keeps
+  blunder flagging and the drill to the human's own plies.
 - **`PlyEvaluation`** — one analyzed human ply: 1-based `plyNumber`, dice, the **pre-move**
   `boardStacks` snapshot (for rendering the position faced), `mover`, the `playedMove`/`bestMove`
-  `[from,to]` pairs and their win-probability scores (for `mover`), plus derived `relativeGap`
+  `[from,to]` pairs and their win-probability scores (for `mover`), `hadChoice` (false ⇒ a forced
+  ply the UI labels "Only move available" rather than praising), `depth` (the search depth this
+  result was scored at — 1/2/3 under progressive analysis), plus derived `relativeGap`
   `(best − played)/best`, `absoluteGap`, and `isBlunder(threshold:)`.
 - **`GameReviewResult`** — every analyzed ply (`evaluations`); `blunders(threshold:)` filters to
-  those whose relative gap meets the threshold. The analysis runs **once** and the consumer filters
-  at any threshold (the iPad UI fixes it at **10%**, matching the CLI default; a configurable one is
-  tracked in #77).
+  those whose relative gap meets the threshold. The consumer filters at any threshold (the iPad UI
+  fixes it at **10%**, matching the CLI default; a configurable one is tracked in #77).
 
-The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyze` on a detached
-task and **streams** blunders back via `onEvaluation`: the first blunder is shown as soon as it's
-found (the panel notes it's still analyzing) while the rest are scored in the background; on
-completion the model settles on the authoritative full set returned by `analyze`. The screen is a
-**full-screen, board-centric** mode (a `fullScreenCover` from the win overlay): the position the
-player faced fills the screen, with a panel (played→best + win-prob gap, a Best/Yours/None move
-overlay) and Prev/Next/swipe to page through blunders. The drill is launched the same way (full
-screen), with the already-streamed blunders handed over as a precomputed `GameReviewResult`.
+The app side (`GameReviewView` + its `@MainActor GameReviewModel`) runs `analyzeProgressive` on a
+detached task and streams results back via `onEvaluation`, **upserting by `plyNumber`** so a deeper
+pass replaces the shallower result in place. The pager opens as soon as the first ply is scored; the
+win-probability graph and the drill become available once the 1-ply base pass completes
+(`firstPassComplete`, set from `onPassComplete(pass: 0)`), while the 2-/3-ply passes refine live (a
+small spinner by the move counter shows until all passes finish). The screen is a **full-screen,
+board-centric** mode (a `fullScreenCover` from the win overlay): the position the player faced fills
+the screen, with a panel (played→best + win-prob gap, the Your-move/Compare overlay) and
+Prev/Next/swipe to page through moves. Both sides' moves are shown (#132): each card is tagged You
+or **TavTav** (the AI persona), opponent cards annotate TavTav's played/best, and an "All moves /
+My blunders" toggle jumps navigation only between your own blunders. Blunder flagging, the chart
+rings, and the drill stay scoped to the human's plies (filtered by `mover == humanColor`). The drill
+is launched the same way, with the current `GameReviewResult` handed over as a precomputed result.
 
 ## Post-game drill (#63)
 
@@ -371,10 +411,12 @@ the player to find a better move **on the real board**. It reuses #62's blunder 
 
 - **Attempt mode** (`onMoveAttempt: (@MainActor (Move) -> Void)?`). When set, the session runs in
   attempt mode: completing a move (via the normal `commitHalfMove`/`confirm` tap flow) reports it
-  to the hook and then **rolls it back** to the pre-move position (`board.undoHalfMove` per built
-  half-move, then `beginTurn()` re-arms `.picking` at the same dice) instead of recording it and
-  advancing the turn. `record.plies`/`undoHistory` and the turn are left untouched, so a finished
-  game's record is never mutated and the player can re-attempt the position indefinitely. Both
+  to the hook instead of recording it and advancing the turn. `record.plies`/`undoHistory` and the
+  turn are left untouched, so a finished game's record is never mutated. By default the move is then
+  **rolled back** immediately (`board.undoHalfMove` per built half-move, then `beginTurn()` re-arms
+  `.picking` at the same dice) so the player can re-attempt. With **`holdAttempts == true`** (#114)
+  the move instead **stays on the board** (input locked: selection/legal-moves cleared) and
+  `heldAttempt` holds it; `retryAttempt()` is the explicit rollback (undo + `beginTurn()`). Both
   completion sites funnel through one private `completeMove()`; with the hook nil (normal play)
   behaviour is unchanged.
 - **Drill seeder** (`GameSession.drill(boardStacks:die1:die2:mover:agent:config:)`). Stands up a
@@ -392,8 +434,9 @@ reading). `gap = bestScore − attemptScore`; the feedback tiers mirror `_drill_
 The app side (`DrillView` + `@MainActor DrillModel`) analyzes (or takes a precomputed
 `GameReviewResult` from the review screen), seeds a card per blunder, wires `onMoveAttempt` to grade
 off the main actor, reveals the best move with `SourceRingView`/`TargetHighlightView`, and tracks
-solved/skipped for the "Drill complete" summary. Launchable from the win overlay and the review
-screen.
+solved/skipped for the "Drill complete" summary. Launched **from the review screen** (#130) — the
+win overlay offers Review only; the in-review "Drill blunders" button hands over the already-computed
+`GameReviewResult`, so the drill never re-analyzes.
 
 ## Layout
 

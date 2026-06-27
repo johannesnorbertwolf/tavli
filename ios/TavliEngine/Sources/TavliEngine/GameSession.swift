@@ -165,6 +165,17 @@ public final class GameSession: ObservableObject {
     /// trying the same position. `nil` (the default) is normal play.
     public var onMoveAttempt: (@MainActor (Move) -> Void)?
 
+    /// When `true`, attempt mode **holds** the completed move on the board instead of
+    /// rolling it back immediately (#114): the player can see the position their move
+    /// produced. `retryAttempt()` rolls it back to re-try. Has no effect outside
+    /// attempt mode (`onMoveAttempt == nil`).
+    public var holdAttempts = false
+
+    /// The attempt currently held on the board (#114), or `nil` when the board is at
+    /// the pre-move position. While non-nil the board shows the result of the move and
+    /// accepts no further input until `retryAttempt()`.
+    @Published public private(set) var heldAttempt: Move?
+
     /// One committed ply kept for decision-point undo. `move` is `nil` for a forced
     /// pass; dice are restored on undo so the same position can be re-decided.
     private struct UndoRecord {
@@ -409,13 +420,32 @@ public final class GameSession: ObservableObject {
     private func completeMove() {
         let move = Move(moveBuilder.built)
         if let onMoveAttempt {
-            for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
-            onMoveAttempt(move)
-            beginTurn()   // recompute legal moves at the same dice → back to .picking
+            if holdAttempts {
+                // Keep the move on the board so the player can study the result (#114);
+                // lock input until `retryAttempt()` rolls it back.
+                heldAttempt = move
+                clearSelection()
+                selectableSources = []
+                legalMoves = []
+                onMoveAttempt(move)
+            } else {
+                for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+                onMoveAttempt(move)
+                beginTurn()   // recompute legal moves at the same dice → back to .picking
+            }
         } else {
             recordTurn(mover: game.currentPlayer, move: move)
             finishTurn()
         }
+    }
+
+    /// Roll back the held attempt (#114) to the pre-move position and re-arm the same
+    /// dice, so the player can try again. No-op when nothing is held.
+    public func retryAttempt() {
+        guard let move = heldAttempt else { return }
+        for hm in move.halfMoves.reversed() { game.board.undoHalfMove(hm) }
+        heldAttempt = nil
+        beginTurn()   // back to .picking at the same position/dice
     }
 
     /// Resign on the human's behalf (#74): discard any half-move built this turn,
