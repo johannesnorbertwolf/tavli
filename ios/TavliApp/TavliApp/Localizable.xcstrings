@@ -368,7 +368,6 @@
       }
     },
     "Best": {
-      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -518,6 +517,7 @@
       }
     },
     "Compare": {
+      "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -711,24 +711,8 @@
         }
       }
     },
-    "Drill": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Übung"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Oefening"
-          }
-        }
-      }
-    },
+    "Drill": {},
     "Drill blunders": {
-      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -760,19 +744,18 @@
         }
       }
     },
-    "Enter Tavtav's dice": {
-      "extractionState": "stale",
+    "Enter TavTav's dice": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tavtavs Würfel eingeben"
+            "value": "TavTavs Würfel eingeben"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Voer Tavtavs dobbelstenen in"
+            "value": "Voer TavTavs dobbelstenen in"
           }
         }
       }
@@ -945,18 +928,18 @@
         }
       }
     },
-    "Human vs Tavtav": {
+    "Human vs TavTav": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mensch gegen Tavtav"
+            "value": "Mensch gegen TavTav"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mens tegen Tavtav"
+            "value": "Mens tegen TavTav"
           }
         }
       }
@@ -1297,7 +1280,6 @@
       }
     },
     "None": {
-      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -1347,6 +1329,7 @@
       }
     },
     "Only move available": {
+      "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -1877,92 +1860,89 @@
         }
       }
     },
+    "TavTav goes first!": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav beginnt!"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav begint!"
+          }
+        }
+      }
+    },
+    "TavTav played": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav spielte"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav speelde"
+          }
+        }
+      }
+    },
+    "TavTav played the best ✓": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav spielte den besten ✓"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav speelde de beste ✓"
+          }
+        }
+      }
+    },
+    "TavTav starts": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav beginnt"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav begint"
+          }
+        }
+      }
+    },
+    "TavTav thinking…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav denkt nach…"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TavTav denkt na…"
+          }
+        }
+      }
+    },
     "Tavli": {},
-    "Tavtav goes first!": {
-      "extractionState": "stale",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav beginnt!"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav begint!"
-          }
-        }
-      }
-    },
-    "Tavtav played": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav spielte"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav speelde"
-          }
-        }
-      }
-    },
-    "Tavtav played the best ✓": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav spielte den besten ✓"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav speelde de beste ✓"
-          }
-        }
-      }
-    },
-    "Tavtav starts": {
-      "extractionState": "stale",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav beginnt"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav begint"
-          }
-        }
-      }
-    },
-    "Tavtav thinking…": {
-      "extractionState": "stale",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav denkt nach…"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tavtav denkt na…"
-          }
-        }
-      }
-    },
     "The opening roll decides who starts, unless you force a side.": {
       "extractionState": "stale",
       "localizations": {
@@ -1997,22 +1977,7 @@
         }
       }
     },
-    "Top moves": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Top-Züge"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Topzetten"
-          }
-        }
-      }
-    },
+    "Top moves": {},
     "Try again": {
       "extractionState": "manual",
       "localizations": {
@@ -2271,6 +2236,7 @@
       }
     },
     "Your move": {
+      "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
@@ -2287,7 +2253,6 @@
       }
     },
     "Yours": {
-      "extractionState": "stale",
       "localizations": {
         "de": {
           "stringUnit": {

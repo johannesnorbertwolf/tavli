@@ -397,7 +397,7 @@ small spinner by the move counter shows until all passes finish). The screen is 
 board-centric** mode (a `fullScreenCover` from the win overlay): the position the player faced fills
 the screen, with a panel (played→best + win-prob gap, the Your-move/Compare overlay) and
 Prev/Next/swipe to page through moves. Both sides' moves are shown (#132): each card is tagged You
-or **Tavtav** (the AI persona), opponent cards annotate Tavtav's played/best, and an "All moves /
+or **TavTav** (the AI persona), opponent cards annotate TavTav's played/best, and an "All moves /
 My blunders" toggle jumps navigation only between your own blunders. Blunder flagging, the chart
 rings, and the drill stay scoped to the human's plies (filtered by `mover == humanColor`). The drill
 is launched the same way, with the current `GameReviewResult` handed over as a precomputed result.

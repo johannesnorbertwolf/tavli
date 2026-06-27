@@ -169,7 +169,7 @@ struct GameReviewView: View {
                        onScrub: @escaping (Int) -> Void) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
         let isHuman = eval.mover == humanColor
-        let mover = isHuman ? "You" : "Tavtav"
+        let mover = isHuman ? "You" : "TavTav"
         return VStack(alignment: .leading, spacing: 18) {
             // Reassurance headline when the whole game had no blunders (#105).
             if finished, model.blunderPlies.isEmpty {
@@ -223,13 +223,13 @@ struct GameReviewView: View {
             let playedIsBest = sameMove(eval.playedMove, eval.bestMove)
             VStack(alignment: .leading, spacing: 10) {
                 // Distinct literal labels (not "\(mover) played") so they localize.
-                moveLine(label: isHuman ? "You played" : "Tavtav played", move: eval.playedMove,
+                moveLine(label: isHuman ? "You played" : "TavTav played", move: eval.playedMove,
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
                 if eval.hadChoice {
                     moveLine(label: "Best move", move: eval.bestMove,
                              pct: Double(eval.bestScore), tint: ReviewTint.best)
                     if playedIsBest {
-                        Text(isHuman ? "Best move played ✓" : "Tavtav played the best ✓")
+                        Text(isHuman ? "Best move played ✓" : "TavTav played the best ✓")
                             .font(.callout.bold())
                             .foregroundStyle(ReviewTint.best)
                     } else {
@@ -559,7 +559,7 @@ private struct DepthChip: View {
     }
 }
 
-/// Whose move a review card is — "You" (amber) or the AI persona "Tavtav" (#132).
+/// Whose move a review card is — "You" (amber) or the AI persona "TavTav" (#132).
 private struct MoverChip: View {
     let label: String
     let isHuman: Bool
