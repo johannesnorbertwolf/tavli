@@ -25,6 +25,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     private let store = SaveStore.default()
+    /// Append-only log of every finished game (#104), separate from the autosave slot.
+    private let gameLog = GameLogStore.default()
 
     init() {
         // UI-test hook: start directly in a deterministic human-vs-AI game so the
@@ -93,8 +95,13 @@ struct RootView: View {
         .task(id: session.map(ObjectIdentifier.init)) {
             guard let session,
                   !ProcessInfo.processInfo.arguments.contains("-uiTestGame") else { return }
-            session.onGameOver = { [statsStore, humanColor] winner in
+            session.onGameOver = { [statsStore, humanColor, gameLog, autosaveName] winner in
                 statsStore.record(humanWon: winner == humanColor)
+                // Persist EVERY finished game to the append-only log (#104), regardless
+                // of outcome or whether it was ever manually saved. `record.outcome` is
+                // already set by the time this hook fires. Synchronous, like the autosave.
+                let name = autosaveName.isEmpty ? Self.newAutosaveName() : autosaveName
+                try? gameLog.append(session.snapshot(name: name))
             }
         }
     }

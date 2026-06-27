@@ -415,10 +415,23 @@ final class GameReviewModel: ObservableObject {
         self.firstPassComplete = true
     }
 
+    /// The append-only game log (#104). Holds the saved analysis: read it back to skip
+    /// re-analysis, and write the freshly computed analysis back into the same entry.
+    private let gameLog = GameLogStore.default()
+
     func run(record: GameRecord, agent: Agent?, humanColor: TavliEngine.Color) async {
         guard !started else { return }   // `.task` can re-fire; analyze once
         started = true
         self.humanColor = humanColor
+
+        // Reuse saved analysis if this game already has it (#104): a second review of
+        // the same game rebuilds the result locally — no model inference — and the
+        // drill, reached from here, gets the same cached result. Confirmed by the lack
+        // of an "Analyzing…" pass.
+        if let cached = gameLog.analysis(forGameId: record.gameId), !cached.isEmpty {
+            finish(with: GameReview.cachedResult(record: record, analysis: cached))
+            return
+        }
 
         guard let agent else { phase = .unavailable; return }
 
@@ -433,6 +446,14 @@ final class GameReviewModel: ObservableObject {
         }.value
 
         finish(with: result)
+        // Write the analysis back so it never recomputes (#104). No-op if the game
+        // isn't logged (e.g. a preview/test record). Off the main actor — pure file IO.
+        let gameId = record.gameId
+        let entries = [AnalysisEntry](reviewResult: result)
+        if !entries.isEmpty {
+            let log = gameLog
+            Task.detached { try? log.attachAnalysis(entries, forGameId: gameId) }
+        }
     }
 
     /// A streamed evaluation: upsert it by ply number (a deeper pass replaces the

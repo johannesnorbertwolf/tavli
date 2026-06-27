@@ -271,14 +271,18 @@ tests, no model/fixtures needed):
   color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
   reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
   for a new game) so the AI moves if it owns the turn.
-- **`GameSave.swift`** — the `GameRecord` value type plus the Codable wire format.
-  `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave { schemaVersion, name, savedAt,
-  startingPlayer, aiColor?, history }` (`currentSchemaVersion = 1`) — the on-disk format is
-  unchanged (flat, no `outcome` key, no schema bump), so existing v1 saves still load. A bridge
-  ties the two: `GameSave(record:name:savedAt:)` flattens a record into the wire format, and the
-  computed `GameSave.record` reads it back (with `outcome == nil`). `GameSession.snapshot(name:
-  savedAt:)` packages the live session's `record` into a `GameSave`. Colors serialize as their
-  `rawValue` (`"W"`/`"B"`).
+- **`GameSave.swift`** — the `GameRecord` value type (now with a stable `gameId: UUID`, #104) plus
+  the Codable wire format. `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave {
+  schemaVersion, gameId?, name, savedAt, startingPlayer, aiColor?, outcome?, history, analysis? }`.
+  **Schema versions (#104):** `currentSchemaVersion = 2`. A custom `Codable` keeps full back-compat —
+  decoding treats `gameId`/`outcome`/`analysis` as optional (a v1 file has none), and **encoding
+  derives the version from content**: a save *without* analysis is written at `schemaVersion: 1`
+  (byte-compatible with a v1 reader), gaining the `2` marker only once an `analysis` block is
+  attached. `AnalysisEntry { plyNumber, playedMove, playedScore, bestMove, bestScore, depth }` is the
+  durable per-ply analysis (no `boardStacks` — reconstructed by replay; scores as `Double`; field
+  names match the Python schema). `[AnalysisEntry](reviewResult:)` projects a `GameReviewResult`.
+  Bridges: `GameSave(record:name:savedAt:analysis:)` flattens (carrying `gameId`/`outcome`), and
+  `GameSave.record` reads back (a pre-#104 save gets a fresh `gameId`). Colors serialize as `rawValue`.
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
@@ -288,7 +292,17 @@ tests, no model/fixtures needed):
   newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
   **throws** `SaveStoreError.incompatibleSchema` on a version mismatch. `writeAutosave` /
   `loadAutosave` / `clearAutosave` manage the reserved slot; `writeManual` returns the generated
-  filename. `SaveStore.default()` roots it at `Documents/SavedGames`.
+  filename. `SaveStore.default()` roots it at `Documents/SavedGames`. Reads any schema **≤**
+  `currentSchemaVersion` (so v1 *and* v2 both load); only a *newer* version throws/skips (#104).
+- **`GameLogStore.swift`** (#104) — append-only log of **every finished game**, one JSON file per
+  `gameId` (`game-<uuid>.json`) under `Documents/GameLog`, written from `GameSession.onGameOver`
+  regardless of outcome or whether the game was ever manually saved (distinct from the single
+  resume autosave slot, which `SaveStore` keeps). Reuses `GameSave` as the wire format, so a logged
+  game is itself replayable. `append` writes/overwrites by id; `list()` returns `GameLogMetadata`
+  (adds outcome/aiColor/`hasAnalysis`); `analysis(forGameId:)` reads a game's saved analysis and
+  `attachAnalysis(_:forGameId:)` patches it back (bumping that file to v2). After a review,
+  `GameReviewModel` writes its `analysis` back here, and on a later review/drill of the same game
+  it loads the cached analysis and rebuilds via `GameReview.cachedResult` — no model, near-instant.
 
 The app wiring (autosave after every move and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see

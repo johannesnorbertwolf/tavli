@@ -350,6 +350,54 @@ public enum GameReview {
         }
     }
 
+    // ── Cached analysis (#104) ───────────────────────────────────────────────────
+
+    /// Rebuild a `GameReviewResult` from a game's **saved** analysis, without the
+    /// model (#104). The persisted `AnalysisEntry`s carry the scores but not the bulky
+    /// pre-move `boardStacks`, so this replays `record` once to recover each scored
+    /// ply's position/dice/mover (exactly as `replayContexts` does) and merges them
+    /// with the stored scores. The result is interchangeable with a freshly computed
+    /// one — the review pager and the drill (which both need `boardStacks`) consume it
+    /// unchanged — so a second review/drill of the same game skips re-analysis.
+    ///
+    /// Entries whose ply can't be located in the replay (a malformed/cleared log) are
+    /// dropped, mirroring the per-ply guards in `analyze`. `hadChoice` is recomputed
+    /// exactly from the legal moves at the replayed position (model-free),
+    /// so it matches the live analysis — a ply where you played the best is still a
+    /// real choice, not mislabeled "forced".
+    public static func cachedResult(record: GameRecord,
+                                    analysis: [AnalysisEntry],
+                                    config: GameConfig = .standard) -> GameReviewResult {
+        // Replaying with `includeOpponent` captures both sides, so an analysis that
+        // annotated the opponent's plies (#132) rebuilds in full too.
+        let contexts = replayContexts(record: record, humanColor: record.aiColor?.opponent ?? .white,
+                                      config: config, includeOpponent: true)
+        let byPly = Dictionary(contexts.map { ($0.plyNumber, $0) }, uniquingKeysWith: { a, _ in a })
+
+        let evaluations: [PlyEvaluation] = analysis.compactMap { entry in
+            guard let ctx = byPly[entry.plyNumber] else { return nil }
+            return PlyEvaluation(
+                plyNumber: entry.plyNumber, die1: ctx.die1, die2: ctx.die2,
+                boardStacks: ctx.boardStacks, mover: ctx.mover,
+                playedMove: entry.playedMove, playedScore: Float(entry.playedScore),
+                bestMove: entry.bestMove, bestScore: Float(entry.bestScore),
+                hadChoice: legalMoveCount(ctx, config: config) > 1, depth: entry.depth)
+        }
+        return GameReviewResult(evaluations: evaluations.sorted { $0.plyNumber < $1.plyNumber })
+    }
+
+    /// Number of legal moves at a replayed ply's position — the exact `hadChoice`
+    /// signal, rebuilt from the move history with no model (move generation only).
+    private static func legalMoveCount(_ ctx: PlyContext, config: GameConfig) -> Int {
+        let board = GameBoard(config: config)
+        for (i, pieces) in ctx.boardStacks.enumerated() where i < board.points.count {
+            board.setPoint(i, pieces: pieces)
+        }
+        let dice = Dice(numberOfSides: config.dieSides)
+        dice.set(ctx.die1, ctx.die2)
+        return PossibleMoves(board: board, color: ctx.mover, dice: dice).findMoves().count
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     /// Number of human plies that `analyze` will evaluate: the human's own,
