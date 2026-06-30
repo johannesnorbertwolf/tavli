@@ -162,35 +162,33 @@ so the game flow is validated without a simulator.
   chosen **index**, which the main actor maps back to the live `Move` before applying. An
   out-of-range/`nil` index (Core ML failure) falls back to a random live move.
 
-- **In-play analysis (#146).** With `inPlayAnalysis: true` (settable as `inPlayAnalysisEnabled`,
+- **In-play analysis (#146, #108).** With `inPlayAnalysis: true` (settable as `inPlayAnalysisEnabled`,
   default off in the engine, on via the app setting), `GameSession` accumulates each ply's 2-ply
   analysis *while the game is played*, into `analysisByPly` (exposed sorted as
   `inPlayAnalysis: [AnalysisEntry]`). The app logs it with the finished game so the review opens
-  instantly (see *Save & load*). Two free sources:
-  - **Opponent (AI) plies — captured from the AI's own search.** `getBestMove` already returns the
-    chosen move, its score, and the depth it reached; `playAITurn` threads `depth` through to
-    `applyAIMove`/`animateAITurn`, which call `captureAIAnalysis` right after `recordTurn`. The AI
-    plays its best, so the stored entry has `played == best`, `playedScore == bestScore == score`
-    (already the mover's win prob), and `depth` = the reached depth (2 under `.standard`). A forced
-    AI move (single legal move → `getBestMove`'s sentinel score 0) and the random/no-model fallback
-    are **not** captured (`legalMoves.count > 1` + non-nil score/depth guard); the review re-scores
-    those plies instead.
-  - **Human plies — ranked in the background during thinking time.** `beginTurn` (the single human
-    chokepoint) calls `startHumanAnalysis`: off the main actor, on an **isolated board copy** (same
-    `captureStacks`/`restoreStacks` isolation as the search), it runs the *same*
+  instantly (see *Save & load*). **Both sides are ranked the same way** (#108): the AI's *play*
+  search can be weakened (1-ply + selection noise, see *AI strength*), so its plies must be graded by
+  the same full-strength yardstick as the human's rather than reusing the play search.
+  - **Background ranking, both sides.** Each turn's chokepoint — `beginTurn` for the human,
+    `playAITurn` for the AI — calls `startMoveAnalysis`: off the main actor, on an **isolated board
+    copy** (same `captureStacks`/`restoreStacks` isolation as the search), it runs the *same*
     `evaluateMovesNply(depth: 2)` over the *same* `legalMoves` the review uses — so the captured
-    scores match a from-scratch review **exactly**. The result is staged in `humanAnalysisScores`
-    (aligned to `legalMoves`) only if the turn hasn't moved on (an `analysisEpoch` staleness check).
-    On commit, `completeMove` → `captureHumanAnalysis` keys the played move to its score (net-delta
-    match) and the best to the argmax via the reused `GameReview.matchRecorded`/`argmax`, storing a
-    `depth: 2` entry. If the ranking isn't ready (the player committed faster), nothing is stored
-    and the post-game review fills that ply in.
+    scores match a from-scratch review **exactly**, and at depth 2 regardless of the difficulty
+    setting (the σ noise lives only in `getBestMove`'s final pick, never in `evaluateMovesNply`). The
+    result is staged in `humanAnalysisScores` (aligned to `legalMoves`) only if the turn hasn't moved
+    on (an `analysisEpoch` staleness check). On commit (`completeMove` for the human,
+    `applyAIMove`/`animateAITurn` for the AI), `captureMoveAnalysis` keys the played move to its score
+    (net-delta match) and the best to the argmax via the reused `GameReview.matchRecorded`/`argmax`,
+    storing a `depth: 2` entry — honest `played`-vs-`best`, so a weakened AI's suboptimal plies show
+    up like a human's. If the ranking isn't ready (the mover committed faster than it computed —
+    common for the AI with animations off), nothing is stored and the post-game review fills that ply
+    in.
   - **Cancellation.** `cancelHumanAnalysis` (cancel task, drop staged scores, bump `analysisEpoch`)
-    runs from `newGame` (which also clears `analysisByPly`), `surrender`, and `enterManualRoll`. A
-    within-turn `undo` deliberately does **not** cancel: the position returns to the same turn-start
-    the ranking was computed for, so it stays valid (no recompute on move edits). Covered by
-    `GameSessionAnalysisTests` (human capture == from-scratch review, opponent self-consistency,
-    cancellation, seeded refine, disabled = no-op).
+    runs from `newGame` (which also clears `analysisByPly`), `surrender`, and `enterManualRoll`, and
+    at the start of each `startMoveAnalysis`. A within-turn `undo` deliberately does **not** cancel:
+    the position returns to the same turn-start the ranking was computed for, so it stays valid (no
+    recompute on move edits). Covered by `GameSessionAnalysisTests` (human capture == from-scratch
+    review, weakened-opponent honest grading, cancellation, seeded refine, disabled = no-op).
 
 - **`SearchConfig`** — the leaf scoring + inner pruning mirror the CLI's `config/config.yml` search
   section (so move *evaluation* matches `./run.sh play`), but the **root search strategy is
@@ -203,6 +201,17 @@ so the game flow is validated without a simulator.
   `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests to stay fast). Three
   knobs have **no CLI equivalent**: `maxRootBranches` (5) caps the root candidate set at every depth;
   `rootSoftBudget` (8s) and `minRootBranches` (2) only matter for the `maxDepth >= 3` deepening.
+  `selectionNoise` (σ, default 0) is the **AI-strength dial** (see *AI strength*).
+
+- **AI strength (#108).** The settings slider tunes how strongly the AI plays by mapping `aiStrength`
+  (0…1, default 1.0) onto two `SearchConfig` knobs (`AppSettings.searchConfig`): **full strength**
+  (slider max) is the unchanged 2-ply argmax (`maxDepth: 2`, `selectionNoise: 0`); **below max** the
+  *play* search drops to `maxDepth: 1` and `selectionNoise` rises linearly to `aiSigmaMax` at the
+  weakest, so a weaker opponent occasionally — and, at the weakest, only seldom blunders — passes up
+  its best 1-ply move. The noise is applied **only** in `getBestMove`'s 1-ply selection (below), so
+  leaf scoring and the in-play/review analysis stay full-strength and noise-free. `GameSession.searchConfig`
+  is mutable and the view keeps it in sync (`GameView`), so the slider takes effect on the AI's next
+  move mid-game. Online matches have no AI side and ignore it.
 
 - **`Agent` search (#58).** Three layers on top of the parity-validated
   1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
@@ -219,11 +228,14 @@ so the game flow is validated without a simulator.
     pre-screened, pruned via `pruneBranches`, recursed at `depth-1`, and folded in as
     `weight * (1 - oppDeep.max())`. Each apply is paired with a `defer`-undo so the board is restored
     even when a `SearchTimeout` unwinds from a deeper frame.
-  - `getBestMove(…timeBudget:…maxDepth:rootSoftBudget:minRootBranches:maxRootBranches:)` — **2-ply
-    baseline + anytime deepening** under a wall-clock `DispatchTime` deadline (this replaced the
-    earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). Otherwise: (1) score
-    every root move 1-ply and take the best-first candidate set within `relativeCutoff`, capped at
-    `maxRootBranches`; (2) **2-ply baseline** — score the whole candidate set at depth 2 (the
+  - `getBestMove(…timeBudget:…maxDepth:rootSoftBudget:minRootBranches:maxRootBranches:selectionNoise:noiseSeed:)`
+    — **2-ply baseline + anytime deepening** under a wall-clock `DispatchTime` deadline (this replaced
+    the earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). When
+    `maxDepth <= 1` (the strength slider's weakened mode, #108): score every move 1-ply and select over
+    **all** of them via `selectIndex` — plain argmax at `selectionNoise == 0`, else argmax of the
+    scores perturbed by iid Gaussian(0, σ) (Box–Muller, seedable via `noiseSeed`/`SplitMix64` for
+    tests), returning that pick at depth 1. Otherwise (full strength): (1) score every root move 1-ply
+    and take the best-first candidate set within `relativeCutoff`, capped at `maxRootBranches`; (2) **2-ply baseline** — score the whole candidate set at depth 2 (the
     guaranteed floor: cheap, almost always completes, and orders the next step) — **at the default
     `maxDepth: 2` this baseline is the result and step 3 is skipped**; (3) when `maxDepth >= 3`,
     **deepen to `maxDepth`** one candidate at a time in 2-ply order, overwriting each baseline score

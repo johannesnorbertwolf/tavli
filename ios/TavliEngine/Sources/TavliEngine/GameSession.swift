@@ -96,8 +96,10 @@ public final class GameSession: ObservableObject {
         analysisByPly.values.sorted { $0.plyNumber < $1.plyNumber }
     }
 
-    /// Knobs for the AI's iterative-deepening search (defaults match the CLI).
-    public let searchConfig: SearchConfig
+    /// Knobs for the AI's search. Mutable so the settings screen can retune the
+    /// AI-strength dial (`maxDepth` + `selectionNoise`, #108) mid-game; the view keeps it
+    /// in sync and it is read afresh at each AI turn.
+    public var searchConfig: SearchConfig
 
     /// Presentation timings for the AI turn (#93). Mutable so the settings
     /// screen (#77) can adjust them; consulted afresh at each AI turn.
@@ -473,7 +475,7 @@ public final class GameSession: ObservableObject {
             }
         } else {
             recordTurn(mover: game.currentPlayer, move: move)
-            captureHumanAnalysis(playedMove: move)
+            captureMoveAnalysis(playedMove: move)
             finishTurn()
         }
     }
@@ -572,7 +574,7 @@ public final class GameSession: ObservableObject {
                                   die1: game.dice.die1.value, die2: game.dice.die2.value)
         clearSelection()
         refreshSources()
-        startHumanAnalysis()
+        startMoveAnalysis()
     }
 
     private func refreshSources() {
@@ -776,6 +778,11 @@ public final class GameSession: ObservableObject {
         moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
                                   die1: game.dice.die1.value, die2: game.dice.die2.value)
 
+        // Rank this position at full-strength 2-ply in the background — the same pass and
+        // grading as a human turn (#108) — so the AI's ply is captured played-vs-best even
+        // when its *play* search was weakened (1-ply + noise). No-op without a model/analysis.
+        startMoveAnalysis()
+
         guard let agent else {
             // No model available — fall back to a random legal move.
             let move = legalMoves.randomElement()!
@@ -822,11 +829,11 @@ public final class GameSession: ObservableObject {
                 maxDepth: search.maxDepth,
                 rootSoftBudget: search.rootSoftBudget,
                 minRootBranches: search.minRootBranches,
-                maxRootBranches: search.maxRootBranches
+                maxRootBranches: search.maxRootBranches,
+                selectionNoise: search.selectionNoise
             )
             let chosenIndex = result?.index
             let chosenScore = result?.score
-            let chosenDepth = result?.depth
 
             await MainActor.run { [weak self] in
                 guard let self, self.aiTurnEpoch == epoch else { return }
@@ -837,21 +844,21 @@ public final class GameSession: ObservableObject {
                     chosen = liveMoves.randomElement()!
                 }
                 if self.animationTimings.isAnimated {
-                    self.animateAITurn(move: chosen, score: chosenScore, depth: chosenDepth,
+                    self.animateAITurn(move: chosen, score: chosenScore,
                                        diceRollStarted: diceRollStarted,
                                        rollDuration: rollDuration, epoch: epoch)
                 } else {
-                    self.applyAIMove(chosen, score: chosenScore, depth: chosenDepth)
+                    self.applyAIMove(chosen, score: chosenScore)
                 }
             }
         }
     }
 
-    private func applyAIMove(_ move: Move, score: Float?, depth: Int? = nil) {
+    private func applyAIMove(_ move: Move, score: Float?) {
         let mover = game.currentPlayer
         game.board.apply(move)
         recordTurn(mover: mover, move: move)
-        captureAIAnalysis(move: move, score: score, depth: depth)
+        captureMoveAnalysis(playedMove: move)
         if let score {
             // `score` is the win probability for the side that just moved.
             winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
@@ -878,7 +885,7 @@ public final class GameSession: ObservableObject {
     /// `rollDuration` is the dice-tumble window to wait out before the move (the
     /// configured duration for a secret roll, 0 for manual entry where the dice
     /// are already on screen, #110).
-    private func animateAITurn(move: Move?, score: Float?, depth: Int? = nil,
+    private func animateAITurn(move: Move?, score: Float?,
                                diceRollStarted: Date,
                                rollDuration: TimeInterval, epoch: Int) {
         phase = .animating
@@ -929,7 +936,7 @@ public final class GameSession: ObservableObject {
                 s.winProbability = (mover == .white) ? Double(score) : 1 - Double(score)
             }
             s.recordTurn(mover: mover, move: move)
-            s.captureAIAnalysis(move: move, score: score, depth: depth)
+            s.captureMoveAnalysis(playedMove: move)
             s.finishTurn()
         }
     }
@@ -1069,18 +1076,20 @@ public final class GameSession: ObservableObject {
 
     // ── In-play analysis (#146) ────────────────────────────────────────────────
 
-    /// Kick off a background 2-ply ranking of the human's legal moves for the turn
-    /// just begun, so the played move can be scored the instant they commit. Runs only
-    /// when analysis is enabled, a model is present, and it is a real (non-drill) human
-    /// turn with moves to rank — a forced single move included, which the review scores
-    /// too. The ranking is the *same* `evaluateMovesNply(depth: 2)` over the *same*
-    /// `legalMoves` the post-game review uses, so the captured scores match a
-    /// from-scratch review exactly. It scores an isolated board copy off the main actor
-    /// (exactly as the AI search does) and stores its result only if the turn hasn't
-    /// moved on (the epoch still matches).
-    private func startHumanAnalysis() {
+    /// Kick off a background 2-ply ranking of the legal moves for the turn just begun, so
+    /// the played move can be scored the instant it is committed. Runs for **both** the
+    /// human's and the AI's turns (#108): the AI's *play* search may be weakened (1-ply +
+    /// selection noise), but its ply must be graded by the same full-strength yardstick as
+    /// the human's, so it gets the same 2-ply ranking here. Runs only when analysis is
+    /// enabled, a model is present, and it is a real (non-drill) turn with moves to rank — a
+    /// forced single move included, which the review scores too. The ranking is the *same*
+    /// `evaluateMovesNply(depth: 2)` over the *same* `legalMoves` the post-game review uses,
+    /// so the captured scores match a from-scratch review exactly. It scores an isolated
+    /// board copy off the main actor (exactly as the AI search does) and stores its result
+    /// only if the turn hasn't moved on (the epoch still matches).
+    private func startMoveAnalysis() {
         cancelHumanAnalysis()
-        guard inPlayAnalysisEnabled, onMoveAttempt == nil, !isAITurn,
+        guard inPlayAnalysisEnabled, onMoveAttempt == nil,
               let agent, !legalMoves.isEmpty else { return }
 
         let epoch = analysisEpoch
@@ -1110,14 +1119,15 @@ public final class GameSession: ObservableObject {
         }
     }
 
-    /// Record the just-committed human ply's 2-ply analysis from the background ranking,
-    /// if it finished in time. Keys the played move to its score by net board delta and
-    /// the best to the argmax — the exact selection `GameReview` uses — so the stored
-    /// entry is identical to a from-scratch depth-2 review of this ply. If the ranking
-    /// isn't ready (the player committed faster than it computed), nothing is stored and
-    /// the post-game review fills this ply in. Call right after `recordTurn`, so
-    /// `record.plies.count` is this ply's 1-based number.
-    private func captureHumanAnalysis(playedMove move: Move) {
+    /// Record the just-committed ply's 2-ply analysis from the background ranking, if it
+    /// finished in time. Used for **both** sides (#108): the played move (the human's, or
+    /// the AI's possibly-weakened pick) is keyed to its score by net board delta and the
+    /// best to the argmax — the exact selection `GameReview` uses — so the stored entry is
+    /// identical to a from-scratch depth-2 review of this ply. If the ranking isn't ready
+    /// (the mover committed faster than it computed), nothing is stored and the post-game
+    /// review fills this ply in. Call right after `recordTurn`, so `record.plies.count` is
+    /// this ply's 1-based number.
+    private func captureMoveAnalysis(playedMove move: Move) {
         guard inPlayAnalysisEnabled,
               let scores = humanAnalysisScores, scores.count == legalMoves.count,
               let bestIdx = GameReview.argmax(scores),
@@ -1130,27 +1140,6 @@ public final class GameSession: ObservableObject {
             bestMove: pairs(of: legalMoves[bestIdx]),
             bestScore: Double(scores[bestIdx]),
             depth: 2)
-    }
-
-    /// Record the AI ply just played as its own analysis (#146). The AI played the best
-    /// move its search found, so played == best; `score` is already that move's win prob
-    /// for the mover and `depth` is the depth the search reached (2, or 3 on cheap
-    /// positions). No-op for a forced pass, a random fallback (no model → no score), or
-    /// when analysis is off. Also skipped when the AI had a single legal move: the search
-    /// short-circuits a forced move to a sentinel `score` of 0 (no real win prob), and
-    /// the review re-scores forced plies anyway, so storing the sentinel would corrupt
-    /// the trajectory. Call right after `recordTurn`, so `record.plies.count` is this
-    /// ply's number; `legalMoves` still holds the AI's set for the turn.
-    private func captureAIAnalysis(move: Move?, score: Float?, depth: Int?) {
-        guard inPlayAnalysisEnabled, legalMoves.count > 1,
-              let move, let score, let depth else { return }
-        let plyNumber = record.plies.count
-        let p = pairs(of: move)
-        analysisByPly[plyNumber] = AnalysisEntry(
-            plyNumber: plyNumber,
-            playedMove: p, playedScore: Double(score),
-            bestMove: p, bestScore: Double(score),
-            depth: depth)
     }
 
     /// Cancel any in-flight human ranking and drop its (now stale) result, bumping the
@@ -1210,6 +1199,7 @@ public final class GameSession: ObservableObject {
     public static func resume(from save: GameSave,
                               config: GameConfig = .standard,
                               agent: Agent? = nil,
+                              searchConfig: SearchConfig = .standard,
                               animationTimings: AnimationTimings = .standard,
                               manualDiceEntry: Bool = false,
                               autoRoll: Bool = false,
@@ -1220,6 +1210,7 @@ public final class GameSession: ObservableObject {
                                   config: config,
                                   agent: agent,
                                   aiColor: aiColor,
+                                  searchConfig: searchConfig,
                                   animationTimings: animationTimings,
                                   manualDiceEntry: manualDiceEntry,
                                   autoRoll: autoRoll,

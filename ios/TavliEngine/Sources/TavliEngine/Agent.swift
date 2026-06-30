@@ -23,6 +23,20 @@ let diceOutcomes: [DiceOutcome] = {
 /// Callers discard the partial result and keep the last fully completed depth.
 struct SearchTimeout: Error {}
 
+/// Deterministic, seedable RNG (SplitMix64, Steele et al.) for reproducible
+/// move-selection noise in tests (#108). Real play uses `SystemRandomNumberGenerator`.
+struct SplitMix64: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+}
+
 /// Core ML-backed move selector. Mirrors `ai/agent.py`:
 /// - 1-ply (`evaluateMoves`): apply each candidate; an immediate win scores 1.0,
 ///   otherwise score the afterstate from the opponent's perspective as `1 - opponentValue`.
@@ -114,6 +128,48 @@ public final class Agent: @unchecked Sendable {
             survivors = Array(survivors.prefix(maxBranch))
         }
         return survivors
+    }
+
+    /// Pick the index to play from `scores` (#108 difficulty). With `noise <= 0` this is the
+    /// plain argmax (ties → lowest index), identical to full-strength selection. With
+    /// `noise > 0` it adds iid Gaussian(0, noise) to each score and takes the argmax of the
+    /// perturbed values, so a weaker opponent occasionally passes up its best move. `seed`
+    /// pins the RNG for tests; `nil` uses the system RNG.
+    static func selectIndex(_ scores: [Float], noise: Float, seed: UInt64?) -> Int {
+        guard noise > 0, scores.count > 1 else { return argmax(scores) }
+        if let seed {
+            var rng = SplitMix64(seed: seed)
+            return noisyArgmax(scores, sigma: noise, using: &rng)
+        } else {
+            var rng = SystemRandomNumberGenerator()
+            return noisyArgmax(scores, sigma: noise, using: &rng)
+        }
+    }
+
+    /// Argmax over `scores`, ties → lowest index.
+    static func argmax(_ scores: [Float]) -> Int {
+        var b = 0
+        for i in scores.indices where scores[i] > scores[b] { b = i }
+        return b
+    }
+
+    private static func noisyArgmax<G: RandomNumberGenerator>(
+        _ scores: [Float], sigma: Float, using rng: inout G
+    ) -> Int {
+        var bestI = 0
+        var bestV = -Float.greatestFiniteMagnitude
+        for i in scores.indices {
+            let v = scores[i] + sigma * gaussian(using: &rng)
+            if v > bestV { bestV = v; bestI = i }
+        }
+        return bestI
+    }
+
+    /// One standard-normal sample via Box–Muller.
+    private static func gaussian<G: RandomNumberGenerator>(using rng: inout G) -> Float {
+        let u1 = Double.random(in: Double.leastNonzeroMagnitude...1, using: &rng)
+        let u2 = Double.random(in: 0...1, using: &rng)
+        return Float((-2 * log(u1)).squareRoot() * cos(2 * Double.pi * u2))
     }
 
     /// Recursive expectimax with beam pruning at opponent branches. Mirrors
@@ -215,6 +271,13 @@ public final class Agent: @unchecked Sendable {
     /// `SearchTimeout` (hard cap hit mid-branch) keeps the best result so far; if not
     /// even the 2-ply baseline finishes, the 1-ply best is returned (`depth = 1`).
     /// Returns the chosen move, its score, its index into `moves`, and the depth reached.
+    ///
+    /// **Difficulty (#108).** `selectionNoise` (σ) only takes effect in the 1-ply path the
+    /// strength slider drops to below full strength: it adds iid Gaussian(0, σ) to every
+    /// move's 1-ply score before the argmax, so a weaker opponent sometimes plays a
+    /// non-best move. σ = 0 is the unchanged full-strength argmax. `noiseSeed` makes the
+    /// perturbation reproducible for tests (nil → the system RNG in real play). The 2-ply+
+    /// path is unaffected — the slider only ever pairs deeper search with σ = 0.
     public func getBestMove(
         _ board: GameBoard,
         _ moves: [Move],
@@ -226,7 +289,9 @@ public final class Agent: @unchecked Sendable {
         maxDepth: Int? = nil,
         rootSoftBudget: TimeInterval = 8.0,
         minRootBranches: Int = 2,
-        maxRootBranches: Int = 5
+        maxRootBranches: Int = 5,
+        selectionNoise: Float = 0,
+        noiseSeed: UInt64? = nil
     ) throws -> (move: Move, score: Float, index: Int, depth: Int)? {
         guard !moves.isEmpty else { return nil }
         if moves.count == 1 { return (moves[0], 0.0, 0, 1) }
@@ -253,8 +318,11 @@ public final class Agent: @unchecked Sendable {
 
         let targetDepth = maxDepth ?? 3
         guard targetDepth > 1 else {
-            let p = bestPosition(candidates.map { rootScores[$0] })
-            return (moves[candidates[p]], rootScores[candidates[p]], candidates[p], 1)
+            // 1-ply play — the strength the slider drops to below full strength (#108).
+            // Select over **all** moves (not the pruned candidate set) so the noise can
+            // reach any legal reply; σ = 0 is the plain global 1-ply argmax (unchanged).
+            let idx = Self.selectIndex(rootScores, noise: selectionNoise, seed: noiseSeed)
+            return (moves[idx], rootScores[idx], idx, 1)
         }
 
         // Step 2 — 2-ply baseline over the whole candidate set (the guaranteed floor).
