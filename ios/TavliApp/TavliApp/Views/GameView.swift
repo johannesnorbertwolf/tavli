@@ -60,6 +60,37 @@ struct GameView: View {
     }
     var online: Online? = nil
 
+    /// Best-of-three match context (#145). Non-nil switches the chrome into match mode:
+    /// a scoreboard shows the running score during play, and the game-over overlay
+    /// becomes a match transition (per-game result + score + "Next game", or the match
+    /// verdict + "Rematch"/exit once decided). Works for both the offline (vs-AI) and
+    /// online surfaces — the only difference is how the result overlay is triggered.
+    struct Match {
+        /// The score, including any game that has just finished.
+        var state: MatchState
+        /// The local player's colour (the human offline; the local side online).
+        var localColor: TavliEngine.Color
+        /// Display name for the opponent in the scoreboard ("TavTav" offline, the Game
+        /// Center display name online).
+        var opponentName: String
+        /// The just-finished game's winner. Online sets this (the session has already
+        /// advanced to the next game); offline leaves it `nil` and the overlay reads it
+        /// from `session.phase`.
+        var lastGameWinner: TavliEngine.Color?
+        /// Online drives the result overlay with this flag (its session has advanced
+        /// behind the overlay); offline leaves it `false` and the overlay keys on
+        /// `session.phase == .gameOver`.
+        var showResultOverlay: Bool = false
+        /// Advance to the next game (offline builds the next session; online clears the
+        /// pending-result flag — the session already advanced).
+        var onNextGame: () -> Void
+        /// Start a brand-new match (offline only). Online returns to the lobby via `onExit`.
+        var onRematch: (() -> Void)? = nil
+        /// Leave the match entirely (back to the menu offline / the lobby online).
+        var onExit: () -> Void
+    }
+    var match: Match? = nil
+
     @State private var showingSaveDialog = false
     @State private var saveName = ""
 
@@ -110,6 +141,23 @@ struct GameView: View {
     /// Whether the local player may touch the board: always offline, only on the
     /// local player's turn online (#134).
     private var boardInteractive: Bool { online?.isLocalTurn ?? true }
+
+    /// Whether the match transition / match-over overlay should show (#145). Online
+    /// drives it via the context flag (its session has advanced behind the overlay);
+    /// offline keys on the current game being over.
+    private var showMatchOverlay: Bool {
+        guard match != nil else { return false }
+        if match?.showResultOverlay == true { return true }
+        if case .gameOver = session.phase { return true }
+        return false
+    }
+
+    /// The winner of the just-finished game, for the match overlay's per-game verdict.
+    private var lastGameWinner: TavliEngine.Color? {
+        if let w = match?.lastGameWinner { return w }
+        if case .gameOver(let w) = session.phase { return w }
+        return nil
+    }
 
     /// Turn/phase status — the normal indicator, or an online "waiting for opponent"
     /// state plus any transient banner (opponent left, match ended).
@@ -173,6 +221,11 @@ struct GameView: View {
                         Spacer(minLength: 0)
                         VStack(spacing: 12) {
                             turnStatus
+                            if let match {
+                                MatchScoreboardView(state: match.state,
+                                                    localColor: match.localColor,
+                                                    opponentName: match.opponentName)
+                            }
                             if online == nil && showWinProbability && !session.isTerminal {
                                 WinProbabilityBar(session: session)
                             }
@@ -217,7 +270,16 @@ struct GameView: View {
                         .allowsHitTesting(false)
                 }
 
-                if case .gameOver(let winner) = session.phase {
+                if let match, showMatchOverlay {
+                    // Match mode (#145): the game-over overlay becomes a match
+                    // transition (score + "Next game") or the match verdict once decided.
+                    SColor.black.opacity(0.65).ignoresSafeArea()
+                    MatchOverlayView(match: match,
+                                     lastGameWinner: lastGameWinner,
+                                     aiColor: session.aiColor,
+                                     onReview: session.aiColor != nil ? { showReview = true } : nil,
+                                     onHistory: { showHistory = true })
+                } else if case .gameOver(let winner) = session.phase {
                     // The scrim is a direct ZStack child (like the page background)
                     // so it provably spans the whole screen in both orientations —
                     // hosted inside the overlay it sized itself to the board column
@@ -409,6 +471,11 @@ struct GameView: View {
             }
             .frame(maxWidth: .infinity)
             .chromeCard(padding: 16)
+            if let match {
+                MatchScoreboardView(state: match.state,
+                                    localColor: match.localColor,
+                                    opponentName: match.opponentName)
+            }
             if online == nil && showWinProbability && !session.isTerminal {
                 WinProbabilityBar(session: session)
             }
@@ -797,6 +864,171 @@ private struct WinOverlayView: View {
                 .buttonStyle(ChromeButton(role: .scrim))
             }
         }
+    }
+}
+
+/// Compact match scoreboard shown during play (#145): the running score and which
+/// game of the set is in progress. Pure function of the `MatchState` value.
+private struct MatchScoreboardView: View {
+    let state: MatchState
+    let localColor: TavliEngine.Color
+    let opponentName: String
+
+    private var localWins: Int { state.wins(for: localColor) }
+    private var opponentWins: Int { state.wins(for: localColor.opponent) }
+    private var gameNumber: Int { min(state.currentGameNumber, state.maxGames) }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 10) {
+                Text("You")
+                    .font(ChromeType.callout)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Text("\(localWins) – \(opponentWins)")
+                    .font(ChromeType.title3.bold().monospacedDigit())
+                    .foregroundStyle(ChromeTheme.ink)
+                Text(opponentName)
+                    .font(ChromeType.callout)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
+            Text("Game \(gameNumber) of \(state.maxGames)")
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(ChromeTheme.ink.opacity(0.06))
+        .cornerRadius(ChromeKit.buttonRadius)
+    }
+}
+
+/// Match-mode game-over takeover (#145): the per-game result plus the running score
+/// while the match continues ("Next game"), or the match verdict and a rematch / exit
+/// once a side reaches the target. Mirrors `WinOverlayView`'s styling; presentation
+/// only — every action is a closure supplied by the match context.
+private struct MatchOverlayView: View {
+    let match: GameView.Match
+    /// The just-finished game's winner (offline reads it from `session.phase`).
+    let lastGameWinner: TavliEngine.Color?
+    /// The AI's colour offline (drives the mascot); `nil` online (no mascot).
+    let aiColor: TavliEngine.Color?
+    /// Open the just-finished game's review — offline only (review needs the model the
+    /// online session lacks), so `nil` online.
+    var onReview: (() -> Void)? = nil
+    /// Open the just-finished game's move history.
+    var onHistory: () -> Void = {}
+
+    private var state: MatchState { match.state }
+    private var localColor: TavliEngine.Color { match.localColor }
+    private var localWins: Int { state.wins(for: localColor) }
+    private var opponentWins: Int { state.wins(for: localColor.opponent) }
+    private var isComplete: Bool { state.isComplete }
+    private var localWonMatch: Bool { state.matchWinner == localColor }
+
+    /// Smirk if TavTav is on the winning side, friendly otherwise; nothing online.
+    private var mascot: TavTavPersona? {
+        guard let aiColor else { return nil }
+        let decider = isComplete ? state.matchWinner : lastGameWinner
+        guard let decider else { return nil }
+        return decider == aiColor ? .smirk : .friendly
+    }
+
+    private var title: String {
+        if isComplete {
+            return localWonMatch
+                ? String(localized: "You won the match!")
+                : String(localized: "\(match.opponentName) won the match")
+        }
+        guard let w = lastGameWinner else { return String(localized: "Game over") }
+        return w == localColor
+            ? String(localized: "You win!")
+            : String(localized: "\(ChromeTheme.displayName(w)) wins")
+    }
+
+    private var progressCaption: String {
+        isComplete
+            ? String(localized: "Final")
+            : String(localized: "Game \(min(state.currentGameNumber, state.maxGames)) of \(state.maxGames)")
+    }
+
+    var body: some View {
+        VStack(spacing: 28) {
+            if let mascot {
+                TavTavAvatar(persona: mascot, size: 108)
+            }
+            Text(title)
+                .font(ChromeType.winTitle)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+
+            VStack(spacing: 6) {
+                Text("You \(localWins) – \(opponentWins) \(match.opponentName)")
+                    .font(ChromeType.title2.bold().monospacedDigit())
+                    .foregroundStyle(.white)
+                Text(progressCaption)
+                    .font(ChromeType.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+
+            primaryButton
+
+            HStack(spacing: 14) {
+                if let onReview {
+                    Button(action: onReview) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                            Text("Review game")
+                        }
+                    }
+                    .buttonStyle(ChromeButton(role: .scrim))
+                }
+                Button(action: onHistory) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text("History")
+                    }
+                }
+                .buttonStyle(ChromeButton(role: .scrim))
+            }
+
+            Button { match.onExit() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "house")
+                    Text("Back to menu")
+                }
+            }
+            .buttonStyle(ChromeButton(role: .scrim))
+        }
+    }
+
+    @ViewBuilder
+    private var primaryButton: some View {
+        Button {
+            if !isComplete { match.onNextGame() }
+            else if let onRematch = match.onRematch { onRematch() }
+            else { match.onExit() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: primaryIcon)
+                Text(primaryLabel)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(ChromeButton(role: .primary))
+    }
+
+    private var primaryIcon: String {
+        if !isComplete { return "arrow.right" }
+        return match.onRematch != nil ? "arrow.clockwise" : "arrow.left"
+    }
+
+    private var primaryLabel: String {
+        if !isComplete { return String(localized: "Next game") }
+        return match.onRematch != nil
+            ? String(localized: "Rematch")
+            : String(localized: "Back to lobby")
     }
 }
 

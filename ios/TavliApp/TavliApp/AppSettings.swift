@@ -82,6 +82,30 @@ enum DiceModeSetting: String, CaseIterable, Identifiable {
     }
 }
 
+/// How many games a session plays (#145). `.single` is one game; `.bestOfThree` is a
+/// best-of-three match (first to two games). Defaults to `.bestOfThree` — the most
+/// common social format — on both the offline (vs-AI) start screen and the online lobby.
+enum MatchLengthSetting: String, CaseIterable, Identifiable {
+    case single, bestOfThree
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .single:      return String(localized: "Single game")
+        case .bestOfThree: return String(localized: "Best of 3")
+        }
+    }
+
+    /// Games a side must win to take the match (single → 1, best-of-three → 2).
+    var targetWins: Int {
+        switch self {
+        case .single:      return 1
+        case .bestOfThree: return 2
+        }
+    }
+}
+
 /// `UserDefaults` keys for the persisted settings.
 enum SettingsKey {
     static let preferredColor     = "settings.preferredColor"
@@ -92,6 +116,8 @@ enum SettingsKey {
     static let showWinProbability = "settings.showWinProbability"
     static let inPlayAnalysis      = "settings.inPlayAnalysis"
     static let aiStrength          = "settings.aiStrength"
+    static let matchLength         = "settings.matchLength"
+    static let onlineMatchLength   = "settings.onlineMatchLength"
 }
 
 /// Static, non-reactive reads of the persisted settings, for contexts where
@@ -155,6 +181,16 @@ enum AppSettings {
         c.maxDepth = best ? 2 : 1
         c.selectionNoise = best ? 0 : aiSigmaMax * Float(1.0 - aiStrength)
         return c
+    }
+
+    /// How many games an offline (vs-AI) session plays (#145). Default `.bestOfThree`.
+    static var matchLength: MatchLengthSetting {
+        raw(SettingsKey.matchLength).flatMap(MatchLengthSetting.init) ?? .bestOfThree
+    }
+
+    /// How many games a newly-invited online match plays (#145). Default `.bestOfThree`.
+    static var onlineMatchLength: MatchLengthSetting {
+        raw(SettingsKey.onlineMatchLength).flatMap(MatchLengthSetting.init) ?? .bestOfThree
     }
 
     /// The animation timings a new or resumed session should use, honouring the

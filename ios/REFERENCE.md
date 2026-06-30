@@ -360,13 +360,27 @@ Two people on separate devices play over the internet via **Game Center turn-bas
 model above: **a match's entire state is its ply log**, so sync, persistence, and reconnection
 are all "decode + replay", with no board state to reconcile.
 
-- **The match data is an `OnlineMatchPayload` (`OnlineMatch.swift`, engine).** `{ schemaVersion,
-  startingPlayer (raw "W"/"B"), colorByPlayerID: [gamePlayerID → raw colour], plies: [PlyRecord] }`
-  — the same `PlyRecord` wire type as a save, plus an explicit colour assignment so each device
-  computes its own side independent of turn order. `encoded()`/`decoded(from:)` (rejecting a newer
-  `schemaVersion`), `newPlies(since:)` (the diff applied during live play), and `gameSave()` (a
-  `GameSave` view for the rebuild path). Stored verbatim in `GKTurnBasedMatch.matchData`; a full
-  game is a few KB, far under Game Center's limit. Covered by `OnlineMatchTests`.
+- **The match data is an `OnlineMatchPayload` (`OnlineMatch.swift`, engine).** Schema **v2** (#145):
+  `{ schemaVersion, targetWins, startingPlayer (raw "W"/"B", the game-1 starter), colorByPlayerID:
+  [gamePlayerID → raw colour], games: [GameLog] }`, where `GameLog = { plies: [PlyRecord], winnerRaw }`.
+  Each game's ply log uses the same `PlyRecord` wire type as a save; an explicit colour assignment lets
+  each device compute its own side independent of turn order. The last `games` element is the
+  current/just-finished game; every earlier game is complete (has a `winner`). A **single game is just
+  `targetWins == 1` with one `GameLog`**, so the #134 and #145 paths share one shape. Helpers:
+  `completedGameWinners`, `matchState` (a `MatchState` view of the score), `currentGameIndex`,
+  `startingPlayer(forGameIndex:)` (alternates from the base), `gameSave(forGameIndex:)` (a `GameSave`
+  view for the rebuild path), and `pendingPlies(fromGameIndex:plyCount:)` (the diff applied during
+  live play, which may cross a game boundary). `encoded()`/`decoded(from:)` rejects a newer
+  `schemaVersion`; **a v1 payload still decodes** — its flat `plies` map to one `GameLog`, `targetWins`
+  1. Stored verbatim in `GKTurnBasedMatch.matchData`; a best-of-three is a few KB, far under Game
+  Center's limit. Covered by `OnlineMatchTests`.
+
+- **Match score — `MatchState` (`MatchState.swift`, engine).** A pure `Codable` value type shared by
+  the offline (vs-AI) and online surfaces: `{ targetWins, baseStartingPlayer, gameWinners: [Color] }`
+  with derived `wins(for:)`, `completedGames`, `currentGameNumber`, `maxGames`, `matchWinner` /
+  `isComplete` (a 2–0 short-circuits the third game), and `currentStartingPlayer` (alternates from the
+  base so games 2+ need no opening-roll ceremony and both online devices agree). `recordGame(winner:)`
+  is a no-op once decided. Covered by `MatchStateTests`.
 
 - **Applying a remote ply — `GameSession.applyRemoteMove(_:) -> Bool` (#134).** An online game is an
   ordinary **human-vs-human** session (`aiColor == nil`); a networked move is structurally the AI
@@ -383,17 +397,30 @@ are all "decode + replay", with no board state to reconcile.
   Covered by `GameSessionRemoteTests` (accept/reject/pass/Pasch + exact equivalence with `replay`).
 
 - **The bridge — `GameKitCoordinator` (`TavliApp/Online/`, app target, `@MainActor`).** Owns all
-  `GameKit` plumbing: authentication, the matchmaker invite UI, the turn-event listener, and one HvH
-  `GameSession`. **Inbound** — `receivedTurnEventFor` decodes the payload and either rebuilds the
-  session from the log (first open / reconnection, via `resume`) or applies only `newPlies(since:)`
-  through `applyRemoteMove` (live update, animated). **Outbound** — it observes `session.$record`;
-  when a new ply's mover is the local colour, it `endTurn`s with the re-encoded payload (or
-  `endMatchInTurn` with outcomes on a winning ply). Colours: creator plays White and moves first
-  (deliberately simple for v1); the creator persists the opening payload with `saveCurrentTurn` so
-  the joiner can read its colour before the first move. **Dice** stay local-roll-and-broadcast;
-  there is no shared RNG. Not covered by `swift test` (GameKit needs a signed build + two devices +
-  sandbox accounts) — verified manually; the codec and `applyRemoteMove` it calls are tested
-  headlessly. UI wiring (lobby, online turn lock, "Leave match", back-to-lobby win overlay) is in
+  `GameKit` plumbing: authentication, the matchmaker invite UI, the turn-event listener, the match
+  score (`matchState`), and the **current game's** HvH `GameSession`. **Inbound** —
+  `receivedTurnEventFor` decodes the payload and either rebuilds from the log (first open /
+  reconnection, via `resume` of the current game) or, for the open match, applies whatever this device
+  has not yet seen via `pendingPlies(...)` through `applyRemoteMove` (live update, animated) — which may
+  finish the current game and continue into the next. **Outbound** — it observes `session.$record`;
+  when a new ply's mover is the local colour, it `endTurn`s with the re-encoded payload. **Dice** stay
+  local-roll-and-broadcast; there is no shared RNG. Colours: creator plays White and moves first
+  (deliberately simple for v1); the creator persists the opening payload (with the lobby's chosen
+  `targetWins`) via `saveCurrentTurn` so the joiner can read its colour before the first move.
+
+- **Best-of-three flow (#145).** When a local move wins the current game, the coordinator appends the
+  winner to `matchState` and the finished `GameLog` to its history. If the **match** is now decided it
+  `endMatchInTurn`s with each participant's outcome set by the **match** winner; otherwise it starts
+  the next game locally (empty log, alternating starter), raises `pendingGameResult`, and hands the
+  turn to that starter — `endTurn` when the opponent starts, or `saveCurrentTurn` (keep the turn) when
+  the local player does. On the receiving side, a finished current game with the match still going
+  advances the local session to the next game behind the between-games overlay, so subsequent incoming
+  first-moves apply cleanly. `pendingGameResult` (the just-finished game's winner) drives that overlay;
+  the chrome clears it on "Next game". Single-game online (`targetWins == 1`) keeps the original #134
+  behaviour (game-over → back-to-lobby win overlay). Not covered by `swift test` (GameKit needs a
+  signed build + two devices + sandbox accounts) — verified manually; the codec, `MatchState`, the
+  `pendingPlies` diff, and `applyRemoteMove` it calls are tested headlessly. UI wiring (lobby +
+  match-length toggle, online turn lock, "Leave match", scoreboard, match transition overlay) is in
   `Views/CLAUDE.md`.
 
 ## Human game stats (#64)

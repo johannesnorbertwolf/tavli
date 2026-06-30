@@ -21,6 +21,10 @@ struct RootView: View {
     @State private var showOnline = false
     @State private var session: GameSession?
     @State private var humanColor: EngineColor = .white
+    /// The running best-of-three score (#145), non-nil only while a match is in
+    /// progress. In-memory only — a match isn't resumed across app launches (out of
+    /// scope per #145); a cold-launch autosave resumes as a standalone single game.
+    @State private var match: MatchState?
     /// Non-nil while the opening roll screen is showing (between mode picker and game).
     @State private var pendingHumanColor: EngineColor?
     /// The current game's display name — a timestamped default ("Game · <date>",
@@ -67,6 +71,7 @@ struct RootView: View {
                     onBack: {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil
+                        self.match = nil
                     },
                     onNewGame: {
                         // "Play Again" keeps the same color and re-runs the starting-player
@@ -75,13 +80,33 @@ struct RootView: View {
                         self.beginGame(humanColor: self.humanColor)
                     },
                     onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
-                    onAutosave: persistAutosave
+                    onAutosave: persistAutosave,
+                    match: match.map { ms in
+                        // Best-of-three chrome (#145): scoreboard during play + a match
+                        // transition overlay. Offline reads the just-finished winner from
+                        // the session and keys the overlay on the game being over.
+                        GameView.Match(
+                            state: ms,
+                            localColor: humanColor,
+                            opponentName: String(localized: "TavTav"),
+                            lastGameWinner: nil,
+                            showResultOverlay: false,
+                            onNextGame: startNextMatchGame,
+                            onRematch: startRematch,
+                            onExit: {
+                                persistAutosave()
+                                self.session = nil
+                                self.match = nil
+                            }
+                        )
+                    }
                 )
             } else if let pending = pendingHumanColor {
                 OpeningRollView(humanColor: pending) { startingPlayer in
                     humanColor = pending
                     pendingHumanColor = nil
                     autosaveName = Self.newAutosaveName()
+                    match = Self.newMatch(baseStartingPlayer: startingPlayer)
                     session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer)
                 } onBack: {
                     pendingHumanColor = nil
@@ -118,6 +143,9 @@ struct RootView: View {
                 let save = GameSave(record: session.record, name: name,
                                     analysis: entries.isEmpty ? nil : entries)
                 try? gameLog.append(save)
+                // Advance the best-of-three score (#145), if a match is in progress, so
+                // the match scoreboard + transition overlay reflect this game's result.
+                self.match?.recordGame(winner: winner)
             }
         }
     }
@@ -139,16 +167,45 @@ struct RootView: View {
         }
     }
 
-    /// Start a new game as `color`. The starting-player setting decides whether to
-    /// run the opening-roll ceremony (#33) or seed the starter directly (#77).
+    /// Start a new game (or match) as `color`. The starting-player setting decides
+    /// whether to run the opening-roll ceremony (#33) or seed the starter directly
+    /// (#77). When best-of-three is selected (#145), a `MatchState` is created at the
+    /// point the game-1 starter becomes known (here, or in the opening-roll completion).
     private func beginGame(humanColor color: EngineColor) {
         if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
             humanColor = color
             autosaveName = Self.newAutosaveName()
+            match = Self.newMatch(baseStartingPlayer: starter)
             session = Self.makeSession(humanColor: color, startingPlayer: starter)
         } else {
             pendingHumanColor = color   // run the opening-roll ceremony
         }
+    }
+
+    /// A fresh best-of-three `MatchState` when match mode is selected (#145), else
+    /// `nil` for a single game. The base starter is game 1's starter; later games
+    /// alternate from it.
+    private static func newMatch(baseStartingPlayer: EngineColor) -> MatchState? {
+        AppSettings.matchLength == .bestOfThree
+            ? MatchState.bestOfThree(baseStartingPlayer: baseStartingPlayer)
+            : nil
+    }
+
+    /// Start the next game of the current match (#145), without an opening-roll
+    /// ceremony — the starter alternates deterministically from the match's base.
+    private func startNextMatchGame() {
+        guard let match else { return }
+        autosaveName = Self.newAutosaveName()
+        session = Self.makeSession(humanColor: humanColor,
+                                   startingPlayer: match.currentStartingPlayer)
+    }
+
+    /// Start a brand-new match after one has finished (#145, the win overlay's
+    /// "Rematch"): same colour, re-resolving the starter per Settings.
+    private func startRematch() {
+        session = nil
+        match = nil
+        beginGame(humanColor: humanColor)
     }
 
     /// Load a saved game (from the picker list) and switch into it, carrying its
@@ -157,6 +214,7 @@ struct RootView: View {
         guard let save = try? store.load(filename: meta.filename) else { return }
         humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
         autosaveName = save.name
+        match = nil   // a resumed game is a standalone single game (#145)
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
                                    searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
@@ -237,6 +295,8 @@ private struct ModePickerView: View {
 
     /// A fixed preferred color skips the per-game White/Red choice (#77).
     @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
+    /// Single game vs best-of-three match (#145). Defaults to best-of-three.
+    @AppStorage(SettingsKey.matchLength) private var matchLength: MatchLengthSetting = .bestOfThree
 
     var body: some View {
         ZStack {
@@ -247,6 +307,7 @@ private struct ModePickerView: View {
                     .foregroundStyle(CaramelPalette.frameText)
 
                 playCard
+                matchLengthPicker
                 onlineButton
                 recordRow
 
@@ -308,6 +369,19 @@ private struct ModePickerView: View {
             .frame(maxWidth: 392)
             .chromeCard(padding: 24)
         }
+    }
+
+    /// Single-game vs best-of-three choice for the next vs-AI game (#145). A best-of-
+    /// three match is the social default, so it's pre-selected; the setting is sticky.
+    private var matchLengthPicker: some View {
+        Picker("Match length", selection: $matchLength) {
+            ForEach(MatchLengthSetting.allCases) { option in
+                Text(option.label).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .tint(ChromeTheme.undoTint)
+        .frame(maxWidth: 392)
     }
 
     /// Enter online multiplayer (#134): a secondary action under the primary
