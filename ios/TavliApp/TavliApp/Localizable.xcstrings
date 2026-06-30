@@ -111,6 +111,22 @@
     "(%@)" : {
 
     },
+    "(pass)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(kein Zug)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(geen zet)"
+          }
+        }
+      }
+    },
     "%@" : {
 
     },
@@ -261,7 +277,20 @@
       }
     },
     "−%@ win chance vs your move" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ Gewinnchance ggü. deinem Zug"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ winstkans t.o.v. jouw zet"
+          }
+        }
+      }
     },
     "1 loss in a row ↓" : {
       "extractionState" : "stale",
@@ -890,7 +919,20 @@
       }
     },
     "Drill" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drill"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drill"
+          }
+        }
+      }
     },
     "Drill blunders" : {
       "extractionState" : "stale",
@@ -1161,7 +1203,20 @@
       }
     },
     "Invite a friend" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freund einladen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nodig een vriend uit"
+          }
+        }
+      }
     },
     "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
       "extractionState" : "stale",
@@ -1214,7 +1269,20 @@
       }
     },
     "Leave match" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partie verlassen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partij verlaten"
+          }
+        }
+      }
     },
     "Make your move on the board." : {
       "localizations" : {
@@ -1437,7 +1505,20 @@
       }
     },
     "No games in progress. Invite a friend to start one." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine laufenden Partien. Lade einen Freund ein, um eine zu starten."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen lopende partijen. Nodig een vriend uit om er een te starten."
+          }
+        }
+      }
     },
     "No games yet" : {
       "localizations" : {
@@ -1704,7 +1785,20 @@
       }
     },
     "Play Online" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online spielen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Online spelen"
+          }
+        }
+      }
     },
     "Play vs AI" : {
       "localizations" : {
@@ -1989,7 +2083,20 @@
       }
     },
     "Sign in to Game Center to invite a friend and play online." : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Melde dich bei Game Center an, um einen Freund einzuladen und online zu spielen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meld je aan bij Game Center om een vriend uit te nodigen en online te spelen."
+          }
+        }
+      }
     },
     "Skip" : {
       "extractionState" : "stale",
@@ -2218,7 +2325,20 @@
       }
     },
     "Top moves" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beste Züge"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beste zetten"
+          }
+        }
+      }
     },
     "Try again" : {
       "extractionState" : "manual",
@@ -2279,7 +2399,20 @@
 
     },
     "Waiting for %@…" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Warte auf %@…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wachten op %@…"
+          }
+        }
+      }
     },
     "White" : {
       "extractionState" : "stale",
@@ -2404,13 +2537,13 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ich beginne"
+            "value" : "Du beginnst"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ik begin"
+            "value" : "Jij begint"
           }
         }
       }
@@ -2483,7 +2616,20 @@
       }
     },
     "Your games" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deine Partien"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jouw partijen"
+          }
+        }
+      }
     },
     "Your move" : {
       "extractionState" : "manual",

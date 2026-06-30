@@ -169,7 +169,7 @@ struct GameReviewView: View {
                        onScrub: @escaping (Int) -> Void) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
         let isHuman = eval.mover == humanColor
-        let mover = isHuman ? "You" : "TavTav"
+        let mover: LocalizedStringKey = isHuman ? "You" : "TavTav"
         return VStack(alignment: .leading, spacing: 18) {
             // Reassurance headline when the whole game had no blunders (#105).
             if finished, model.blunderPlies.isEmpty {
@@ -295,7 +295,7 @@ struct GameReviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func moveLine(label: String, move: [[Int]], pct: Double, tint: SColor) -> some View {
+    private func moveLine(label: LocalizedStringKey, move: [[Int]], pct: Double, tint: SColor) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             HStack(spacing: 8) {
@@ -339,7 +339,7 @@ struct GameReviewView: View {
     // ── Formatting ────────────────────────────────────────────────────────────
 
     /// A small colour swatch + label for the compare legend (#133).
-    private func legendDot(_ color: SColor, _ label: String) -> some View {
+    private func legendDot(_ color: SColor, _ label: LocalizedStringKey) -> some View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 10, height: 10)
             Text(label)
@@ -359,7 +359,7 @@ struct GameReviewView: View {
     /// the same move reads identically however its half-moves were ordered when played
     /// (e.g. a Pasch 1→4, 4→7, 1→4, 6→9 always shows as 1→4, 1→4, 4→7, 6→9).
     private func moveText(_ pairs: [[Int]]) -> String {
-        guard !pairs.isEmpty else { return "(pass)" }
+        guard !pairs.isEmpty else { return String(localized: "(pass)") }
         let ordered = pairs.sorted { a, b in
             let a0 = a.first ?? 0, b0 = b.first ?? 0
             if a0 != b0 { return a0 < b0 }
@@ -580,7 +580,7 @@ private struct DepthChip: View {
 
 /// Whose move a review card is — "You" (amber) or the AI persona "TavTav" (#132).
 private struct MoverChip: View {
-    let label: String
+    let label: LocalizedStringKey
     let isHuman: Bool
     var body: some View {
         let tint = isHuman ? ChromeTheme.undoTint : ReviewTint.best
@@ -743,7 +743,7 @@ private struct WinProbabilityChart: View {
         ctx.stroke(p, with: .color(color), style: StrokeStyle(lineWidth: 1, dash: dash))
     }
 
-    private func label(_ ctx: GraphicsContext, _ s: String, at p: CGPoint, anchor: UnitPoint,
+    private func label(_ ctx: GraphicsContext, _ s: LocalizedStringKey, at p: CGPoint, anchor: UnitPoint,
                        color: SColor) {
         ctx.draw(Text(s).font(.system(size: 9, weight: .semibold)).foregroundColor(color),
                  at: p, anchor: anchor)

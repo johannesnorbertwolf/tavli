@@ -437,7 +437,7 @@ private struct DrillCard: View {
         }
     }
 
-    private func moveRow(label: String, move: [[Int]], pct: Double, tint: SColor) -> some View {
+    private func moveRow(label: LocalizedStringKey, move: [[Int]], pct: Double, tint: SColor) -> some View {
         HStack(spacing: 8) {
             Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             Text(moveText(move)).font(.callout.monospaced().bold()).foregroundStyle(tint)
@@ -450,7 +450,7 @@ private struct DrillCard: View {
     /// Half-moves sorted by start point then end point, so the same move always reads
     /// identically however its half-moves were ordered when played.
     private func moveText(_ pairs: [[Int]]) -> String {
-        guard !pairs.isEmpty else { return "(pass)" }
+        guard !pairs.isEmpty else { return String(localized: "(pass)") }
         let ordered = pairs.sorted { a, b in
             let a0 = a.first ?? 0, b0 = b.first ?? 0
             if a0 != b0 { return a0 < b0 }
