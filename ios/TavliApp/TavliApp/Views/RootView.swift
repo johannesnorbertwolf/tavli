@@ -216,6 +216,7 @@ struct RootView: View {
         autosaveName = save.name
         match = nil   // a resumed game is a standalone single game (#145)
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
                                    autoRoll: AppSettings.autoRoll,
@@ -230,6 +231,7 @@ struct RootView: View {
         let store = SaveStore.default()
         guard let save = store.loadAutosave() else { return nil }
         let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+                                   searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
                                    autoRoll: AppSettings.autoRoll,
@@ -263,6 +265,7 @@ struct RootView: View {
             startingPlayer: startingPlayer,
             agent: GameSession.makeAgent(),
             aiColor: humanColor.opponent,
+            searchConfig: AppSettings.searchConfig,
             animationTimings: AppSettings.animationTimings,
             manualDiceEntry: AppSettings.diceMode == .manual,
             autoRoll: AppSettings.autoRoll,

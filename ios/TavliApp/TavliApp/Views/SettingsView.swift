@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
+    @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
 
     var body: some View {
         ZStack {
@@ -29,6 +30,11 @@ struct SettingsView: View {
                     header
 
                     section("Gameplay") {
+                        sliderRow("TavTav's strength",
+                                  value: $aiStrength,
+                                  minLabel: "Relaxed",
+                                  maxLabel: "Best",
+                                  caption: "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move.")
                         choiceRow("Play as",
                                   selection: $preferredColor,
                                   options: PreferredColorSetting.allCases,
@@ -133,6 +139,32 @@ struct SettingsView: View {
                     .foregroundStyle(ChromeTheme.ink)
             }
             .tint(ChromeTheme.doneTint)
+            Text(caption)
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+        }
+    }
+
+    /// A titled slider (#108) with min/max end labels and a caption beneath.
+    private func sliderRow(_ title: LocalizedStringKey,
+                           value: Binding<Double>,
+                           minLabel: LocalizedStringKey,
+                           maxLabel: LocalizedStringKey,
+                           caption: LocalizedStringKey) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(ChromeType.body.weight(.semibold))
+                .foregroundStyle(ChromeTheme.ink)
+            HStack(spacing: 12) {
+                Text(minLabel)
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Slider(value: value, in: 0...1)
+                    .tint(ChromeTheme.undoTint)
+                Text(maxLabel)
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
             Text(caption)
                 .font(ChromeType.caption)
                 .foregroundStyle(ChromeKit.inkSecondary)

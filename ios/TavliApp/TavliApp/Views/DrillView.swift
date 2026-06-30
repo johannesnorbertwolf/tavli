@@ -447,9 +447,16 @@ private struct DrillCard: View {
 
     private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
 
+    /// Half-moves sorted by start point then end point, so the same move always reads
+    /// identically however its half-moves were ordered when played.
     private func moveText(_ pairs: [[Int]]) -> String {
         guard !pairs.isEmpty else { return "(pass)" }
-        return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
+        let ordered = pairs.sorted { a, b in
+            let a0 = a.first ?? 0, b0 = b.first ?? 0
+            if a0 != b0 { return a0 < b0 }
+            return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
+        }
+        return ordered.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
     }
 
     @ViewBuilder

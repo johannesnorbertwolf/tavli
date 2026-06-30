@@ -275,4 +275,59 @@ final class AgentSearchTests: XCTestCase {
         XCTAssertEqual(board.points.reduce(0) { $0 + $1.count }, checkersBefore,
                        "search left the board mutated")
     }
+
+    // MARK: - selection noise (#108, pure, no model)
+
+    /// Noise-free selection is the plain argmax with ties → lowest index.
+    func testSelectIndexNoiseFreeIsArgmax() {
+        let scores: [Float] = [0.50, 0.51, 0.49, 0.30]
+        XCTAssertEqual(Agent.argmax(scores), 1)
+        XCTAssertEqual(Agent.selectIndex(scores, noise: 0, seed: 7), 1)
+        XCTAssertEqual(Agent.argmax([0.4, 0.4, 0.2]), 0, "ties resolve to the lowest index")
+    }
+
+    /// With σ > 0 the pick is reproducible per seed, always in range, and heavy noise
+    /// sometimes passes up the best score — while σ = 0 never does, for any seed.
+    func testSelectIndexNoiseIsSeededBoundedAndCanDeviate() {
+        let scores: [Float] = [0.50, 0.51, 0.49, 0.30]
+        XCTAssertEqual(Agent.selectIndex(scores, noise: 0.5, seed: 42),
+                       Agent.selectIndex(scores, noise: 0.5, seed: 42),
+                       "same seed → same pick")
+        let seeds = (UInt64(0)..<200)
+        XCTAssertTrue(seeds.allSatisfy { scores.indices.contains(Agent.selectIndex(scores, noise: 0.5, seed: $0)) },
+                      "selection must stay within the move set")
+        XCTAssertTrue(seeds.contains { Agent.selectIndex(scores, noise: 0.5, seed: $0) != 1 },
+                      "heavy noise should sometimes pass up the best score")
+        XCTAssertTrue(seeds.allSatisfy { Agent.selectIndex(scores, noise: 0, seed: $0) == 1 },
+                      "no noise never deviates from the best")
+    }
+
+    // MARK: - 1-ply play with selection noise (#108, model-backed)
+
+    /// At `maxDepth: 1` with σ = 0, `getBestMove` returns the global 1-ply argmax over
+    /// **all** moves (the strength the slider drops to below full strength), at depth 1,
+    /// leaving the board conserved.
+    func testOnePlySelectionNoiseFreeMatchesGlobalArgmax() throws {
+        let config = gameConfig(Self.fixtures.config)
+        var picked: (board: GameBoard, moves: [Move], color: Color)?
+        for c in Self.fixtures.move_cases where c.moves.count >= 3 {
+            let board = makeBoard(c.points, config: config)
+            let color = parseColor(c.color)
+            let dice = Dice(numberOfSides: config.dieSides)
+            dice.set(c.dice[0], c.dice[1])
+            let moves = PossibleMoves(board: board, color: color, dice: dice).findMoves()
+            if moves.count >= 3 { picked = (board, moves, color); break }
+        }
+        let (board, moves, color) = try XCTUnwrap(picked, "no fixture case with >= 3 moves")
+        let before = board.captureStacks()
+
+        let scores = try Self.agent.evaluateMoves(board, moves, color: color)
+        let expected = Agent.argmax(scores)
+        let r = try XCTUnwrap(try Self.agent.getBestMove(
+            board, moves, color: color, timeBudget: 10, maxDepth: 1, selectionNoise: 0))
+        XCTAssertEqual(r.index, expected)
+        XCTAssertEqual(r.depth, 1)
+        XCTAssertEqual(r.score, scores[expected], accuracy: 1e-6)
+        XCTAssertEqual(board.captureStacks(), before, "search left the board mutated")
+    }
 }

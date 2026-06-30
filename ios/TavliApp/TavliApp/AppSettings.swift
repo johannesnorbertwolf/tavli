@@ -115,8 +115,9 @@ enum SettingsKey {
     static let aiAnimation        = "settings.aiAnimationEnabled"
     static let showWinProbability = "settings.showWinProbability"
     static let inPlayAnalysis      = "settings.inPlayAnalysis"
-    static let matchLength        = "settings.matchLength"
-    static let onlineMatchLength  = "settings.onlineMatchLength"
+    static let aiStrength          = "settings.aiStrength"
+    static let matchLength         = "settings.matchLength"
+    static let onlineMatchLength   = "settings.onlineMatchLength"
 }
 
 /// Static, non-reactive reads of the persisted settings, for contexts where
@@ -151,10 +152,35 @@ enum AppSettings {
 
     /// Whether to compute each ply's 2-ply analysis during play (#146), so the
     /// post-game review opens instantly. Default **on** — the work fits the human's
-    /// idle thinking window and the AI's plies are captured for free from its search;
-    /// the user can disable it to save CPU/battery.
+    /// idle thinking window; both sides' plies are ranked at 2-ply in the background
+    /// (#108). The user can disable it to save CPU/battery.
     static var inPlayAnalysisEnabled: Bool {
         UserDefaults.standard.object(forKey: SettingsKey.inPlayAnalysis) as? Bool ?? true
+    }
+
+    /// AI-strength dial (#108), 0…1: **1.0 (default) = full strength** (unchanged 2-ply
+    /// argmax), lower = weaker. Anything below 1.0 drops the *play* search to 1-ply and
+    /// adds selection noise that grows toward 0 (see `searchConfig`).
+    static var aiStrength: Double {
+        UserDefaults.standard.object(forKey: SettingsKey.aiStrength) as? Double ?? 1.0
+    }
+
+    /// Largest selection-noise σ, reached at the weakest setting. Tuned so even the
+    /// weakest opponent only seldom passes up its best 1-ply move (#108); raise to make
+    /// the weak end weaker.
+    static let aiSigmaMax: Float = 0.10
+
+    /// The search configuration a new or resumed session should use, mapping `aiStrength`
+    /// onto the engine knobs: full strength is the unchanged 2-ply argmax; below that the
+    /// search drops to 1-ply and `selectionNoise` rises linearly to `aiSigmaMax` at the
+    /// weakest. Only `maxDepth`/`selectionNoise` change — the analysis ranking reads the
+    /// other (standard) fields and stays full-strength regardless.
+    static var searchConfig: SearchConfig {
+        var c = SearchConfig.standard
+        let best = aiStrength >= 1.0
+        c.maxDepth = best ? 2 : 1
+        c.selectionNoise = best ? 0 : aiSigmaMax * Float(1.0 - aiStrength)
+        return c
     }
 
     /// How many games an offline (vs-AI) session plays (#145). Default `.bestOfThree`.

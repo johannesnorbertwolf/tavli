@@ -122,6 +122,7 @@ struct GameView: View {
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
+    @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
 
     /// Above this human win probability, resigning first shows the preliminary
     /// "you can still win" alert before the standard confirmation (#74).
@@ -384,6 +385,14 @@ struct GameView: View {
             .onAppear { session.inPlayAnalysisEnabled = inPlayAnalysis }
             .onChange(of: inPlayAnalysis) { _, on in
                 session.inPlayAnalysisEnabled = on
+            }
+            // AI strength (#108): retune the search on entry and whenever the slider
+            // moves, so the change lands on the AI's next move without restarting.
+            // Offline-only — online matches have no AI side.
+            .onAppear { if online == nil { session.searchConfig = AppSettings.searchConfig } }
+            .onChange(of: aiStrength) { _, _ in
+                guard online == nil else { return }
+                session.searchConfig = AppSettings.searchConfig
             }
         }
     }

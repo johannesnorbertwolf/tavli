@@ -334,9 +334,13 @@ struct SourceRingView: View {
 ///
 ///  1. **Every source is highlighted**, not just the first half-move's. A compound
 ///     move (two half-moves, or up to four under a Pasch double) rings all of them.
-///  2. **Pass-through points are skipped.** A point that is both a source *and* a
-///     goal within the move is where a checker merely hops over — it gets no
-///     highlight (e.g. a single checker 13→9→5→1 marks only source 13 and target 1).
+///  2. **Pass-through hops are cancelled by count.** Where a checker merely hops
+///     over a point it gets no highlight (e.g. a single checker 13→9→5→1 marks only
+///     source 13 and target 1). This is counted, not set-based: at a point where `k`
+///     checkers arrive and `j` leave, `min(k, j)` are pass-throughs, any surplus
+///     arrivals are genuine landings, and any surplus departures genuine sources — so
+///     a point that is *both* a landing and a hop-over (one checker stays while
+///     another passes through, e.g. a Pasch 1→4, 4→7, 1→4) still reads as a landing.
 ///  3. **Only the moved checkers are ringed** — the count of half-moves leaving a
 ///     point (usually one, up to four with doubles), taken from the top of the
 ///     stack — not every checker sitting there.
@@ -354,20 +358,31 @@ struct MoveHighlightView: View {
     let stacks: [[TavliEngine.Color]]
     var flipped: Bool = false
 
-    /// Effective half-moves of a move (those whose source isn't a pass-through hop),
-    /// plus the set of landing points. Keeping the individual `[from,to]` lifts — not
-    /// just a per-point count — lets the source rings be coloured per *piece*: two
-    /// checkers leaving one point can ring different colours (#133).
-    private struct Marks { var lifts: [[Int]]; var targets: Set<Int> }
+    /// The genuine source points and landing points of a move, after cancelling
+    /// hop-overs *by count* (#133). `sources` lists each genuine source point
+    /// once per checker lifted there (so the rings can be coloured per *piece*: two
+    /// checkers leaving one point can ring different colours); `targets` is the set
+    /// of genuine landing points.
+    private struct Marks { var sources: [Int]; var targets: Set<Int> }
 
     private static func marks(of move: [[Int]]) -> Marks {
         let pairs = move.filter { $0.count == 2 }
-        let froms = pairs.map { $0[0] }
-        let tos = pairs.map { $0[1] }
-        // A point used as both a source and a goal is a hop-over — highlight neither.
-        let passThrough = Set(froms).intersection(Set(tos))
-        let lifts = pairs.filter { !passThrough.contains($0[0]) }
-        return Marks(lifts: lifts, targets: Set(tos).subtracting(passThrough))
+        // Per point: how many checkers arrive vs leave. The min cancels as a hop-over;
+        // any surplus arrival is a real landing, any surplus departure a real source.
+        var arrivals: [Int: Int] = [:], departures: [Int: Int] = [:]
+        for p in pairs {
+            departures[p[0], default: 0] += 1
+            arrivals[p[1], default: 0] += 1
+        }
+        var sources: [Int] = []
+        for (pt, dep) in departures {
+            let net = dep - (arrivals[pt] ?? 0)
+            if net > 0 { sources += Array(repeating: pt, count: net) }
+        }
+        let targets = Set(arrivals.compactMap { pt, arr in
+            arr - (departures[pt] ?? 0) > 0 ? pt : nil
+        })
+        return Marks(sources: sources, targets: targets)
     }
 
     /// Amber when only the played move owns an element, blue when only the best move,
@@ -398,8 +413,8 @@ struct MoveHighlightView: View {
             // the best move lifts from there are blue, and any extra you lifted that the
             // best wouldn't are amber. So played-1 / best-2 from one point reads as one
             // green + one blue, not two green.
-            let playedSources = played.lifts.map { $0[0] }
-            let bestSources = (best?.lifts ?? []).map { $0[0] }
+            let playedSources = played.sources
+            let bestSources = best?.sources ?? []
             for src in Set(playedSources).union(bestSources) {
                 let played = playedSources.filter { $0 == src }.count
                 let best = bestSources.filter { $0 == src }.count

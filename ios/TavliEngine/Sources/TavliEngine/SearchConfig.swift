@@ -19,6 +19,13 @@ import Foundation
 /// (`maxDepth: 2`): fast, with typical turns effectively instant. The search still
 /// *supports* anytime deepening to 3-ply (set `maxDepth: 3`), but that's opt-in — the
 /// 3-ply worst case (a huge-branching doubles roll) can take the full `timeBudget`.
+///
+/// **Difficulty (#108).** Two of these knobs double as the AI-strength dial driven by the
+/// settings slider: full strength is the default 2-ply argmax (`maxDepth: 2`,
+/// `selectionNoise: 0`); a weaker opponent drops to `maxDepth: 1` and raises
+/// `selectionNoise` so the 1-ply move pick is perturbed (see `Agent.getBestMove`). The
+/// noise lives *only* in the final root selection, so the leaf scoring used by analysis
+/// (`evaluateMovesNply`) stays full-strength and noise-free regardless of this setting.
 public struct SearchConfig: Sendable, Hashable {
     /// Hard wall-clock cap per move (seconds). The root expansion never starts a new
     /// branch past this, and a branch that overruns it is abandoned (best-so-far kept).
@@ -42,6 +49,11 @@ public struct SearchConfig: Sendable, Hashable {
     /// Hard ceiling on the root candidate set (the moves scored at the baseline depth, and
     /// the most that are ever deepened).
     public var maxRootBranches: Int
+    /// Std-dev of the Gaussian noise added to the **root move scores before the final pick**
+    /// (#108 difficulty). `0` (the default) is full-strength argmax — identical to the old
+    /// behaviour. A positive value makes a weaker opponent occasionally play a non-best move;
+    /// `getBestMove` applies it only in the 1-ply path the slider drops to below full strength.
+    public var selectionNoise: Float
 
     public init(timeBudget: TimeInterval = 20.0,
                 beamThreshold: Float = 0.08,
@@ -50,7 +62,8 @@ public struct SearchConfig: Sendable, Hashable {
                 maxDepth: Int? = 2,
                 rootSoftBudget: TimeInterval = 8.0,
                 minRootBranches: Int = 2,
-                maxRootBranches: Int = 5) {
+                maxRootBranches: Int = 5,
+                selectionNoise: Float = 0) {
         self.timeBudget = timeBudget
         self.beamThreshold = beamThreshold
         self.relativeCutoff = relativeCutoff
@@ -59,6 +72,7 @@ public struct SearchConfig: Sendable, Hashable {
         self.rootSoftBudget = rootSoftBudget
         self.minRootBranches = minRootBranches
         self.maxRootBranches = maxRootBranches
+        self.selectionNoise = selectionNoise
     }
 
     /// Default on-device search configuration.

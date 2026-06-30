@@ -355,9 +355,17 @@ struct GameReviewView: View {
         }
         return norm(a) == norm(b)
     }
+    /// Render a move's half-moves, always **sorted by start point then end point**, so
+    /// the same move reads identically however its half-moves were ordered when played
+    /// (e.g. a Pasch 1→4, 4→7, 1→4, 6→9 always shows as 1→4, 1→4, 4→7, 6→9).
     private func moveText(_ pairs: [[Int]]) -> String {
         guard !pairs.isEmpty else { return "(pass)" }
-        return pairs.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
+        let ordered = pairs.sorted { a, b in
+            let a0 = a.first ?? 0, b0 = b.first ?? 0
+            if a0 != b0 { return a0 < b0 }
+            return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
+        }
+        return ordered.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
     }
 }
 
