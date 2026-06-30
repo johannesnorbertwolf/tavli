@@ -46,3 +46,10 @@ Context: we are building a native, offline iPad app for the trained Plakoto AI
    Swift engine was **not** rewritten to arrays — it kept its OO / reference-type structure and
    passed the regenerated v2 fixtures unchanged, confirming v2 is behavior-preserving and that
    the parity gate (not structural sameness) is what guarantees correctness.
+
+7. **"AI" stays "AI" in every language, never localized.** In the German (and any other)
+   localization the term "AI" is kept verbatim — it is **not** translated to "KI" (or any
+   local equivalent). This is a deliberate branding/consistency choice: the label reads the
+   same across all locales. When reviewing or adding translations, leave "AI" as-is; do not
+   "fix" it to "KI". (Affected strings in `ios/TavliApp/TavliApp/Localizable.xcstrings`
+   include "Play vs AI" → "Gegen AI spielen", "Animate AI moves" → "AI-Züge animieren", etc.)
