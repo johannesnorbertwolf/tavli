@@ -31,16 +31,21 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `SaveStore.swift` | File-backed JSON saves under `Documents/SavedGames`; one overwritten autosave slot + named manual saves; synchronous IO; reads any schema ≤ current (v1 + v2, #104). |
 | `GameLogStore.swift` (#104) | Append-only log of **every** finished game (one JSON file per `gameId` under `Documents/GameLog`), written from `GameSession.onGameOver` regardless of outcome/manual save. Reuses `GameSave` as the wire format; `attachAnalysis` patches a game's analysis back in after review so a later review/drill loads it via `GameReview.cachedResult` instead of recomputing. #146: the game-over write already carries `session.inPlayAnalysis`, so even the **first** review of a game played with analysis on loads cached and only refines. |
 | `HumanGameStats.swift` | iPad analogue of the CLI human-record summary + its file-backed log/store (`HumanStatsStore`). |
-| `OnlineMatch.swift` (#134) | `OnlineMatchPayload` — the Codable blob stored in a Game Center turn-based match's `matchData`: the ply log + a per-`gamePlayerID` colour map. Encode/decode (+ version gating), `newPlies(since:)` diff, `gameSave()` view. The whole online game state is this payload, so sync/resume/reconnect are "decode + replay". |
+| `OnlineMatch.swift` (#134, #145) | `OnlineMatchPayload` — the Codable blob stored in a Game Center turn-based match's `matchData`. **Schema v2** (#145): `targetWins` + `games: [GameLog]` (each game's ply log + winner) + a per-`gamePlayerID` colour map; a single game is just `targetWins == 1` with one `GameLog`, and a v1 flat-`plies` payload still decodes. Encode/decode (+ version gating), `matchState`/`completedGameWinners` views, `pendingPlies(...)` game-aware diff, per-game `gameSave(forGameIndex:)`. The whole online match state is this payload, so sync/resume/reconnect stay "decode + replay". |
+| `MatchState.swift` (#145) | Pure `Codable` best-of-N score shared by the offline (vs-AI) and online surfaces: `targetWins` + `baseStartingPlayer` + `gameWinners`, with derived win counts, `matchWinner`/`isComplete` (2–0 short-circuits game 3), `currentGameNumber`/`maxGames`, and `currentStartingPlayer` (alternates from the base, so games 2+ skip the opening roll). `recordGame(winner:)` advances it. |
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
 
-**Online multiplayer (#134, Game Center).** The GameKit bridge — `GameKitCoordinator`
-(`TavliApp/Online/`, app target, not covered by `swift test`) — maps a `GKTurnBasedMatch` to one
+**Online multiplayer (#134, #145, Game Center).** The GameKit bridge — `GameKitCoordinator`
+(`TavliApp/Online/`, app target, not covered by `swift test`) — maps a `GKTurnBasedMatch` to a
 human-vs-human `GameSession`: it pushes each completed local turn with `endTurn` and feeds the
 opponent's plies in via `applyRemoteMove` (or rebuilds from the log via `resume` on reconnect).
-Needs the Game Center capability (`TavliApp.entitlements`), a real `DEVELOPMENT_TEAM`, and the app
-registered in App Store Connect with Game Center enabled. See `REFERENCE.md` for the full flow.
+**Best-of-three (#145)** runs a *sequence* of games inside one `GKTurnBasedMatch`: the score lives
+in the synced payload, and when a game ends the coordinator advances to the next game (alternating
+starter) or ends the match by match-winner. Online match length is a lobby toggle (default
+best-of-three). Needs the Game Center capability (`TavliApp.entitlements`), a real
+`DEVELOPMENT_TEAM`, and the app registered in App Store Connect with Game Center enabled. See
+`REFERENCE.md` for the full flow.
 
 ## Build the app
 

@@ -37,6 +37,23 @@ private struct OnlineGameView: View {
         session.currentPlayer == coordinator.localColor && !session.isTerminal
     }
 
+    /// Best-of-three context (#145), present only for a multi-game match. The session
+    /// advances behind the overlay, so the result overlay is driven by the coordinator's
+    /// `pendingGameResult` rather than the session phase.
+    private var matchContext: GameView.Match? {
+        guard coordinator.matchState.isMatch else { return nil }
+        return GameView.Match(
+            state: coordinator.matchState,
+            localColor: coordinator.localColor,
+            opponentName: coordinator.opponentName,
+            lastGameWinner: coordinator.pendingGameResult,
+            showResultOverlay: coordinator.pendingGameResult != nil,
+            onNextGame: { coordinator.continueToNextGame() },
+            onRematch: nil,
+            onExit: { coordinator.leaveMatch() }
+        )
+    }
+
     var body: some View {
         GameView(
             session: session,
@@ -48,7 +65,8 @@ private struct OnlineGameView: View {
                 opponentName: coordinator.opponentName,
                 banner: coordinator.statusBanner,
                 onLeave: { coordinator.leaveMatch() }
-            )
+            ),
+            match: matchContext
         )
     }
 }
@@ -58,6 +76,9 @@ private struct OnlineGameView: View {
 private struct OnlineLobbyView: View {
     @ObservedObject var coordinator: GameKitCoordinator
     let onExit: () -> Void
+
+    /// Match length for the next invite (#145). Defaults to best-of-three.
+    @AppStorage(SettingsKey.onlineMatchLength) private var matchLength: MatchLengthSetting = .bestOfThree
 
     var body: some View {
         ZStack {
@@ -95,8 +116,17 @@ private struct OnlineLobbyView: View {
 
     @ViewBuilder
     private var authenticatedBody: some View {
+        Picker("Match length", selection: $matchLength) {
+            ForEach(MatchLengthSetting.allCases) { option in
+                Text(option.label).tag(option)
+            }
+        }
+        .pickerStyle(.segmented)
+        .tint(ChromeTheme.undoTint)
+        .frame(maxWidth: 392)
+
         Button {
-            coordinator.presentInvite()
+            coordinator.presentInvite(targetWins: matchLength.targetWins)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "person.2.fill")

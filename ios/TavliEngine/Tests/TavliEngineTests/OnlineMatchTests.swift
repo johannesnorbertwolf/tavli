@@ -1,8 +1,9 @@
 import XCTest
 @testable import TavliEngine
 
-/// The wire payload that lives in a Game Center match's `matchData` (#134): encode/
-/// decode round-trip, colour assignment, the new-ply diff, and version gating.
+/// The wire payload that lives in a Game Center match's `matchData` (#134, #145):
+/// encode/decode round-trip, colour assignment, the per-game ply diff, the match-score
+/// derivation, v1 back-compat, and version gating.
 final class OnlineMatchTests: XCTestCase {
     private func samplePlies() -> [PlyRecord] {
         [
@@ -24,6 +25,23 @@ final class OnlineMatchTests: XCTestCase {
         XCTAssertEqual(decoded.startingColor, .white)
     }
 
+    func testBestOfThreeRoundTrip() throws {
+        let payload = OnlineMatchPayload(
+            targetWins: 2,
+            startingPlayer: .white,
+            colorByPlayerID: ["G:host": .white, "G:guest": .black],
+            games: [
+                GameLog(plies: samplePlies(), winner: .white),
+                GameLog(plies: Array(samplePlies().prefix(2)), winner: nil),
+            ]
+        )
+        let decoded = try OnlineMatchPayload.decoded(from: try payload.encoded())
+        XCTAssertEqual(decoded, payload)
+        XCTAssertEqual(decoded.targetWins, 2)
+        XCTAssertEqual(decoded.games.count, 2)
+        XCTAssertEqual(decoded.completedGameWinners, [.white])
+    }
+
     func testColorAssignmentByPlayerID() {
         let payload = OnlineMatchPayload(
             startingPlayer: .black,
@@ -35,16 +53,60 @@ final class OnlineMatchTests: XCTestCase {
         XCTAssertNil(payload.color(forPlayerID: "G:stranger"))
     }
 
-    func testNewPliesSinceLocalCount() {
+    func testMatchStateDerivation() {
+        // White leads 1–0 with game 2 in progress.
+        let payload = OnlineMatchPayload(
+            targetWins: 2,
+            startingPlayer: .white,
+            colorByPlayerID: [:],
+            games: [GameLog(plies: samplePlies(), winner: .white), GameLog()]
+        )
+        let m = payload.matchState
+        XCTAssertEqual(m.targetWins, 2)
+        XCTAssertEqual(m.baseStartingPlayer, .white)
+        XCTAssertEqual(m.wins(for: .white), 1)
+        XCTAssertEqual(m.completedGames, 1)
+        XCTAssertEqual(m.currentGameNumber, 2)
+        XCTAssertFalse(m.isComplete)
+        // Current game index tracks the in-progress game; its starter alternates.
+        XCTAssertEqual(payload.currentGameIndex, 1)
+        XCTAssertEqual(payload.startingPlayer(forGameIndex: 0), .white)
+        XCTAssertEqual(payload.startingPlayer(forGameIndex: 1), .black)
+    }
+
+    func testPendingPliesWithinCurrentGame() {
         let payload = OnlineMatchPayload(
             startingPlayer: .white,
             colorByPlayerID: [:],
             plies: samplePlies()
         )
-        XCTAssertEqual(Array(payload.newPlies(since: 0)).count, 3)
-        XCTAssertEqual(Array(payload.newPlies(since: 2)), [samplePlies()[2]])
-        XCTAssertTrue(payload.newPlies(since: 3).isEmpty)
-        XCTAssertTrue(payload.newPlies(since: 9).isEmpty)   // already ahead → nothing
+        let all = payload.pendingPlies(fromGameIndex: 0, plyCount: 0)
+        XCTAssertEqual(all.map(\.gameIndex), [0, 0, 0])
+        XCTAssertEqual(all.map(\.ply), samplePlies())
+
+        let tail = payload.pendingPlies(fromGameIndex: 0, plyCount: 2)
+        XCTAssertEqual(tail.map(\.ply), [samplePlies()[2]])
+
+        XCTAssertTrue(payload.pendingPlies(fromGameIndex: 0, plyCount: 3).isEmpty)
+        XCTAssertTrue(payload.pendingPlies(fromGameIndex: 9, plyCount: 0).isEmpty)
+    }
+
+    func testPendingPliesAcrossGameBoundary() {
+        // A receiver mid game 0 (2 plies applied) catches up to: game 0's final ply
+        // plus game 1's two plies.
+        let payload = OnlineMatchPayload(
+            targetWins: 2,
+            startingPlayer: .white,
+            colorByPlayerID: [:],
+            games: [
+                GameLog(plies: samplePlies(), winner: .white),               // game 0: 3 plies
+                GameLog(plies: Array(samplePlies().prefix(2)), winner: nil),  // game 1: 2 plies
+            ]
+        )
+        let pending = payload.pendingPlies(fromGameIndex: 0, plyCount: 2)
+        XCTAssertEqual(pending.map(\.gameIndex), [0, 1, 1])
+        XCTAssertEqual(pending.map(\.ply),
+                       [samplePlies()[2], samplePlies()[0], samplePlies()[1]])
     }
 
     func testDecodeRejectsNewerSchema() throws {
@@ -57,6 +119,26 @@ final class OnlineMatchTests: XCTestCase {
         }
     }
 
+    /// A v1 payload (flat `plies`, no `games`/`targetWins`) still decodes as a single game.
+    func testDecodeV1BackCompat() throws {
+        let v1: [String: Any] = [
+            "schemaVersion": 1,
+            "startingPlayer": "B",
+            "colorByPlayerID": ["G:host": "B", "G:guest": "W"],
+            "plies": [
+                ["die1": 3, "die2": 5, "halfMoves": [[1, 4], [1, 6]]],
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: v1)
+        let decoded = try OnlineMatchPayload.decoded(from: data)
+        XCTAssertEqual(decoded.targetWins, 1)
+        XCTAssertEqual(decoded.games.count, 1)
+        XCTAssertEqual(decoded.games[0].plies.count, 1)
+        XCTAssertNil(decoded.games[0].winner)
+        XCTAssertEqual(decoded.startingColor, .black)
+        XCTAssertEqual(decoded.color(forPlayerID: "G:guest"), .white)
+    }
+
     func testGameSaveViewIsHumanVsHuman() {
         let payload = OnlineMatchPayload(
             startingPlayer: .black,
@@ -67,5 +149,19 @@ final class OnlineMatchTests: XCTestCase {
         XCTAssertEqual(save.startingPlayer, "B")
         XCTAssertNil(save.aiColor)
         XCTAssertEqual(save.history, samplePlies())
+    }
+
+    func testGameSaveForLaterGameAlternatesStarter() {
+        let payload = OnlineMatchPayload(
+            targetWins: 2,
+            startingPlayer: .white,
+            colorByPlayerID: [:],
+            games: [GameLog(plies: samplePlies(), winner: .white),
+                    GameLog(plies: Array(samplePlies().prefix(1)))]
+        )
+        // Game 1 (index 1) starts with White's opponent.
+        let save = payload.gameSave(forGameIndex: 1)
+        XCTAssertEqual(save.startingPlayer, "B")
+        XCTAssertEqual(save.history, Array(samplePlies().prefix(1)))
     }
 }
