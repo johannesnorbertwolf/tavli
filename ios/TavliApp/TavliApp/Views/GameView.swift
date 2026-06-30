@@ -121,7 +121,7 @@ struct GameView: View {
     @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
-    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
+    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
     @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
 
     /// Above this human win probability, resigning first shows the preliminary

@@ -151,11 +151,14 @@ enum AppSettings {
     }
 
     /// Whether to compute each ply's 2-ply analysis during play (#146), so the
-    /// post-game review opens instantly. Default **on** — the work fits the human's
-    /// idle thinking window; both sides' plies are ranked at 2-ply in the background
-    /// (#108). The user can disable it to save CPU/battery.
+    /// post-game review opens instantly. Default **off** — the background ranking is
+    /// an unpruned 2-ply sweep over every legal move that competes with the AI's own
+    /// (pruned) move search for the CPU/Core ML, which can make the AI's turn slow on
+    /// busy positions. With it off, gameplay stays snappy and the review computes its
+    /// analysis progressively (1→2→3-ply) when opened. The user can opt in to spend
+    /// the in-play CPU/battery for an instant-opening review.
     static var inPlayAnalysisEnabled: Bool {
-        UserDefaults.standard.object(forKey: SettingsKey.inPlayAnalysis) as? Bool ?? true
+        UserDefaults.standard.object(forKey: SettingsKey.inPlayAnalysis) as? Bool ?? false
     }
 
     /// AI-strength dial (#108), 0…1: **1.0 (default) = full strength** (unchanged 2-ply

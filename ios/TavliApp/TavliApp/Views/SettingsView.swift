@@ -19,7 +19,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
-    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = true
+    @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
     @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
 
     var body: some View {
@@ -67,7 +67,7 @@ struct SettingsView: View {
                                   caption: "Show your live chance of winning during the game.")
                         toggleRow("Analyze during play",
                                   isOn: $inPlayAnalysis,
-                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Uses a little more battery.")
+                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery.")
                     }
                 }
                 .padding(28)

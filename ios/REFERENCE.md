@@ -163,7 +163,9 @@ so the game flow is validated without a simulator.
   out-of-range/`nil` index (Core ML failure) falls back to a random live move.
 
 - **In-play analysis (#146, #108).** With `inPlayAnalysis: true` (settable as `inPlayAnalysisEnabled`,
-  default off in the engine, on via the app setting), `GameSession` accumulates each ply's 2-ply
+  default off in the engine and off via the app setting — the background sweep competed with the AI's
+  own move search and slowed its turn, so play stays snappy and the review deepens progressively when
+  opened instead), `GameSession` accumulates each ply's 2-ply
   analysis *while the game is played*, into `analysisByPly` (exposed sorted as
   `inPlayAnalysis: [AnalysisEntry]`). The app logs it with the finished game so the review opens
   instantly (see *Save & load*). **Both sides are ranked the same way** (#108): the AI's *play*
