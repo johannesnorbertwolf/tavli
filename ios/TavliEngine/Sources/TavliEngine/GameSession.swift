@@ -426,6 +426,7 @@ public final class GameSession: ObservableObject {
             enterManualRoll(for: game.currentPlayer)
         } else if let popped = undoHistory.popLast() {
             if !record.plies.isEmpty { record.plies.removeLast() }
+            pruneStaleAnalysis()   // drop in-play analysis (#146) of the popped ply
             if let move = popped.move { game.board.undo(move) }
             enterManualRoll(for: popped.mover)
         }
@@ -686,6 +687,7 @@ public final class GameSession: ObservableObject {
         }
         // Keep record.plies in sync with undoHistory (both track one entry per turn).
         record.plies = Array(record.plies.prefix(target))
+        pruneStaleAnalysis()   // drop in-play analysis (#146) of the rewound plies
 
         game.setPlayer(restoredColor)
         game.dice.set(d1, d2)
@@ -1150,6 +1152,17 @@ public final class GameSession: ObservableObject {
         humanAnalysisTask = nil
         humanAnalysisScores = nil
         analysisEpoch += 1
+    }
+
+    /// Drop in-play analysis (#146) for plies past the current history length after a
+    /// step-back rewinds part of the game. `analysisByPly` is keyed by ply number, so an
+    /// entry from an undone line would otherwise survive and be mis-keyed onto the
+    /// *re-played* ply's position in the post-game review/drill — surfacing a move that no
+    /// longer fits the board (an "impossible" position). Re-played plies re-capture their
+    /// own analysis, so anything within the new length is left untouched. Call right after
+    /// truncating `record.plies`.
+    private func pruneStaleAnalysis() {
+        analysisByPly = analysisByPly.filter { $0.key <= record.plies.count }
     }
 
     /// The `[from, to]` half-move pairs of a move, in stored order — the same shape

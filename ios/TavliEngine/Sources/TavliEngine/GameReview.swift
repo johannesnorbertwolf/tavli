@@ -254,10 +254,14 @@ public enum GameReview {
         // against its replayed context (the same per-entry construction `cachedResult`
         // uses) so its `boardStacks`/`hadChoice` are exactly what a fresh pass would
         // produce; entries with no matching context (a malformed log) are ignored.
+        // A seed entry is trusted only when its recorded `playedMove` still matches the
+        // ply now at that number — guarding against a stale entry left by a step-back in
+        // an older log (a move from an undone line). A mismatch is simply not seeded, so
+        // the deepening passes re-score that ply from scratch.
         let ctxByPly = Dictionary(contexts.map { ($0.plyNumber, $0) },
                                   uniquingKeysWith: { a, _ in a })
         for entry in seed {
-            guard let ctx = ctxByPly[entry.plyNumber] else { continue }
+            guard let ctx = ctxByPly[entry.plyNumber], entry.playedMove == ctx.playedPairs else { continue }
             current[entry.plyNumber] = PlyEvaluation(
                 plyNumber: entry.plyNumber, die1: ctx.die1, die2: ctx.die2,
                 boardStacks: ctx.boardStacks, mover: ctx.mover,
@@ -403,8 +407,11 @@ public enum GameReview {
                                       config: config, includeOpponent: true)
         let byPly = Dictionary(contexts.map { ($0.plyNumber, $0) }, uniquingKeysWith: { a, _ in a })
 
+        // Trust an entry only when its recorded `playedMove` still matches the ply now at
+        // that number: a stale entry from a step-back in an older log (a move from an
+        // undone line) is dropped rather than drawn onto the re-played position.
         let evaluations: [PlyEvaluation] = analysis.compactMap { entry in
-            guard let ctx = byPly[entry.plyNumber] else { return nil }
+            guard let ctx = byPly[entry.plyNumber], entry.playedMove == ctx.playedPairs else { return nil }
             return PlyEvaluation(
                 plyNumber: entry.plyNumber, die1: ctx.die1, die2: ctx.die2,
                 boardStacks: ctx.boardStacks, mover: ctx.mover,

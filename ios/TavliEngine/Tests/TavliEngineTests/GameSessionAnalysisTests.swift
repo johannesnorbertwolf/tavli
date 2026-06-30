@@ -195,6 +195,37 @@ final class GameSessionAnalysisTests: XCTestCase {
         XCTAssertFalse(s.inPlayAnalysisTaskActiveForTesting)
     }
 
+    /// A decision step-back during play truncates `record.plies`, so the in-play
+    /// analysis (#146) of the rewound plies must be dropped too. Otherwise a stale entry
+    /// from the undone line survives in `analysisByPly` keyed by ply number, and the
+    /// post-game review/drill — which pairs each saved entry with the *re-played* ply's
+    /// position by ply number — would surface that undone move on a board it no longer
+    /// fits (a move from points with no checker): the "impossible position" symptom.
+    func testStepBackDropsAnalysisForRewoundPlies() async throws {
+        let agent = try loadAgent()
+        let s = GameSession(startingPlayer: .white, agent: agent, aiColor: .black,
+                            searchConfig: SearchConfig(maxDepth: 1),
+                            animationTimings: .off, inPlayAnalysis: true)
+        await play(s, maxPlies: 8)
+
+        // Settle on the human's between-turns roll, where a decision step-back is offered.
+        let deadline = Date().addingTimeInterval(30)
+        while !(s.phase == .awaitingRoll && s.currentPlayer != s.aiColor) {
+            if case .gameOver = s.phase { throw XCTSkip("game ended before a step-back point") }
+            if Date() > deadline { XCTFail("never reached a human turn"); return }
+            await Self.tick()
+        }
+        guard s.canUndoLastDecision else { throw XCTSkip("nothing to step back to") }
+        XCTAssertFalse(s.inPlayAnalysis.isEmpty, "expected captured analysis before the step-back")
+
+        s.undoLastDecision()
+
+        // Invariant: no analysis entry may reference a ply that no longer exists.
+        let maxPly = s.inPlayAnalysis.map(\.plyNumber).max() ?? 0
+        XCTAssertLessThanOrEqual(maxPly, s.record.plies.count,
+            "stale in-play analysis kept for a rewound ply (max \(maxPly) > \(s.record.plies.count) plies)")
+    }
+
     // MARK: - Setting off
 
     /// With analysis disabled nothing is accumulated, on either side.
