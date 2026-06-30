@@ -3,11 +3,11 @@ import XCTest
 import CoreML
 @testable import TavliEngine
 
-/// Exercises in-play analysis (#146): the 2-ply analysis the `GameSession` accumulates
-/// *during* play — captured from the AI's own search on its turns, ranked in the
-/// background during the human's thinking time on theirs — and the seeded refine path
-/// the post-game review uses on top of it. Uses the fixture value model so scores match
-/// real inference.
+/// Exercises in-play analysis (#146, #108): the 2-ply analysis the `GameSession`
+/// accumulates *during* play — ranked in the background for **both** sides at full
+/// strength (so the AI's own, possibly weakened, play search never feeds the grading) —
+/// and the seeded refine path the post-game review uses on top of it. Uses the fixture
+/// value model so scores match real inference.
 @MainActor
 final class GameSessionAnalysisTests: XCTestCase {
 
@@ -128,29 +128,38 @@ final class GameSessionAnalysisTests: XCTestCase {
         }
     }
 
-    // MARK: - Opponent capture
+    // MARK: - Opponent grading (honest, like the human side)
 
-    /// The AI's plies are captured from its own search: played == best (it plays its
-    /// best), a real win-probability score, and the depth the search reached.
-    func testOpponentCaptureIsSelfConsistent() async throws {
+    /// A weakened AI no longer plays its best move every turn (#108), so its plies must be
+    /// graded by the *same* full-strength 2-ply yardstick as the human's — not assumed
+    /// optimal (the old `captureAIAnalysis` recorded played == best). Reviewing the AI's
+    /// own plies from scratch (`humanColor: aiColor`) at depth 2 must therefore produce
+    /// honest played-vs-best entries: the played score never exceeds the best, and the
+    /// weakening shows up as at least one genuine shortfall. (In-play *capture* of AI plies
+    /// reuses the human background-ranking path — covered by
+    /// `testHumanCaptureMatchesFromScratchReview` — and, like a fast human commit, defers
+    /// to this review when the ranking can't finish before the move lands.)
+    func testWeakenedOpponentPliesGradedHonestly() async throws {
         let agent = try loadAgent()
-        // A 2-ply search (bounded so AI turns stay quick), so non-forced AI plies are
-        // captured at depth 2.
+        // 1-ply play + heavy selection noise → the AI frequently passes up its best move.
         let s = GameSession(startingPlayer: .black, agent: agent, aiColor: .black,
-                            searchConfig: SearchConfig(timeBudget: 5, maxDepth: 2, rootSoftBudget: 5),
+                            searchConfig: SearchConfig(maxDepth: 1, selectionNoise: 0.4),
                             animationTimings: .off, inPlayAnalysis: true)
-        await play(s, maxPlies: 14)
+        await play(s, maxPlies: 18)
 
-        let aiPlies = plyNumbers(of: s.aiColor!, in: s.record)
-        let aiEntries = s.inPlayAnalysis.filter { aiPlies.contains($0.plyNumber) }
-        XCTAssertFalse(aiEntries.isEmpty, "expected at least one AI ply captured")
-        for e in aiEntries {
-            XCTAssertEqual(e.playedMove, e.bestMove, "AI played its best, so played == best")
-            XCTAssertEqual(e.playedScore, e.bestScore)
-            XCTAssertGreaterThan(e.playedScore, 0)   // a real win prob, not the forced-move sentinel
-            XCTAssertLessThanOrEqual(e.playedScore, 1)
-            XCTAssertEqual(e.depth, 2, "a 2-ply search reaches depth 2 on a real choice")
+        let aiReview = GameReview.analyze(record: s.record, agent: agent,
+                                          humanColor: s.aiColor!, depth: 2,
+                                          searchConfig: SearchConfig(maxDepth: 1))
+        XCTAssertFalse(aiReview.evaluations.isEmpty, "expected the AI's plies to be graded")
+        for e in aiReview.evaluations {
+            XCTAssertEqual(e.depth, 2)
+            XCTAssertLessThanOrEqual(e.playedScore, e.bestScore + 1e-5,
+                                     "played can never beat best at ply \(e.plyNumber)")
         }
+        // The weakening is real: with σ = 0.4 over many plies the AI fell short of best at
+        // least once (an oracle opponent never would).
+        XCTAssertTrue(aiReview.evaluations.contains { $0.playedScore < $0.bestScore - 1e-4 },
+                      "a weakened AI should fall short of its best on at least one ply")
     }
 
     // MARK: - Cancellation

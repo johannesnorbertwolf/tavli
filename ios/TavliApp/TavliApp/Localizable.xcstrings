@@ -1,6 +1,54 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie stark TavTav spielt. Ganz rechts ist die volle Spielstärke; weiter links schaut TavTav weniger weit voraus und vertut sich öfter. Wird beim nächsten Zug von TavTav wirksam."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hoe sterk TavTav speelt. Helemaal rechts is de volledige speelsterkte; verder naar links kijkt TavTav minder ver vooruit en vergist zich vaker. Gaat in bij de volgende zet van TavTav."
+          }
+        }
+      }
+    },
+    "Relaxed" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entspannt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontspannen"
+          }
+        }
+      }
+    },
+    "TavTav's strength" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTavs Stärke"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTavs sterkte"
+          }
+        }
+      }
+    },
     " · skipped %lld" : {
       "extractionState" : "stale",
       "localizations" : {
