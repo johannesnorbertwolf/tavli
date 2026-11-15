@@ -144,7 +144,7 @@ public final class MoveBuilder {
             for step in [die1, die2] {
                 let mid = from + dir * step
                 guard seen.insert(mid).inserted else { continue }
-                guard board.points[mid].isOpen(for: h.color) else { continue }
+                guard board.variant.isOpen(mid, for: h.color, on: board) else { continue }
                 expanded.append(Move([
                     HalfMove(from: board.points[from], to: board.points[mid], color: h.color),
                     HalfMove(from: board.points[mid], to: board.points[to], color: h.color),
@@ -182,7 +182,7 @@ public final class MoveBuilder {
     private func isPlayable(_ hm: HalfMove, arrivedAt: Int?) -> Bool {
         let hasChecker = board.points[hm.from.position].movablePieces(for: hm.color) > 0
             || arrivedAt == hm.from.position
-        return hasChecker && board.points[hm.to.position].isOpen(for: hm.color)
+        return hasChecker && board.variant.isOpen(hm.to.position, for: hm.color, on: board)
     }
 
     /// All endpoints reachable by chaining a single checker from `start` along the

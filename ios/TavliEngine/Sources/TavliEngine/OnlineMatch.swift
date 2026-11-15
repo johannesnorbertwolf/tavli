@@ -61,13 +61,19 @@ public struct OnlineMatchPayload: Codable, Equatable, Sendable {
     public var colorByPlayerID: [String: String]
     /// The match's games in order; the last is the current/just-finished game.
     public var games: [GameLog]
+    /// `GameVariant.id` of the rules every game in the match is played under (#136).
+    /// Absent in older payloads, which decode as `"plakoto"`; the key is additive, so
+    /// the schema version is unchanged.
+    public var variant: String
 
     public init(schemaVersion: Int = OnlineMatchPayload.currentSchemaVersion,
                 targetWins: Int = 1,
                 startingPlayer: Color,
                 colorByPlayerID: [String: Color],
-                games: [GameLog] = [GameLog()]) {
+                games: [GameLog] = [GameLog()],
+                variant: String = GameVariants.defaultID) {
         self.schemaVersion = schemaVersion
+        self.variant = variant
         self.targetWins = max(1, targetWins)
         self.startingPlayer = startingPlayer.rawValue
         self.colorByPlayerID = colorByPlayerID.mapValues(\.rawValue)
@@ -87,7 +93,7 @@ public struct OnlineMatchPayload: Codable, Equatable, Sendable {
     // ── Codable (back-compatible with the v1 flat-`plies` shape) ──────────────────
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, targetWins, startingPlayer, colorByPlayerID, games, plies
+        case schemaVersion, targetWins, startingPlayer, colorByPlayerID, games, plies, variant
     }
 
     public init(from decoder: Decoder) throws {
@@ -95,6 +101,7 @@ public struct OnlineMatchPayload: Codable, Equatable, Sendable {
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         startingPlayer = try c.decode(String.self, forKey: .startingPlayer)
         colorByPlayerID = try c.decode([String: String].self, forKey: .colorByPlayerID)
+        variant = try c.decodeIfPresent(String.self, forKey: .variant) ?? GameVariants.defaultID
         if let games = try c.decodeIfPresent([GameLog].self, forKey: .games) {
             self.games = games.isEmpty ? [GameLog()] : games
             self.targetWins = max(1, try c.decodeIfPresent(Int.self, forKey: .targetWins) ?? 1)
@@ -113,6 +120,7 @@ public struct OnlineMatchPayload: Codable, Equatable, Sendable {
         try c.encode(startingPlayer, forKey: .startingPlayer)
         try c.encode(colorByPlayerID, forKey: .colorByPlayerID)
         try c.encode(games, forKey: .games)
+        try c.encode(variant, forKey: .variant)
     }
 }
 
@@ -164,7 +172,8 @@ public extension OnlineMatchPayload {
                         savedAt: Date(),
                         startingPlayer: startingPlayer(forGameIndex: index).rawValue,
                         aiColor: nil,
-                        history: plies)
+                        history: plies,
+                        variant: variant)
     }
 
     /// A `GameSave` view of the current game — the reconnection / first-open path.
