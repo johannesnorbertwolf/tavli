@@ -8,6 +8,7 @@ or modifying anything here.
 |---|---|
 | `agent.py` | Inference interface (`Agent`) over evaluator + encoder; 1/2/N-ply expectimax search with branch pruning and time-budget iterative deepening. Never updates weights. Also `RandomAgent`. |
 | `board_encoder.py` | `BoardEncoder` → flat float32 vector, always from the current player's perspective (board flip). Three checkpoint-tagged versions; current `unary_v3` (486-dim, +18 smart features). |
+| `fevga_encoder.py` | `FevgaEncoder` (`fevga_v1`, 406-dim) for Fevga, in the mover's path coordinates (colour swap = rotation by 12; a position and its colour-swapped twin encode identically). |
 | `board_evaluator.py` | `BoardEvaluator` MLP → win prob ∈ [0,1]. `forward` (sigmoid) vs `forward_logits` (raw). |
 | `checkpoint_io.py` | Save/load checkpoints (format_version=2, with Adam state, `variant` tag). Encoder-version + legacy-layer-name back-compat; `check_checkpoint_variant` / `VariantMismatchError`. |
 | `bearoff.py` | Exact race equity: one-sided bear-off database (`BearoffDB`, DP over dice outcomes, disk-cached npz) + exact-race detector (`race_state`) + `exact_value_on_roll`. Replaces net evals and TD targets with ground truth in pure races. |
