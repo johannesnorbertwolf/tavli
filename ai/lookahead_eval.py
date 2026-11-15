@@ -31,7 +31,6 @@ import torch
 from config.config_loader import ConfigLoader
 from ai.checkpoint_io import load_agent_from_checkpoint
 from game.game import Game
-from domain.move_generation import legal_moves
 from domain.constants import WHITE, BLACK
 
 
@@ -44,7 +43,7 @@ def _play_one_game(agent, config, flex_color, budget, rel, mb, md):
     while not game.is_over():
         current = game.current_player
         game.dice.roll()
-        moves = legal_moves(game.board, current, game.dice)
+        moves = game.legal_moves()
         if not moves:
             game.switch_turn()
             continue
@@ -168,7 +167,7 @@ def evaluate_lookahead_selfplay(config, model_path, games_per_color=500, num_wor
     result_q = ctx.Queue()
     procs = [
         ctx.Process(target=_worker,
-                    args=(model_path, "config/config.yml", chunk, budget, rel, mb, md, result_q))
+                    args=(model_path, config.config_file, chunk, budget, rel, mb, md, result_q))
         for chunk in chunks
     ]
     for p in procs:

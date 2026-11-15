@@ -1,14 +1,19 @@
-from domain.board import Board
 from domain.dice import Dice
 from domain.constants import WHITE, BLACK
 from config.config_loader import ConfigLoader
 
 
 class Game:
-    def __init__(self, config: ConfigLoader, starting_player: int = BLACK):
-        self.board = Board.initial(config)
+    def __init__(self, config: ConfigLoader, starting_player: int = BLACK, ruleset=None):
+        # The variant's RuleSet; derived from config (`variant:`) unless given.
+        self.ruleset = ruleset if ruleset is not None else config.get_ruleset()
+        self.board = self.ruleset.initial_board(config)
         self.dice = Dice(config.get_die_sides())
         self.player = starting_player
+
+    def legal_moves(self):
+        """Legal moves for the player on roll with the current dice."""
+        return self.ruleset.legal_moves(self.board, self.player, self.dice)
 
     def __str__(self):
         color_name = "White" if self.player == WHITE else "Black"

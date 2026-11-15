@@ -15,13 +15,14 @@ import torch
 
 from ai.agent import Agent
 from ai.bearoff import BearoffDB, exact_value_on_roll
-from ai.board_encoder import BoardEncoder
 from ai.board_evaluator import BoardEvaluator
-from ai.checkpoint_io import ENCODER_VERSION_CURRENT
 from config.config_loader import ConfigLoader
 from domain.constants import WHITE, BLACK
-from domain.move_generation import legal_moves
 from game.game import Game
+
+
+def _never(_color):
+    return False
 
 
 def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
@@ -68,6 +69,7 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     exploration) instead of the live net (#83 league play)."""
     t0 = time.perf_counter()
     game = Game(config)
+    legal_moves = game.ruleset.legal_moves
     if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
         game.board, game.player = seed_pool.sample(config)
     opponent, opponent_color = None, 0
@@ -128,7 +130,8 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
                 "exact_values": exact_values,
                 "bootstrap_values": bootstrap_values,
                 "terminal_winner_white": (winner == WHITE),
-                "win_by_pin": bool(game.board.captured_starting(winner)),
+                # Plakoto-only diagnostic; variants without pins report False.
+                "win_by_pin": bool(getattr(game.board, "captured_starting", _never)(winner)),
                 "final_borne_off_white": int(game.board.borne_off[WHITE]),
                 "final_borne_off_black": int(game.board.borne_off[BLACK]),
                 "plies": len(movers),
@@ -141,18 +144,21 @@ def worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_see
     tuples from weight_q, plays one game per message, and pushes (worker_id, trajectory)
     to traj_q. Stops on a None message."""
     torch.set_num_threads(1)
+    # The variant travels inside the config file; rebuild its RuleSet here
+    # (RuleSets are module-level singletons, never pickled across processes).
     config = ConfigLoader(config_path)
-    encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
+    ruleset = config.get_ruleset()
+    encoder = ruleset.make_encoder(config)
     # aux_heads must match the trainer's evaluator: workers receive its full
     # state_dict (including aux keys) even though they never call the aux head.
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=list(hidden_sizes),
                                aux_heads=config.get_aux_heads())
     evaluator.eval()
     bearoff = None
-    if config.get_use_bearoff_db():
+    if ruleset.supports_bearoff_db and config.get_use_bearoff_db():
         # The trainer builds the DB before spawning workers; this only loads the cache.
         bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path(), progress=False)
-    agent = Agent(evaluator, encoder, bearoff=bearoff)
+    agent = Agent(evaluator, encoder, bearoff=bearoff, ruleset=ruleset)
 
     seed_pool = None
     seeded_fraction = config.get_selfplay_seeded_fraction()

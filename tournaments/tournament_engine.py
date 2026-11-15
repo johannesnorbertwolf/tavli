@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import List, Dict, Tuple
 from domain.constants import WHITE, BLACK
 from game.game import Game
-from domain.move_generation import legal_moves
 from ai.checkpoint_io import load_agent_from_checkpoint
 
 
@@ -104,7 +103,7 @@ class TournamentEngine:
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = legal_moves(game.board, current_player, game.dice)
+            possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
 
             if not possible_moves:
                 game.switch_turn()

@@ -5,7 +5,6 @@ from typing import List, Optional, Tuple
 from config.config_loader import ConfigLoader
 from domain.constants import WHITE, BLACK
 from domain.move import HalfMove, Move
-from domain.move_generation import legal_moves
 from game.game import Game
 
 
@@ -127,7 +126,7 @@ class PlaySession:
     def possible_moves(self) -> List[Move]:
         if self._pending_dice is None:
             raise RuntimeError("dice not set for current ply")
-        return legal_moves(self.game.board, self.current_player(), self.game.dice)
+        return self.game.ruleset.legal_moves(self.game.board, self.current_player(), self.game.dice)
 
     def ranked_moves(self, depth: Optional[int] = None) -> List[Tuple[Move, float]]:
         moves = self.possible_moves()

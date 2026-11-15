@@ -2,11 +2,48 @@ import os
 
 import yaml
 
+DEFAULT_CONFIG_PATH = "config/config.yml"
+CONFIG_ENV_VAR = "TAVLI_CONFIG"
+
+
+def resolve_config_path(argv=None):
+    """Pick the config file for this run and strip `--config PATH` / `--config=PATH`
+    from `argv` in place. Precedence: --config flag > $TAVLI_CONFIG > config/config.yml.
+    Lets several variant trainings run side by side, each with its own config
+    (and therefore its own model / training-state / log paths)."""
+    path = None
+    if argv is not None:
+        i = 0
+        while i < len(argv):
+            arg = argv[i]
+            if arg == "--config" and i + 1 < len(argv):
+                path = argv[i + 1]
+                del argv[i:i + 2]
+                continue
+            if arg.startswith("--config="):
+                path = arg.split("=", 1)[1]
+                del argv[i]
+                continue
+            i += 1
+    if not path:
+        path = os.environ.get(CONFIG_ENV_VAR) or DEFAULT_CONFIG_PATH
+    return path
+
+
 class ConfigLoader:
     def __init__(self, config_file):
         self.config_file = config_file
         with open(config_file, 'r') as file:
             self.config = yaml.safe_load(file)
+
+    def get_variant(self) -> str:
+        """Game variant name (RuleSet registry key); 'plakoto' when absent."""
+        return str(self.config.get("variant") or "plakoto").strip().lower()
+
+    def get_ruleset(self):
+        """The RuleSet instance for `variant` (stateless singleton from the registry)."""
+        from domain.ruleset import get_ruleset
+        return get_ruleset(self.get_variant())
 
     def get_board_size(self):
         return self.config.get("board_size", 24)
@@ -91,6 +128,18 @@ class ConfigLoader:
 
     def get_model_save_path(self):
         return self.config.get("model_save_path", "trained_model.pth")
+
+    def get_gold_eval_log_path(self):
+        # Append-only eval-vs-gold history (read by eval-gold-stats / eval-gold-graph).
+        return self.config.get("gold_eval_log_path", os.path.join("training_runs", "eval_gold_history.log"))
+
+    def get_training_log_path(self):
+        # Where ./run.sh train tees stdout.
+        return self.config.get("training_log_path", "training_log_td.txt")
+
+    def get_last_game_log_path(self):
+        # Verbose log of the last local self-play game of each epoch.
+        return self.config.get("last_game_log_path", "last_game_log.txt")
 
     def get_state_save_every_games(self):
         return self.config.get("state_save_every_games", 100)

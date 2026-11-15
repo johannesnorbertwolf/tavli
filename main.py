@@ -10,11 +10,9 @@ import numpy as np
 import torch
 
 from ai.board_evaluator import BoardEvaluator
-from ai.board_encoder import BoardEncoder
-from ai.checkpoint_io import load_agent_from_checkpoint, load_state_dict, ENCODER_VERSION_CURRENT
-from config.config_loader import ConfigLoader
+from ai.checkpoint_io import load_agent_from_checkpoint, load_state_dict, check_checkpoint_variant
+from config.config_loader import ConfigLoader, resolve_config_path
 from ai.td_lambda_training import TdLambdaTraining
-from domain.move_generation import legal_moves
 from game.game import Game
 from ai.agent import RandomAgent
 from domain.constants import WHITE, BLACK
@@ -283,13 +281,19 @@ def train_ai(config, num_epochs_override=None):
         print(f"Using training_seed={training_seed}")
 
     device = torch.device("cpu")
-    board_encoder = BoardEncoder(config, version=ENCODER_VERSION_CURRENT)
+    ruleset = config.get_ruleset()
+    print(f"Variant: {ruleset.name} (config: {config.config_file})")
+    board_encoder = ruleset.make_encoder(config)
     board_evaluator = BoardEvaluator(board_encoder.input_size, hidden_sizes=config.get_hidden_sizes(),
                                      aux_heads=config.get_aux_heads()).to(device)
 
     model_save_path = config.get_model_save_path()
     if os.path.exists(model_save_path):
         print(f"Loading existing model from {model_save_path}...")
+        # Variant mismatch must abort, not fall through to "start from scratch"
+        # (which would overwrite the other variant's model on the next save).
+        _, probe_meta = load_state_dict(model_save_path, device=device)
+        check_checkpoint_variant(probe_meta, config, model_save_path)
         try:
             state_dict, meta = load_state_dict(model_save_path, device=device)
             # strict=False: a checkpoint from before aux heads existed lacks the
@@ -304,7 +308,7 @@ def train_ai(config, num_epochs_override=None):
         except Exception as e:
             print(f"Could not load model: {e}. Starting from scratch.")
 
-    training = TdLambdaTraining(board_evaluator, board_encoder, config)
+    training = TdLambdaTraining(board_evaluator, board_encoder, config, ruleset=ruleset)
     if num_epochs_override is not None:
         training.config.config["num_epochs"] = num_epochs_override
     training.run_training_loop()
@@ -541,10 +545,12 @@ def _prompt_dice_mode():
         print("Please enter auto or manual.")
 
 
-def play_against_ai(config, model_load_path="trained_model.pth", load_name=None):
+def play_against_ai(config, model_load_path=None, load_name=None):
     from play import loop, persistence
     from play.session import PlaySession
 
+    if model_load_path is None:
+        model_load_path = config.get_model_save_path()
     device = torch.device("cpu")
 
     def agent_loader(path: str):
@@ -607,7 +613,9 @@ def play_against_ai(config, model_load_path="trained_model.pth", load_name=None)
             _print_human_record()
 
 
-def evaluate_against_random(config, model_load_path="trained_model.pth", games_per_color=100):
+def evaluate_against_random(config, model_load_path=None, games_per_color=100):
+    if model_load_path is None:
+        model_load_path = config.get_model_save_path()
     print("Loading trained model for evaluation against random...")
     device = torch.device("cpu")
 
@@ -627,7 +635,7 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = legal_moves(game.board, current_player, game.dice)
+            possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -659,10 +667,12 @@ def evaluate_against_random(config, model_load_path="trained_model.pth", games_p
 
 def evaluate_against_gold(
     config,
-    model_load_path="trained_model.pth",
+    model_load_path=None,
     gold_model_path=None,
     games_per_color=100,
 ):
+    if model_load_path is None:
+        model_load_path = config.get_model_save_path()
     if gold_model_path is None:
         gold_model_path = config.get_gold_model_path()
 
@@ -689,7 +699,7 @@ def evaluate_against_gold(
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
-            possible_moves = legal_moves(game.board, current_player, game.dice)
+            possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
             if not possible_moves:
                 game.switch_turn()
                 continue
@@ -724,7 +734,7 @@ def evaluate_against_gold(
     return results
 
 
-def race_calibration(config, model_load_path="trained_model.pth", num_states=2000, seed=0):
+def race_calibration(config, model_load_path=None, num_states=2000, seed=0):
     """Games-free progress metric (#82): the net's error vs exact bear-off
     equity on randomly sampled pure-race states. Prints MAE, bias, and RMSE.
 
@@ -736,6 +746,12 @@ def race_calibration(config, model_load_path="trained_model.pth", num_states=200
     from ai.bearoff import BearoffDB
     from domain.board import Board
 
+    if not config.get_ruleset().supports_bearoff_db:
+        print(f"race-calibration needs the bear-off DB, which variant "
+              f"'{config.get_variant()}' does not support.")
+        return None
+    if model_load_path is None:
+        model_load_path = config.get_model_save_path()
     device = torch.device("cpu")
     agent, _ = load_agent_from_checkpoint(model_load_path, config, device=device)
     db = agent.bearoff or BearoffDB.load_or_build(config.get_bearoff_db_path())
@@ -781,11 +797,14 @@ def race_calibration(config, model_load_path="trained_model.pth", num_states=200
 
 
 def main():
-    config = ConfigLoader("config/config.yml")
+    # --config PATH (anywhere on the command line) > $TAVLI_CONFIG > config/config.yml
+    config = ConfigLoader(resolve_config_path(sys.argv))
+    gold_log = config.get_gold_eval_log_path()
+    default_model = config.get_model_save_path()
 
     if len(sys.argv) < 2:
         print(
-            "Usage: python main.py "
+            "Usage: python main.py [--config PATH] "
             "[train [num_epochs]|play|"
             "eval-random [games_per_color]|eval-gold [games_per_color] [gold_model_path]|"
             "eval-gold-stats [x]|eval-gold-graph [x]]"
@@ -806,7 +825,7 @@ def main():
                 return
         train_ai(config, num_epochs_override=num_epochs)
     elif mode == 'play':
-        network_path = "trained_model.pth"
+        network_path = default_model
         load_name = None
         args = sys.argv[2:]
         i = 0
@@ -874,7 +893,7 @@ def main():
             except ValueError:
                 print("Invalid x. Please provide a positive integer.")
                 return
-        analyze_gold_log_last_x(last_x=last_x)
+        analyze_gold_log_last_x(last_x=last_x, log_path=gold_log)
     elif mode in ('eval-gold-graph', 'graph-gold'):
         last_x = None
         if len(sys.argv) >= 3:
@@ -885,7 +904,9 @@ def main():
             except ValueError:
                 print("Invalid x. Please provide a positive integer.")
                 return
-        generate_gold_progress_graph(last_x=last_x)
+        # training_runs/eval_gold_history.log -> training_runs/eval_gold_progress.svg
+        graph_path = os.path.splitext(gold_log)[0].replace("_history", "") + "_progress.svg"
+        generate_gold_progress_graph(log_path=gold_log, out_path=graph_path, last_x=last_x)
     elif mode in ('eval-lookahead',):
         total_games = 1000
         num_workers = None
@@ -927,7 +948,7 @@ def main():
             "--games": 600, "--top": 4000, "--rollouts": 64, "--steps": 2000,
             "--lr": 1e-4, "--workers": 6, "--gate-games": 2000,
         }
-        checkpoint_path = "trained_model.pth"
+        checkpoint_path = default_model
         out_path = "models/rollout_candidate.pth"
         apply_if_better = False
         label_mode = "rollout"
@@ -967,7 +988,7 @@ def main():
 
         from ai.rollout_lab import run_rollout_lab
         summary = run_rollout_lab(
-            config, "config/config.yml", checkpoint_path=checkpoint_path,
+            config, config.config_file, checkpoint_path=checkpoint_path,
             out_path=out_path, num_games=opts["--games"], top_k=opts["--top"],
             rollouts_per_position=opts["--rollouts"], lr=opts["--lr"],
             steps=opts["--steps"], num_workers=opts["--workers"],
@@ -1000,7 +1021,7 @@ def main():
                 print("Gate FAILED — candidate not promoted.")
     elif mode == 'seed-pool':
         opts = {"--games": 600, "--every": 2, "--top": 8000, "--workers": 6}
-        checkpoint_path = "trained_model.pth"
+        checkpoint_path = default_model
         out_path = "models/seed_pool.npz"
         args = sys.argv[2:]
         i = 0
@@ -1027,13 +1048,13 @@ def main():
 
         from ai.seed_pool import build_seed_pool
         build_seed_pool(
-            config, "config/config.yml", checkpoint_path=checkpoint_path,
+            config, config.config_file, checkpoint_path=checkpoint_path,
             out_path=out_path, num_games=opts["--games"], sample_every=opts["--every"],
             top_k=opts["--top"], num_workers=opts["--workers"],
         )
     elif mode == 'expand-net':
         to_sizes = None
-        checkpoint_path = "trained_model.pth"
+        checkpoint_path = default_model
         out_path = "expanded_model.pth"
         noise_std = 1e-3
         args = sys.argv[2:]
@@ -1072,10 +1093,10 @@ def main():
 
         from ai.net2net import expand_checkpoint
         expand_checkpoint(checkpoint_path, out_path, to_sizes, config, noise_std=noise_std)
-        print(f"Remember to set hidden_sizes: {to_sizes} in config/config.yml before training.")
+        print(f"Remember to set hidden_sizes: {to_sizes} in {config.config_file} before training.")
     elif mode == 'race-calibration':
         num_states = 2000
-        model_path = "trained_model.pth"
+        model_path = default_model
         args = sys.argv[2:]
         i = 0
         while i < len(args):

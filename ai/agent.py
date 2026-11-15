@@ -6,7 +6,6 @@ from typing import List, Optional, Tuple
 from domain.board import Board
 from domain.move import Move
 from domain.dice import Dice
-from domain.move_generation import legal_moves
 from domain.constants import WHITE, BLACK
 from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
@@ -35,9 +34,16 @@ class _TimeoutError(Exception):
 
 class Agent:
     def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder,
-                 bearoff=None):
+                 bearoff=None, ruleset=None):
         self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
+        # Game variant rules (domain.ruleset.RuleSet); default Plakoto. The move
+        # generator is cached as a bound attribute — one lookup on the hot path.
+        if ruleset is None:
+            from domain.ruleset import get_ruleset
+            ruleset = get_ruleset("plakoto")
+        self.ruleset = ruleset
+        self._legal_moves = ruleset.legal_moves
         # Optional ai.bearoff.BearoffDB: exact-race positions bypass the net and
         # get exact equity at every leaf-evaluation site.
         self.bearoff = bearoff
@@ -148,7 +154,7 @@ class Agent:
             cand_plan: List[Tuple[int, int, float, str]] = []
             for (i, j, weight) in _DICE_OUTCOMES:
                 dice.set(i, j)
-                opp_moves = legal_moves(board, opponent_color, dice)
+                opp_moves = self._legal_moves(board, opponent_color, dice)
                 start = len(leaf_values)
                 if not opp_moves:
                     add_leaf(is_our_turn)
@@ -251,7 +257,7 @@ class Agent:
                         raise _TimeoutError()
 
                     dice.set(d1, d2)
-                    opp_moves = legal_moves(board, opponent_color, dice)
+                    opp_moves = self._legal_moves(board, opponent_color, dice)
 
                     if not opp_moves:
                         exact = self._exact_value(board, is_our_turn)
@@ -374,7 +380,7 @@ class Agent:
         expected = 0.0
         for (i, j, weight) in _DICE_OUTCOMES:
             dice.set(i, j)
-            moves = legal_moves(board, color, dice)
+            moves = self._legal_moves(board, color, dice)
             if not moves:
                 # `color` has no legal move and passes; value for `color` is 1 - opponent's static value.
                 exact = self._exact_value(board, opp_is_white)
