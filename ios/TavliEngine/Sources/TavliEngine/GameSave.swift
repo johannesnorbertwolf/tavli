@@ -20,13 +20,18 @@ public struct GameRecord: Equatable, Sendable {
     public var plies: [PlyRecord]
     /// The winner once the game is over, else `nil` while it is in progress.
     public var outcome: Color?
+    /// `GameVariant.id` of the rules the game was played under (#136). Replays and
+    /// reviews resolve the variant from it via `GameConfig(variantID:)`.
+    public var variantID: String
 
     public init(startingPlayer: Color,
                 aiColor: Color? = nil,
                 plies: [PlyRecord] = [],
                 outcome: Color? = nil,
-                gameId: UUID = UUID()) {
+                gameId: UUID = UUID(),
+                variantID: String = GameVariants.defaultID) {
         self.gameId = gameId
+        self.variantID = variantID
         self.startingPlayer = startingPlayer
         self.aiColor = aiColor
         self.plies = plies
@@ -110,6 +115,9 @@ public struct GameSave: Codable, Equatable {
     /// were saved), and a v1 file without it reads back as `nil`.
     public var outcome: String?
     public var history: [PlyRecord]
+    /// `GameVariant.id` of the game's rules (#136). Absent in pre-variant files, which
+    /// decode as `"plakoto"`; always written (older readers ignore the extra key).
+    public var variant: String
     /// Per-ply post-game analysis (#104), or `nil` when none has been computed. When
     /// present the file is written at `schemaVersion: 2`; when `nil` it is omitted and
     /// the file stays v1-reader-compatible.
@@ -123,7 +131,8 @@ public struct GameSave: Codable, Equatable {
                 aiColor: String?,
                 outcome: String? = nil,
                 history: [PlyRecord],
-                analysis: [AnalysisEntry]? = nil) {
+                analysis: [AnalysisEntry]? = nil,
+                variant: String = GameVariants.defaultID) {
         self.schemaVersion = schemaVersion
         self.gameId = gameId
         self.name = name
@@ -133,14 +142,15 @@ public struct GameSave: Codable, Equatable {
         self.outcome = outcome
         self.history = history
         self.analysis = analysis
+        self.variant = variant
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis
+        case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis, variant
     }
 
     /// Decode tolerantly: a v1 file has no `gameId`/`outcome`/`analysis`, so those are
-    /// optional. Everything else is required exactly as before.
+    /// optional; a pre-#136 file has no `variant` (→ Plakoto). Everything else is required exactly as before.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decode(Int.self, forKey: .schemaVersion)
@@ -152,6 +162,7 @@ public struct GameSave: Codable, Equatable {
         outcome = try c.decodeIfPresent(String.self, forKey: .outcome)
         history = try c.decode([PlyRecord].self, forKey: .history)
         analysis = try c.decodeIfPresent([AnalysisEntry].self, forKey: .analysis)
+        variant = try c.decodeIfPresent(String.self, forKey: .variant) ?? GameVariants.defaultID
     }
 
     /// Encode the version the on-disk shape actually warrants: `2` only when an
@@ -169,6 +180,7 @@ public struct GameSave: Codable, Equatable {
         try c.encodeIfPresent(outcome, forKey: .outcome)
         try c.encode(history, forKey: .history)
         try c.encodeIfPresent(analysis, forKey: .analysis)
+        try c.encode(variant, forKey: .variant)
     }
 }
 
@@ -186,7 +198,8 @@ public extension GameSave {
                   aiColor: record.aiColor?.rawValue,
                   outcome: record.outcome?.rawValue,
                   history: record.plies,
-                  analysis: analysis)
+                  analysis: analysis,
+                  variant: record.variantID)
     }
 
     /// The save reinterpreted as a `GameRecord`, restoring its `gameId` (a fresh one
@@ -197,7 +210,8 @@ public extension GameSave {
             aiColor: aiColor.flatMap { Color(rawValue: $0) },
             plies: history,
             outcome: outcome.flatMap { Color(rawValue: $0) },
-            gameId: gameId ?? UUID()
+            gameId: gameId ?? UUID(),
+            variantID: variant
         )
     }
 }

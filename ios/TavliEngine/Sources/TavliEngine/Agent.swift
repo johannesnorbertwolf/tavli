@@ -49,14 +49,19 @@ struct SplitMix64: RandomNumberGenerator {
 /// main actor scores the live board through a *separate* `GameBoard`.
 public final class Agent: @unchecked Sendable {
     private let model: MLModel
-    private let encoder: BoardEncoder
+    private let encoder: any BoardEncoding
+    /// The rules searched under (#136): move generation, apply/undo and win checks all
+    /// go through it, so the search never calls a specific variant's rule code.
+    public let variant: any GameVariant
     private let inputName: String
     private let outputName: String
     private let inputSize: Int
 
-    public init(model: MLModel, encoder: BoardEncoder) {
+    /// `encoder` must be the encoding `variant`'s model was trained on.
+    public init(model: MLModel, encoder: any BoardEncoding, variant: any GameVariant = GameVariants.plakoto) {
         self.model = model
         self.encoder = encoder
+        self.variant = variant
         self.inputSize = encoder.inputSize
         // Resolve feature names from the model so we don't couple to the converter.
         self.inputName = model.modelDescription.inputDescriptionsByName.keys.first ?? "board"
@@ -77,6 +82,11 @@ public final class Agent: @unchecked Sendable {
         return mv[0].floatValue
     }
 
+    /// An agent for `config.variant`, using that variant's encoder.
+    public convenience init(model: MLModel, config: GameConfig) {
+        self.init(model: model, encoder: config.variant.makeEncoder(config: config), variant: config.variant)
+    }
+
     /// Win probability for `color` in the given static board (no move applied).
     public func winProbability(_ board: GameBoard, color: Color) throws -> Float {
         try value(encoder.encode(board, isWhitesTurn: color.isWhite))
@@ -94,14 +104,14 @@ public final class Agent: @unchecked Sendable {
         defer { board.restoreStacks(saved) }
         var scores = [Float](repeating: 0, count: moves.count)
         for (idx, move) in moves.enumerated() {
-            board.apply(move)
-            if board.hasWon(color) {
+            variant.apply(move, on: board)
+            if variant.hasWon(color, on: board) {
                 scores[idx] = 1.0
             } else {
                 let enc = encoder.encode(board, isWhitesTurn: opponentToMoveIsWhite)
                 scores[idx] = 1.0 - (try value(enc))
             }
-            board.undo(move)
+            variant.undo(move, on: board)
         }
         return scores
     }
@@ -204,10 +214,10 @@ public final class Agent: @unchecked Sendable {
         scores.reserveCapacity(moves.count)
 
         for candidate in moves {
-            board.apply(candidate)
-            defer { board.undo(candidate) }
+            variant.apply(candidate, on: board)
+            defer { variant.undo(candidate, on: board) }
 
-            if board.hasWon(color) {
+            if variant.hasWon(color, on: board) {
                 scores.append(1.0)
                 continue
             }
@@ -217,7 +227,7 @@ public final class Agent: @unchecked Sendable {
                 if let deadline, DispatchTime.now() > deadline { throw SearchTimeout() }
 
                 dice.set(outcome.d1, outcome.d2)
-                let oppMoves = PossibleMoves(board: board, color: opponentColor, dice: dice).findMoves()
+                let oppMoves = variant.legalMoves(on: board, color: opponentColor, dice: dice)
 
                 if oppMoves.isEmpty {
                     // Opponent passes: position unchanged, our turn again.

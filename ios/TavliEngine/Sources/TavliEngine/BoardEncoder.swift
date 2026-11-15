@@ -7,7 +7,7 @@ import Foundation
 /// Perspective-invariant: the current player iterates slots 0->n-1 over board
 /// indices, the opponent iterates n-1->0. In flipped (current-player) coordinates
 /// slot 0 is the opponent bear-off, slot n-1 is our bear-off.
-public struct BoardEncoder {
+public struct BoardEncoder: Sendable {
     public static let smartFeatureCount = 18
 
     public let boardSize: Int

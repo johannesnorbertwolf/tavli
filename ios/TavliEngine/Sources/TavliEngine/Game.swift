@@ -1,6 +1,6 @@
 import Foundation
 
-/// Mirrors `game/game.py`.
+/// Mirrors `game/game.py`. Rules come from `config.variant` (#136).
 public final class Game {
     public let board: GameBoard
     public let dice: Dice
@@ -8,10 +8,13 @@ public final class Game {
 
     public init(config: GameConfig = .standard, startingPlayer: Color = .black) {
         self.board = GameBoard(config: config)
-        self.board.initializeBoard()
+        config.variant.setUpInitialPosition(on: board)
         self.dice = Dice(numberOfSides: config.dieSides)
         self.player = startingPlayer
     }
+
+    /// The rules this game is played under.
+    public var variant: any GameVariant { board.config.variant }
 
     public var currentPlayer: Color { player }
 
@@ -24,16 +27,14 @@ public final class Game {
     }
 
     public func isOver() -> Bool {
-        board.hasWon(.white) || board.hasWon(.black)
+        getWinner() != nil
     }
 
     public func getWinner() -> Color? {
-        if board.hasWon(.white) { return .white }
-        if board.hasWon(.black) { return .black }
-        return nil
+        variant.winner(on: board)
     }
 
     public func checkWinner(_ color: Color) -> Bool {
-        board.hasWon(color)
+        variant.hasWon(color, on: board)
     }
 }

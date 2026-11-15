@@ -17,6 +17,22 @@
   (and imported from `ruleset._load_builtins`); a config with `variant: <name>` and its own output paths.
   `HalfMove`/`Move` are shared. `board.py` / `move_generation.py` below are the Plakoto implementation.
 
+## fevga_board.py / fevga_rules.py — Fevga (#138, spec `docs/variants/fevga.md`)
+
+- `FevgaBoard`: physical slots like `Board` (`n`, `color`, `borne_off`; `pinned` is an all-False
+  compat list). White path = slots 1..24 → off 25; Black path = 13..24,1..12 → off **0**.
+  `SLOT_OF[c][p]` / `PATH_OF[c][s]` convert slot ↔ per-colour path index (25 = off). One colour per
+  point; undo token is just `(move, color)` (no hitting ⇒ moving back is exact). `has_won` = all off.
+- `fevga_legal_moves` (bound as `FevgaRules.legal_moves`): DFS over play sequences in the mover's
+  path coordinates with transposition pruning (additive position hash), recording **every prefix**;
+  drops R1 (own path 1–6 all held) / R2 (six-run consecutive in the opponent's path with no opponent
+  checker ahead, none borne off) end positions, then keeps most-dice plays and the larger-die rule.
+  First-checker lock (unlocked at path ≥ 14 or any off) is checked per half-move. One `Move` per
+  distinct resulting position; non-double one-checker plays merge into one half, doubles list steps.
+- `FevgaRules`: `max_points = 2` (mars when loser bore off none), `random_starting_player = True`,
+  `supports_bearoff_db = False`, encoder `fevga_v1`. Tests: `tests/domain/test_fevga.py` (spec
+  examples F1–F10 + a slow spec-literal reference generator cross-check).
+
 ---
 
 ## constants.py

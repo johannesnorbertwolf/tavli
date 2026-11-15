@@ -81,6 +81,31 @@ Smart features are computed in a single pass over the board slots, using running
 
 ---
 
+## fevga_encoder.py
+
+`FevgaEncoder(config, version="fevga_v1")` encodes a `FevgaBoard` (24 points, 6-point homes only) from the mover's perspective, indexed by the **mover's path index** p = 1..24 (White p = slot; Black p = slot−12 / slot+12). The colour flip is therefore a rotation by 12, and a position and its colour-swapped twin (colours exchanged, every checker moved to the same path index of the other colour, borne-off swapped) give identical vectors (unit-tested). `input_size = 24·(1+P) + 2 + 20` = **406** for P = 15 checkers; float32, all values in [0, 1]; ~20µs per call.
+
+| Index | Content |
+|---|---|
+| `(p−1)·16 + 0` | owner bit of mover path point p: 0 = ours/empty, 1 = theirs |
+| `(p−1)·16 + 1..15` | unary count of the checkers on p |
+| 384 / 385 | our / their borne-off `/ P` |
+| 386 + 0 / 1 | our / their pip count (remaining path distance, Σ 25−p) `/ (24·P)` |
+| 386 + 2 | pip difference `0.5 + (ours − theirs)/(2·24·P)` |
+| 386 + 3 / 4 | our / their checkers still on the start point (path 1) `/ P` |
+| 386 + 5 / 6 | our / their unlocked flag (checker at own path ≥ 14 or borne off) |
+| 386 + 7 / 8 | our / their number of held points `/ P` |
+| 386 + 9 / 10 | our / their longest run of held points consecutive in the **opponent's** path, `min(run,6)/6` |
+| 386 + 11 / 12 | same, restricted to the part of the opponent's path in front of the opponent's rearmost checker |
+| 386 + 13 / 14 | opponent-held points among the 6 / 12 points ahead of our rearmost checker, `/6` / `/12` |
+| 386 + 15 / 16 | the same for them (our held points ahead of their rearmost checker) |
+| 386 + 17 / 18 | our / their checkers in the final quadrant (path 19–24) `/ P` |
+| 386 + 19 | race flag: 1 iff neither side has an opposing checker ahead of its rearmost checker |
+
+Per-side features are computed by one helper applied to (ours in our path, theirs in our path) and to the rotated pair, which is what makes the symmetry exact. `RuleSet.make_encoder` for `fevga` returns this class; unknown versions raise `ValueError`.
+
+---
+
 ## board_evaluator.py
 
 ### Auxiliary heads (#106)

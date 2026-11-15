@@ -59,7 +59,7 @@ so the game flow is validated without a simulator.
   (deterministic dice for scripted/manual play — on the AI's turn in manual mode it hands the
   entered dice straight to `playAITurn`, #110) / `selectPoint` / `commitHalfMove(from:to:)` /
   `undo` / `undoLastDecision` / `confirm` / `surrender` / `newGame`. On roll it computes `legalMoves` via
-  `PossibleMoves`; an empty set is a **forced pass** that advances the turn. `commitHalfMove`
+  the variant's `legalMoves` (Plakoto: `PossibleMoves`); an empty set is a **forced pass** that advances the turn. `commitHalfMove`
   applies the half-move to the board and auto-finishes when the move is complete or the only
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
   ply, switches turn, and returns to `awaitingRoll`.
@@ -276,6 +276,45 @@ so the game flow is validated without a simulator.
   `humanWinProbability` re-expresses WHITE's `winProbability` for the human side (or `nil` h-vs-h)
   and drives the UI's double-confirm threshold; the engine owns the perspective flip, the view owns
   the 10% policy.
+
+## Game variants (#136)
+
+The rules seam — `GameVariant.swift` — so Portes / Fevga / a second Plakoto ruleset can
+be added without touching shared code. Mirrors the Python `RuleSet` ABC.
+
+- **`protocol GameVariant: Sendable`**: `id` (stable persisted string, `"plakoto"`),
+  `modelResourceName` (bundled Core ML model base name, `"PlakotoValue"`),
+  `setUpInitialPosition(on:)`, `legalMoves(on:color:dice:) -> [Move]` (deterministic; empty =
+  forced pass), `applyHalfMove`/`undoHalfMove(_:on:)`, `apply`/`undo(_ move:on:)` (default:
+  the half-moves in order / reverse), `hasWon(_:on:)`, `isOpen(_ point:for:on:)`,
+  `resultPoints(winner:on:)` (1 single / 2 double), `makeEncoder(config:) -> any
+  BoardEncoding`. Extension helper `winner(on:)` (WHITE checked first).
+- **`protocol BoardEncoding: Sendable`** — `inputSize` + `encode(_:isWhitesTurn:)`;
+  `BoardEncoder` (`unary_v3`) conforms.
+- **`PlakotoVariant`** is a pure adapter over the unchanged parity-validated port
+  (`GameBoard.initializeBoard`/`apply`/`undo`/`hasWon`, `PossibleMoves`, `Point.isOpen`,
+  `BoardEncoder`); `resultPoints` is always 1 (the app counts games won).
+- **`GameVariants`** registry: `plakoto`, `all`, `defaultID = "plakoto"`,
+  `variant(forID:)`.
+- **Threading.** `GameConfig.variant` (default Plakoto; `==`/hash by `variant.id`;
+  `GameConfig(variantID:)` resolves a persisted id, unknown → Plakoto) is the single source.
+  `GameBoard.variant` / `Game.variant` read it. `Game` (initial position, winner),
+  `GameSession` (legal moves, apply/undo, replay, new game), `MoveBuilder` (open-point checks),
+  `Agent` (stores `variant` + `any BoardEncoding`; `Agent(model:config:)`;
+  `GameSession.makeAgent(config:)` loads `variant.modelResourceName`) and `GameReview` all call
+  rules only through the variant. `GameReview.analyze`/`analyzeProgressive`/`cachedResult` and
+  `GameSession.resume` take `config: GameConfig? = nil` and default to the record's / save's
+  variant; `GameSession.drill` and `Agent.scoreCandidate` default to the agent's variant.
+- **Persistence.** `GameRecord.variantID`, `GameSave.variant` and `OnlineMatchPayload.variant`
+  are always written; absent ⇒ `"plakoto"` on decode, so pre-#136 saves / payloads load
+  unchanged (no schema-version bump — the key is additive and old readers ignore it).
+  `GameKitCoordinator` carries the match's variant into every payload it writes.
+- **Board state.** `GameBoard` (stack of colours per point, `0`/`boardSize+1` = bear-off) is
+  the shared container; a pin is just stack order. Variant-specific extra state (Portes' bar)
+  is to be added to `GameBoard` by that variant's ticket and handled in its own apply/undo.
+- **Hot path.** Calls go through `any GameVariant` (one witness-table hop each) — negligible
+  next to move-generation allocations and the per-leaf Core ML prediction; `Agent` is not
+  generic.
 
 ## Save & load (#61, replay-based)
 
@@ -573,7 +612,7 @@ win overlay offers Review only; the in-review "Drill blunders" button hands over
 ```
 ios/
 ├── TavliEngine/                 SwiftPM package — pure game engine + encoder + Core ML agent
-│   ├── Sources/TavliEngine/     Color, GameConfig, Point, HalfMove, Move, Dice,
+│   ├── Sources/TavliEngine/     Color, GameConfig, GameVariant, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
 │   │                            SearchConfig, MoveBuilder, GameSession,
 │   │                            GameSave, SaveStore
