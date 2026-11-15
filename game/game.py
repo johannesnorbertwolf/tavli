@@ -44,14 +44,17 @@ class Game:
         self.player = -self.player
 
     def is_over(self):
-        return self.board.has_won(WHITE) or self.board.has_won(BLACK)
+        return self.ruleset.is_over(self.board)
+
+    def outcome(self):
+        """(winner, points) once the game is over — winner WHITE/BLACK/None (draw) —
+        or (None, 0) while it is still running."""
+        if not self.ruleset.is_over(self.board):
+            return None, 0
+        return self.ruleset.outcome(self.board)
 
     def get_winner(self):
-        if self.board.has_won(WHITE):
-            return WHITE
-        if self.board.has_won(BLACK):
-            return BLACK
-        return None
+        return self.outcome()[0]
 
     def check_winner(self, color: int):
         return self.board.has_won(color)

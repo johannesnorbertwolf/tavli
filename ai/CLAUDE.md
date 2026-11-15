@@ -8,6 +8,7 @@ or modifying anything here.
 |---|---|
 | `agent.py` | Inference interface (`Agent`) over evaluator + encoder; 1/2/N-ply expectimax search with branch pruning and time-budget iterative deepening. Never updates weights. Also `RandomAgent`. |
 | `board_encoder.py` | `BoardEncoder` → flat float32 vector, always from the current player's perspective (board flip). Three checkpoint-tagged versions; current `unary_v3` (486-dim, +18 smart features). |
+| `portes_encoder.py` | `PortesEncoder` (`portes_v1`, 414 floats) for the Portes variant: mover-perspective points (owner bit + 15 unary), bars, borne-off, 18 smart features. |
 | `board_evaluator.py` | `BoardEvaluator` MLP → win prob ∈ [0,1]. `forward` (sigmoid) vs `forward_logits` (raw). |
 | `checkpoint_io.py` | Save/load checkpoints (format_version=2, with Adam state, `variant` tag). Encoder-version + legacy-layer-name back-compat; `check_checkpoint_variant` / `VariantMismatchError`. |
 | `bearoff.py` | Exact race equity: one-sided bear-off database (`BearoffDB`, DP over dice outcomes, disk-cached npz) + exact-race detector (`race_state`) + `exact_value_on_roll`. Replaces net evals and TD targets with ground truth in pure races. |
@@ -23,6 +24,7 @@ or modifying anything here.
 ## Conventions / gotchas
 
 - **Never hard-import `domain.move_generation.legal_moves` / `Board.initial` / `BoardEncoder(...)` in shared code** — go through the variant `RuleSet` (`config.get_ruleset()`, `game.ruleset`, `agent.ruleset`; see `domain/CLAUDE.md`). Gate bear-off DB use on `ruleset.supports_bearoff_db`. Checkpoints carry `variant` (missing ⇒ plakoto); loading one under a config of another variant raises `VariantMismatchError`.
+- **Game end goes through the RuleSet outcome seam** (`ruleset.is_over / outcome / terminal_value`, `domain/CLAUDE.md`): TD terminal targets and winning search leaves use `terminal_value` (normalized points), trajectories carry `terminal_value_white` + `result_points`, eval reports win rate (draw = ½) plus avg points/game when `max_points > 1`. Starters come from `ruleset.starting_player(default)` (never touches the rng for Plakoto). Aux heads / `win_by_pin` stay Plakoto-only.
 - **Load checkpoints only via `load_agent_from_checkpoint()`** — never construct an `Agent`/evaluator/encoder by hand (it derives `input_size` from the checkpoint's encoder version and `hidden_sizes` from metadata).
 - **The training loop owns `.eval()` / `.train()` mode**; `Agent` methods are mode-agnostic.
 - **Search width is bounded only by move pruning** (`_prune_branches`: relative cutoff + `max_branch`). The 21 dice chance-nodes are never pruned — the dice distribution stays exact.

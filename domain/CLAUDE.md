@@ -4,10 +4,19 @@
 
 `RuleSet` (ABC) is everything variant-specific: `name`, `initial_board(config)`,
 `legal_moves(board, color, dice)`, `has_won(board, c)`, `is_open_for(board, i, c)`,
-`result_points(board, winner)` (1/2; training ignores it for now), `make_encoder(config, version=None)`,
+`result_points(board, winner)` (1/2), `make_encoder(config, version=None)`,
 `default_encoder_version`, `supports_bearoff_db`. Registry: `register_ruleset(instance, replace=False)`,
 `get_ruleset(name)` (case-insensitive; unknown → `ValueError`), `registered_variants()`. Config key
 `variant:` selects one (default `plakoto`).
+
+**Game-outcome seam** (#137; non-abstract, defaults keep Plakoto bit-identical) — the only way shared
+code decides game end / winner / terminal reward: `max_points` (default 1), `is_over(board)`,
+`outcome(board) -> (winner|None, points)` (None = draw, 0 points; call only when over),
+`terminal_value(board, persp) = 0.5 + signed_points / (2*max_points)` ∈ [0,1] (1.0/0.0 when
+`max_points == 1`; the TD terminal target and search-leaf value, so a 2-point variant's net learns
+normalized expected points and stays symmetric), `random_starting_player` (default False) +
+`starting_player(default, rng=None)` (returns `default` without touching the rng unless random).
+Module helper `score_for(outcome, color) -> (win_credit 1/0.5/0, signed_points)` for eval.
 
 - `PlakotoRules` (`plakoto_rules.py`, registered as `"plakoto"`) wraps `Board` + `move_generation`
   with no logic of its own; `legal_moves` is a `staticmethod` bound to the generator itself (zero
@@ -16,6 +25,17 @@
   `undo(token)`, `clone()`, `has_won(c)`; own move generator; a `RuleSet` subclass registered at import
   (and imported from `ruleset._load_builtins`); a config with `variant: <name>` and its own output paths.
   `HalfMove`/`Move` are shared. `board.py` / `move_generation.py` below are the Plakoto implementation.
+- `PortesRules` (`portes_rules.py`, `"portes"`, #137, spec `docs/variants/portes.md`): `max_points=2`
+  (gammon), `random_starting_player=True`, `supports_bearoff_db=False`, encoder `portes_v1`.
+  - `portes_board.py` — `PortesBoard`: one signed array `p[26]` (`>0` White, `<0` Black); `p[0]` =
+    White's bar, `p[25]` = Black's bar; borne-off only counted in `borne_off[c]`. Hits send the blot
+    to its owner's bar; undo entry `(src, dst, color, hit)`. `from_counts(white, black, …)` test helper,
+    `key()` hashable position, `result_points(winner)` (2 iff loser bore off none; no triple).
+  - `portes_move_generation.py` — `legal_moves`: DFS over dice orders on a mover-relative copy (r = pips
+    to off, r=25 = own bar); doubles keep sources non-increasing; one `Move` per distinct resulting
+    position; keeps only max-dice sequences, larger die when only one die plays; bar entry first;
+    bear-off only all-home, larger die only from the highest point. Two-dice single-checker plays are
+    two halves (never merged). Tests cross-check it against a brute-force reference.
 
 ---
 

@@ -10,7 +10,12 @@ Run from the worktree root with the project venv:
     PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/generate_test_fixtures.py
 
 Output: ios/TavliEngine/Tests/TavliEngineTests/Fixtures/fixtures.json
+
+Other variants: `--variant portes` writes `fixtures_portes.json` (signed slot
+array + borne-off counts, `portes_v1` encodings, legal moves for all 21 rolls;
+no scores until a Portes model exists). `--out PATH` overrides the output file.
 """
+import argparse
 import json
 import os
 import random
@@ -79,7 +84,7 @@ def move_to_pairs(move):
     return [[h.src, h.dst] for h in move.halves]
 
 
-def main():
+def main(out_path=None):
     random.seed(SEED)
     config = ConfigLoader(os.path.join(ROOT, "config", "config.yml"))
     encoder = BoardEncoder(config, version=UNARY_V3)
@@ -175,7 +180,7 @@ def main():
         "move_cases": move_cases,
     }
 
-    out_path = os.path.join(
+    out_path = out_path or os.path.join(
         ROOT, "ios", "TavliEngine", "Tests", "TavliEngineTests", "Fixtures", "fixtures.json"
     )
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -188,5 +193,90 @@ def main():
     )
 
 
+def main_portes(out_path=None):
+    """Portes parity fixtures (#137). A position is `{"p": [26 signed counts],
+    "off": [white, black]}`: p[i] > 0 White, < 0 Black, p[0] White's bar, p[25]
+    Black's bar (docs/variants/portes.md). Moves are [[src, dst], ...] in generator
+    order; compare as sets of resulting positions."""
+    from domain.portes_board import PortesBoard
+    from domain.portes_move_generation import legal_moves as portes_legal_moves
+    from ai.portes_encoder import PortesEncoder, PORTES_V1
+
+    random.seed(SEED)
+    encoder = PortesEncoder()
+
+    def ser(b):
+        return {"p": list(b.p), "off": [b.borne_off[WHITE], b.borne_off[BLACK]]}
+
+    def de(s):
+        b = PortesBoard()
+        b.p = list(s["p"])
+        b.borne_off = {WHITE: s["off"][0], BLACK: s["off"][1]}
+        return b
+
+    handcrafted = [
+        (PortesBoard.from_counts({0: 1, 24: 14}, {3: 2, 5: 2, 6: 11}), "W"),   # dance / entry
+        (PortesBoard.from_counts({0: 2, 24: 13}, {3: 2, 5: 2, 6: 11}), "W"),   # two on bar
+        (PortesBoard.from_counts({10: 1, 24: 14}, {14: 1, 3: 14}), "W"),       # intermediate hit
+        (PortesBoard.from_counts({24: 14, 15: 1}, {25: 1, 3: 14}), "B"),       # Black entry
+        (PortesBoard.from_counts({20: 1, 23: 14}, {3: 15}), "W"),              # larger-die bear-off
+        (PortesBoard.from_counts({10: 1, 24: 14}, {19: 2, 3: 13}), "W"),       # larger-die rule
+        (PortesBoard.from_counts({0: 1, 22: 14}, {4: 2, 1: 13}), "W"),         # bar blocks bear-off
+    ]
+    states = [(ser(b), c) for b, c in handcrafted]
+    dice = Dice(6)
+    for _ in range(NUM_GAMES):
+        board = PortesBoard.initial()
+        color = WHITE if random.random() < 0.5 else BLACK
+        for ply in range(MAX_PLIES * 2):
+            if board.has_won(WHITE) or board.has_won(BLACK):
+                break
+            dice.set(random.randint(1, 6), random.randint(1, 6))
+            moves = portes_legal_moves(board, color, dice)
+            if ply % SAMPLE_EVERY == 0:
+                states.append((ser(board), color_name(color)))
+            if moves:
+                board.apply(random.choice(moves), color)
+            color = -color
+
+    encoding_cases, move_cases = [], []
+    for pos, current in states:
+        for is_white in (True, False):
+            enc = encoder.encode_board(de(pos), is_whites_turn=is_white)
+            encoding_cases.append({"position": pos, "is_whites_turn": is_white,
+                                   "encoding": [round(float(x), 7) for x in enc.tolist()]})
+        color = WHITE if current == "W" else BLACK
+        for (d1, d2) in all_dice_pairs():
+            dice.set(d1, d2)
+            moves = portes_legal_moves(de(pos), color, dice)
+            move_cases.append({"position": pos, "color": current, "dice": [d1, d2],
+                               "moves": [move_to_pairs(m) for m in moves]})
+
+    out = {
+        "variant": "portes",
+        "config": {"board_size": 24, "pieces_per_player": 15, "home_size": 6, "die_sides": 6},
+        "encoder_version": PORTES_V1,
+        "input_size": int(encoder.input_size),
+        "has_scores": False,
+        "encoding_cases": encoding_cases,
+        "move_cases": move_cases,
+    }
+    out_path = out_path or os.path.join(
+        ROOT, "ios", "TavliEngine", "Tests", "TavliEngineTests", "Fixtures", "fixtures_portes.json"
+    )
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(out, f)
+    print(f"wrote {out_path}: {len(encoding_cases)} encoding cases, "
+          f"{len(move_cases)} move cases, input_size={encoder.input_size}")
+
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--variant", default="plakoto", choices=["plakoto", "portes"])
+    parser.add_argument("--out", default=None, help="output JSON path")
+    args = parser.parse_args()
+    if args.variant == "portes":
+        main_portes(args.out)
+    else:
+        main(args.out)

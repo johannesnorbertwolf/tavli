@@ -8,11 +8,11 @@ detail. Read it when implementing or modifying anything under `ai/`.
 
 `Agent(board_evaluator, board_encoder, bearoff=None, ruleset=None)` is the inference interface wrapping a `BoardEvaluator` and encoder. It never updates weights. `ruleset` (a `domain.ruleset.RuleSet`, default Plakoto) supplies move generation for the 2-ply/N-ply/lookahead searches; `ruleset.legal_moves` is cached as `self._legal_moves`.
 
-**1-ply evaluation** (`_evaluate_moves_batch`): For each candidate move, apply it to the board, encode the resulting position from the *opponent's* perspective (since after our move it's their turn), run a batched forward pass, then return `1 - opponent_value` as our score. Winning moves are short-circuited to score 1.0 before the forward pass.
+**1-ply evaluation** (`_evaluate_moves_batch`): For each candidate move, apply it to the board, encode the resulting position from the *opponent's* perspective (since after our move it's their turn), run a batched forward pass, then return `1 - opponent_value` as our score. Winning moves are short-circuited to `ruleset.terminal_value(board, color)` before the forward pass (1.0 for `max_points == 1`; 0.75/1.0 for a Portes single/gammon).
 
 **Exact-race leaves** (`_exact_value`, used by all three search depths): when the `Agent` was constructed with a `bearoff` DB, every position that would be sent to the net is first probed with `ai.bearoff.exact_value_on_roll` from the same perspective the encoder would use; exact races get DB equity instead of a net call (in 2-ply this is done via a placeholder-and-scatter pass so the remaining net evals still run as one batch; in N-ply it also short-circuits pass-positions). `bearoff` is optional — without it behavior is unchanged.
 
-**2-ply evaluation** (`_evaluate_moves_2ply_batch`): Expectimax. For each candidate move, iterate over all 21 distinct dice outcomes (doubles count once with weight 1/36; others weight 2/36). For each outcome, enumerate the opponent's legal responses, encode all resulting positions in one big batch *from our perspective* (after the reply we are on roll again — the net always values the player to move), and take the minimum over the opponent's choices (they minimize our value). An opponent reply that wins outright short-circuits the outcome to 0. Our expected score for a candidate move is the probability-weighted average across all dice outcomes. Agrees exactly with `_evaluate_moves_nply` at depth 2 with pruning disabled (regression-tested).
+**2-ply evaluation** (`_evaluate_moves_2ply_batch`): Expectimax. For each candidate move, iterate over all 21 distinct dice outcomes (doubles count once with weight 1/36; others weight 2/36). For each outcome, enumerate the opponent's legal responses, encode all resulting positions in one big batch *from our perspective* (after the reply we are on roll again — the net always values the player to move), and take the minimum over the opponent's choices (they minimize our value). An opponent reply that wins outright scores `terminal_value(board, us)`: a 0.0 short-circuits the outcome (the min is settled); a positive value (e.g. 0.25 for a 1-point loss with `max_points == 2`) is added as a fixed leaf to the min. Our expected score for a candidate move is the probability-weighted average across all dice outcomes. Agrees exactly with `_evaluate_moves_nply` at depth 2 with pruning disabled (regression-tested).
 
 **N-ply evaluation with branch pruning** (`_evaluate_moves_nply`): Recursive expectimax generalising to arbitrary depth. At depth=1 it delegates to `_evaluate_moves_batch`. At depth>1, for each candidate move it iterates all 21 dice outcomes; for each outcome it calls `_evaluate_moves_batch` on all opponent replies as a quick 1-ply pre-screen, then prunes the replies via `_prune_branches` (see below) and recurses at depth-1 on the survivors. Pass-positions (no opponent moves) are collected and resolved in a single deferred batch. The per-candidate body is wrapped in `try/finally` so the applied move is always undone — even when `_TimeoutError` unwinds the recursion from a deeper frame mid-iteration (without this, enclosing frames would leak their applied moves and corrupt the board). Raises the module-private `_TimeoutError` if a `deadline` (monotonic timestamp) is exceeded — callers catch this to discard partial results.
 
@@ -78,6 +78,23 @@ The 21 distinct `(d1, d2, weight)` dice outcomes are precomputed once at module 
 Smart features are computed in a single pass over the board slots, using running accumulators that reset when the run of held points breaks.
 
 `encode_board(board, is_whites_turn)` is the only public method. Output is pre-allocated (`np.zeros`) with in-place slice writes; typical latency ~18µs for UNARY_V3.
+
+---
+
+## portes_encoder.py
+
+`PortesEncoder(config=None, version="portes_v1")` for the Portes variant (#137); `input_size = 414`,
+float32, always from the mover's perspective (Black is mirrored: White slot `i` ↔ Black-relative
+`25 - i`), so a position and its colour-mirrored twin encode identically for their movers
+(unit-tested). Each side's checkers are indexed by its own relative point `r` = pips to bear off
+(1..24; 25 = bar).
+
+| Range | Content |
+|---|---|
+| `[0, 384)` | 24 points in own-relative order `r = 1..24` (`r` 1–6 own home, 19–24 opponent home), 16 floats each: `[owner bit (1 = own), unary count 1..15]` (unary filled for either colour; owner bit 0 + zeros = empty) |
+| `[384, 394)` | bars, own then opponent: `[unary 1..4, overflow (n−4)/11]` |
+| `[394, 396)` | borne off own/15, opponent/15 |
+| `[396, 414)` | smart: 0–1 pip /375 (own, opp) · 2 pip lead `0.5 + (opp−own)/750` · 3–4 blots /15 · 5–6 made points (≥2) /7 · 7–8 longest prime /7 · 9–10 made points in own home board /6 · 11–12 back checkers (in the opponent's home board) /15 · 13–14 bar /15 · 15 race flag (1 iff `max_own_r + max_opp_r < 25`, i.e. no contact; bars count as r=25) · 16–17 directly exposed blots /15 (blot with an opposing checker or bar checker 1–6 pips behind it in that checker's direction) |
 
 ---
 
@@ -201,6 +218,7 @@ Pure function, no side effects. Takes:
 - `movers`: shape `(T,)` bool — True if White moved at step i
 - `terminal_winner_white`: who won
 - `lambda_`: TD(λ) decay
+- `terminal_value_white` (optional): `ruleset.terminal_value(final_board, WHITE)`; None ⇒ 1.0/0.0 from the winner
 
 Returns `targets` of shape `(T+1,)`. For each non-terminal state `i`, computes the forward-view λ-return from mover_i's perspective:
 
@@ -208,7 +226,7 @@ Returns `targets` of shape `(T+1,)`. For each non-terminal state `i`, computes t
 G^λ_i = (1−λ) · Σ_{n=1..N-1} λ^{n-1} · G^(n)_i  +  λ^{N-1} · G^(N)_i
 ```
 
-where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted to mover_i's perspective. `U(j, mover_i) = V[j]` if `mover_j == mover_i`, else `1 - V[j]`. For the terminal step `G^(N)_i = 1` if mover_i won, else `0`. The post-terminal state (index T) gets target 0 (the loser's perspective).
+where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted to mover_i's perspective. `U(j, mover_i) = V[j]` if `mover_j == mover_i`, else `1 - V[j]`. For the terminal step `G^(N)_i` = the terminal value from mover_i's perspective (`tv_white` or `1 - tv_white`; 1/0 for a plain win/loss). The post-terminal state (index T) gets the loser's terminal value `min(tv, 1 - tv)` (0 for `max_points == 1`). `_ingest_trajectory` passes the trajectory's `terminal_value_white`.
 
 ### TdLambdaTraining
 
@@ -217,7 +235,7 @@ The main orchestrator. Constructed with `(board_evaluator, board_encoder, config
 **Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `model_save_path`, default `trained_model.pth`; skipped with a message when the saved state's tensor shapes don't match the current architecture), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `selfplay_seeded_fraction > 0` it also loads the `SeedPool` (failing fast if the pool file is missing); when `selfplay_league_fraction > 0` it loads each `selfplay_league_opponents` checkpoint as a frozen opponent agent (workers load their own copies). When `use_bearoff_db` is true (and the ruleset `supports_bearoff_db`), the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
-1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
+1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, terminal_value_white, result_points, plies, game_seconds}`. The starter is `ruleset.starting_player(BLACK)` (random only for `random_starting_player` variants). Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
 2. `_ingest_trajectory`: forward-pass all `T+1` states once (eval mode, no_grad) to get bootstrap values; where `exact_values` is non-NaN, **overwrite the bootstrap value with the exact equity** (λ-returns then bootstrap on ground truth, propagating it backward into contact play); compute λ-returns via `compute_lambda_returns`; finally pin the targets of the exact-race states themselves to their exact values; push all `(state, target)` pairs into the replay buffer. Trajectories without an `exact_values` key (or with `use_bearoff_db: false`) train exactly as before.
 3. `_train_minibatches`: run `updates_per_game` Adam steps on randomly sampled minibatches from the replay buffer using `binary_cross_entropy_with_logits`.
 
@@ -231,7 +249,7 @@ The main orchestrator. Constructed with `(board_evaluator, board_encoder, config
 
 **Serialisation**: `_save_training_state()` atomically writes `training_state.json` (tmp + rename). `save_checkpoint` in `checkpoint_io.py` handles the model.
 
-**Eval** (`_run_eval`): optionally evaluates vs. random agent and/or vs. gold model. Uses a seeded RNG isolated from training RNG. Appends results to `training_runs/eval_gold_history.log`.
+**Eval** (`_run_eval`): optionally evaluates vs. random agent and/or vs. gold model. Uses a seeded RNG isolated from training RNG; both colour halves replay the same seed (`_eval_series`), so random starters (`ruleset.starting_player(WHITE)`) are colour-balanced too. Wins are credited via `score_for` (draw = ½); `last_eval_points` holds signed points/game, printed when `max_points > 1`. A missing gold file is skipped with a message (log `status=skipped`). Appends results to `training_runs/eval_gold_history.log`.
 
 **Parallel training** (`_run_training_loop_parallel`): spawns `num_self_play_workers` processes via `multiprocessing.spawn`. Each worker gets its own weight queue and pushes trajectories to a shared result queue. After ingesting a trajectory, the trainer immediately sends updated weights back to the worker that produced it (pipelining: workers play ahead of the trainer by one game, incurring a small off-policy lag).
 
