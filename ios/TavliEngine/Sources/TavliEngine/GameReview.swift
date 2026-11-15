@@ -116,13 +116,15 @@ public enum GameReview {
         agent: Agent,
         humanColor: Color,
         depth: Int = 2,
-        config: GameConfig = .standard,
+        config: GameConfig? = nil,
         searchConfig: SearchConfig = .standard,
         onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil
     ) -> GameReviewResult {
+        let config = config ?? GameConfig(variantID: record.variantID)
+        let variant = config.variant
         let board = GameBoard(config: config)
-        board.initializeBoard()
+        variant.setUpInitialPosition(on: board)
         let upper = board.boardSize + 1
         let dice = Dice(numberOfSides: config.dieSides)
 
@@ -136,7 +138,7 @@ public enum GameReview {
         for (index, ply) in record.plies.enumerated() {
             if mover == humanColor && !ply.halfMoves.isEmpty {
                 dice.set(ply.die1, ply.die2)
-                let legal = PossibleMoves(board: board, color: mover, dice: dice).findMoves()
+                let legal = variant.legalMoves(on: board, color: mover, dice: dice)
 
                 // Evaluate every ply that actually moved, including forced
                 // single-legal-move plies (`legal.count == 1`). Those are common in
@@ -178,11 +180,12 @@ public enum GameReview {
             for pair in ply.halfMoves where pair.count == 2 {
                 let from = pair[0], to = pair[1]
                 guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
-                board.points[from].pop()
-                board.points[to].push(mover)
+                variant.applyHalfMove(
+                    HalfMove(from: board.points[from], to: board.points[to], color: mover),
+                    on: board)
             }
 
-            if board.hasWon(mover) { break }
+            if variant.hasWon(mover, on: board) { break }
             mover = mover.opponent
         }
 
@@ -235,13 +238,14 @@ public enum GameReview {
         humanColor: Color,
         depths: [Int] = [1, 2, 3],
         includeOpponent: Bool = false,
-        config: GameConfig = .standard,
+        config: GameConfig? = nil,
         searchConfig: SearchConfig = .standard,
         seed: [AnalysisEntry] = [],
         onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         onPassComplete: (@Sendable (_ pass: Int, _ depth: Int) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int, _ pass: Int) -> Void)? = nil
     ) -> GameReviewResult {
+        let config = config ?? GameConfig(variantID: record.variantID)
         let contexts = replayContexts(record: record, humanColor: humanColor,
                                       config: config, includeOpponent: includeOpponent)
         guard !depths.isEmpty else { return GameReviewResult(evaluations: []) }
@@ -305,8 +309,9 @@ public enum GameReview {
     private static func replayContexts(record: GameRecord, humanColor: Color,
                                        config: GameConfig,
                                        includeOpponent: Bool = false) -> [PlyContext] {
+        let variant = config.variant
         let board = GameBoard(config: config)
-        board.initializeBoard()
+        variant.setUpInitialPosition(on: board)
         let upper = board.boardSize + 1
         var contexts: [PlyContext] = []
         var mover = record.startingPlayer
@@ -321,10 +326,11 @@ public enum GameReview {
             for pair in ply.halfMoves where pair.count == 2 {
                 let from = pair[0], to = pair[1]
                 guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
-                board.points[from].pop()
-                board.points[to].push(mover)
+                variant.applyHalfMove(
+                    HalfMove(from: board.points[from], to: board.points[to], color: mover),
+                    on: board)
             }
-            if board.hasWon(mover) { break }
+            if variant.hasWon(mover, on: board) { break }
             mover = mover.opponent
         }
         return contexts
@@ -341,7 +347,7 @@ public enum GameReview {
         }
         let dice = Dice(numberOfSides: config.dieSides)
         dice.set(ctx.die1, ctx.die2)
-        let legal = PossibleMoves(board: board, color: ctx.mover, dice: dice).findMoves()
+        let legal = config.variant.legalMoves(on: board, color: ctx.mover, dice: dice)
         guard !legal.isEmpty,
               let scores = try? agent.evaluateMovesNply(
                   board, legal, color: ctx.mover, depth: depth,
@@ -400,7 +406,8 @@ public enum GameReview {
     /// real choice, not mislabeled "forced".
     public static func cachedResult(record: GameRecord,
                                     analysis: [AnalysisEntry],
-                                    config: GameConfig = .standard) -> GameReviewResult {
+                                    config: GameConfig? = nil) -> GameReviewResult {
+        let config = config ?? GameConfig(variantID: record.variantID)
         // Replaying with `includeOpponent` captures both sides, so an analysis that
         // annotated the opponent's plies (#132) rebuilds in full too.
         let contexts = replayContexts(record: record, humanColor: record.aiColor?.opponent ?? .white,
@@ -431,7 +438,7 @@ public enum GameReview {
         }
         let dice = Dice(numberOfSides: config.dieSides)
         dice.set(ctx.die1, ctx.die2)
-        return PossibleMoves(board: board, color: ctx.mover, dice: dice).findMoves().count
+        return config.variant.legalMoves(on: board, color: ctx.mover, dice: dice).count
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────
@@ -509,9 +516,9 @@ public extension Agent {
                         move pairs: [[Int]],
                         mover: Color,
                         depth: Int = 2,
-                        config: GameConfig = .standard,
+                        config: GameConfig? = nil,
                         searchConfig: SearchConfig = .standard) throws -> Float {
-        let board = GameBoard(config: config)
+        let board = GameBoard(config: config ?? GameConfig(variant: variant))
         for (i, pieces) in boardStacks.enumerated() where i < board.points.count {
             board.setPoint(i, pieces: pieces)
         }
