@@ -27,3 +27,4 @@ tournament_full.log
 test_trained_model.pth
 test_training_state.json
 models/seed_pool*
+plateau_state_*.json

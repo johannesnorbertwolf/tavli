@@ -212,6 +212,17 @@ elif [ "$1" == "rollout-lab" ]; then
     else
         $RUNNER nix-shell --run "python3 main.py rollout-lab $*"
     fi
+elif [ "$1" == "plateau" ] || [ "$1" == "plateau-status" ]; then
+    # Unattended train-until-plateau driver (resumable; state in plateau_state_<variant>.json).
+    RUNNER=""
+    if [ "$1" == "plateau" ] && command -v caffeinate >/dev/null 2>&1; then
+        RUNNER="caffeinate -dimsu"
+    fi
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $RUNNER $PY_RUNNER main.py "$1"
+    else
+        $RUNNER nix-shell --run "python3 main.py $1"
+    fi
 elif [ "$1" == "human-stats" ]; then
     if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
         $PY_RUNNER main.py human-stats
@@ -248,6 +259,6 @@ elif [ "$1" == "tournament" ]; then
     fi
 else
     echo "Invalid argument: $1"
-    echo "Usage: ./run.sh [--config PATH] [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]|tournament [num_runs] [seed]]"
+    echo "Usage: ./run.sh [--config PATH] [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]|tournament [num_runs] [seed]|plateau|plateau-status]"
     exit 1
 fi

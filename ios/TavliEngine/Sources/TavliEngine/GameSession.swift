@@ -243,7 +243,8 @@ public final class GameSession: ObservableObject {
         let game = Game(config: config, startingPlayer: startingPlayer)
         self.game = game
         self.agent = agent
-        self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor)
+        self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor,
+                                 variantID: config.variant.id)
         self.searchConfig = searchConfig
         self.animationTimings = animationTimings
         self.manualDiceEntry = manualDiceEntry
@@ -285,11 +286,15 @@ public final class GameSession: ObservableObject {
     /// Prefers a pre-compiled `.mlmodelc`, but the model ships as a `.mlpackage`
     /// under Copy Bundle Resources (xcodegen copies it verbatim rather than running
     /// the Core ML compiler), so we compile it at launch — the same path the tests use.
-    public static func makeAgent() -> Agent? {
+    ///
+    /// The model is the one named by `config.variant.modelResourceName` (#136), wrapped
+    /// with that variant's encoder and rules.
+    public static func makeAgent(config: GameConfig = .standard) -> Agent? {
+        let name = config.variant.modelResourceName
         let compiledURL: URL?
-        if let c = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlmodelc") {
+        if let c = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
             compiledURL = c
-        } else if let pkg = Bundle.main.url(forResource: "PlakotoValue", withExtension: "mlpackage") {
+        } else if let pkg = Bundle.main.url(forResource: name, withExtension: "mlpackage") {
             compiledURL = try? MLModel.compileModel(at: pkg)
         } else {
             compiledURL = nil
@@ -297,7 +302,7 @@ public final class GameSession: ObservableObject {
         guard let compiledURL, let model = try? MLModel(contentsOf: compiledURL) else {
             return nil
         }
-        return Agent(model: model, encoder: BoardEncoder(config: .standard))
+        return Agent(model: model, config: config)
     }
 
     /// Kick off the first move. If the AI owns the turn it thinks immediately;
@@ -367,7 +372,7 @@ public final class GameSession: ObservableObject {
             let hm = HalfMove(from: game.board.points[hop.from.position],
                               to: game.board.points[hop.to.position],
                               color: game.currentPlayer)
-            game.board.applyHalfMove(hm)
+            game.variant.applyHalfMove(hm, on: game.board)
             complete = moveBuilder.commit(halfMove: hm)
         }
         clearSelection()
@@ -384,7 +389,7 @@ public final class GameSession: ObservableObject {
     /// For stepping back a whole decision see `undoLastDecision()`.
     public func undo() {
         guard isUndoablePhase, let last = moveBuilder.built.last else { return }
-        game.board.undoHalfMove(last)
+        game.variant.undoHalfMove(last, on: game.board)
         moveBuilder.undo()
         clearSelection()
         refreshSources()
@@ -427,7 +432,7 @@ public final class GameSession: ObservableObject {
         } else if let popped = undoHistory.popLast() {
             if !record.plies.isEmpty { record.plies.removeLast() }
             pruneStaleAnalysis()   // drop in-play analysis (#146) of the popped ply
-            if let move = popped.move { game.board.undo(move) }
+            if let move = popped.move { game.variant.undo(move, on: game.board) }
             enterManualRoll(for: popped.mover)
         }
     }
@@ -470,7 +475,7 @@ public final class GameSession: ObservableObject {
                 legalMoves = []
                 onMoveAttempt(move)
             } else {
-                for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+                for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
                 onMoveAttempt(move)
                 beginTurn()   // recompute legal moves at the same dice → back to .picking
             }
@@ -485,7 +490,7 @@ public final class GameSession: ObservableObject {
     /// dice, so the player can try again. No-op when nothing is held.
     public func retryAttempt() {
         guard let move = heldAttempt else { return }
-        for hm in move.halfMoves.reversed() { game.board.undoHalfMove(hm) }
+        for hm in move.halfMoves.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
         heldAttempt = nil
         beginTurn()   // back to .picking at the same position/dice
     }
@@ -498,7 +503,7 @@ public final class GameSession: ObservableObject {
     public func surrender() {
         guard canSurrender, let aiColor else { return }
         cancelHumanAnalysis()
-        for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+        for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
         selectableSources = []
@@ -523,10 +528,11 @@ public final class GameSession: ObservableObject {
         humanDiceRolling = false
         cancelHumanAnalysis()
         analysisByPly = [:]
-        game.board.initializeBoard()
+        game.variant.setUpInitialPosition(on: game.board)
         game.dice.set(1, 1)
         game.setPlayer(startingPlayer)
-        record = GameRecord(startingPlayer: startingPlayer, aiColor: record.aiColor)
+        record = GameRecord(startingPlayer: startingPlayer, aiColor: record.aiColor,
+                            variantID: record.variantID)
         legalMoves = []
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
@@ -542,11 +548,7 @@ public final class GameSession: ObservableObject {
     // ── Internal transitions ──────────────────────────────────────────────────
 
     private func beginTurn() {
-        legalMoves = PossibleMoves(
-            board: game.board,
-            color: game.currentPlayer,
-            dice: game.dice
-        ).findMoves()
+        legalMoves = game.variant.legalMoves(on: game.board, color: game.currentPlayer, dice: game.dice)
 
         guard !legalMoves.isEmpty else {
             // Forced pass: no legal moves, advance the turn.
@@ -666,7 +668,7 @@ public final class GameSession: ObservableObject {
         guard isUndoablePhase, let target = lastDecisionIndex() else { return }
 
         // Discard any half-moves built this turn but not yet recorded.
-        for hm in moveBuilder.built.reversed() { game.board.undoHalfMove(hm) }
+        for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
 
         let restoredColor = undoHistory[target].mover
         let (d1, d2) = undoHistory[target].dice
@@ -683,7 +685,7 @@ public final class GameSession: ObservableObject {
 
         while undoHistory.count > target {
             let popped = undoHistory.removeLast()
-            if let move = popped.move { game.board.undo(move) }
+            if let move = popped.move { game.variant.undo(move, on: game.board) }
         }
         // Keep record.plies in sync with undoHistory (both track one entry per turn).
         record.plies = Array(record.plies.prefix(target))
@@ -753,11 +755,7 @@ public final class GameSession: ObservableObject {
     /// the AI's dice in manual mode (#110) — those are already shown, so we skip
     /// straight to the move animation.
     private func playAITurn(animateDiceRoll: Bool) {
-        legalMoves = PossibleMoves(
-            board: game.board,
-            color: game.currentPlayer,
-            dice: game.dice
-        ).findMoves()
+        legalMoves = game.variant.legalMoves(on: game.board, color: game.currentPlayer, dice: game.dice)
 
         let timings = animationTimings
         let epoch = aiTurnEpoch
@@ -819,7 +817,7 @@ public final class GameSession: ObservableObject {
             copyBoard.restoreStacks(stacks)
             let dice = Dice(numberOfSides: config.dieSides)
             dice.set(d1, d2)
-            let copyMoves = PossibleMoves(board: copyBoard, color: color, dice: dice).findMoves()
+            let copyMoves = config.variant.legalMoves(on: copyBoard, color: color, dice: dice)
 
             // try? — a Core ML failure yields nil and a random fallback.
             let result = try? agent.getBestMove(
@@ -858,7 +856,7 @@ public final class GameSession: ObservableObject {
 
     private func applyAIMove(_ move: Move, score: Float?) {
         let mover = game.currentPlayer
-        game.board.apply(move)
+        game.variant.apply(move, on: game.board)
         recordTurn(mover: mover, move: move)
         captureMoveAnalysis(playedMove: move)
         if let score {
@@ -925,7 +923,7 @@ public final class GameSession: ObservableObject {
                                                 duration: timings.aiMoveAnimationDuration)
                 await Self.sleep(timings.aiMoveAnimationDuration)
                 guard let landed = live() else { return }
-                landed.game.board.applyHalfMove(hop)
+                landed.game.variant.applyHalfMove(hop, on: landed.game.board)
                 landed.moveBuilder.commit(halfMove: hop)
                 landed.aiHopInFlight = nil
             }
@@ -977,7 +975,7 @@ public final class GameSession: ObservableObject {
 
         game.dice.set(ply.die1, ply.die2)
         let mover = game.currentPlayer
-        let legal = PossibleMoves(board: game.board, color: mover, dice: game.dice).findMoves()
+        let legal = game.variant.legalMoves(on: game.board, color: mover, dice: game.dice)
 
         // Forced pass: legal only when the mover genuinely has no move.
         if ply.halfMoves.isEmpty {
@@ -1002,7 +1000,7 @@ public final class GameSession: ObservableObject {
             animateAITurn(move: move, score: nil, diceRollStarted: Date(),
                           rollDuration: 0, epoch: aiTurnEpoch)
         } else {
-            game.board.apply(move)
+            game.variant.apply(move, on: game.board)
             recordTurn(mover: mover, move: move)
             finishTurn()
         }
@@ -1031,12 +1029,12 @@ public final class GameSession: ObservableObject {
     /// left exactly as found regardless of which branch matches.
     private func isLegalOutcome(_ move: Move, among legal: [Move]) -> Bool {
         let before = game.board.captureStacks()
-        game.board.apply(move)
+        game.variant.apply(move, on: game.board)
         let target = game.board.captureStacks()
         game.board.restoreStacks(before)
 
         for candidate in legal {
-            game.board.apply(candidate)
+            game.variant.apply(candidate, on: game.board)
             let outcome = game.board.captureStacks()
             game.board.restoreStacks(before)
             if outcome == target { return true }
@@ -1108,7 +1106,7 @@ public final class GameSession: ObservableObject {
             dice.set(d1, d2)
             // Move generation is deterministic, so this copy's moves match the live
             // `legalMoves` index-for-index — the score at index i grades `legalMoves[i]`.
-            let copyMoves = PossibleMoves(board: board, color: color, dice: dice).findMoves()
+            let copyMoves = config.variant.legalMoves(on: board, color: color, dice: dice)
             let scores = try? agent.evaluateMovesNply(
                 board, copyMoves, color: color, depth: 2,
                 beamThreshold: search.beamThreshold, relativeCutoff: search.relativeCutoff,
@@ -1194,7 +1192,9 @@ public final class GameSession: ObservableObject {
                              die1: Int, die2: Int,
                              mover: Color,
                              agent: Agent? = nil,
-                             config: GameConfig = .standard) -> GameSession {
+                             config: GameConfig? = nil) -> GameSession {
+        // Default to the agent's variant (#136), else Plakoto.
+        let config = config ?? agent.map { GameConfig(variant: $0.variant) } ?? .standard
         let session = GameSession(startingPlayer: mover, config: config, agent: agent, aiColor: nil)
         for i in session.game.board.points.indices where i < boardStacks.count {
             session.game.board.setPoint(i, pieces: boardStacks[i])
@@ -1209,8 +1209,9 @@ public final class GameSession: ObservableObject {
     /// position. The returned session sits at the resumed player's `awaitingRoll`
     /// (or `gameOver` if the recorded game already ended). Call `start()` afterward
     /// — exactly as for a new game — so the AI takes its turn if it owns the move.
+    /// `config` defaults to the save's own variant (#136; Plakoto for pre-variant saves).
     public static func resume(from save: GameSave,
-                              config: GameConfig = .standard,
+                              config: GameConfig? = nil,
                               agent: Agent? = nil,
                               searchConfig: SearchConfig = .standard,
                               animationTimings: AnimationTimings = .standard,
@@ -1220,7 +1221,7 @@ public final class GameSession: ObservableObject {
         let starting = Color(rawValue: save.startingPlayer) ?? .black
         let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
         let session = GameSession(startingPlayer: starting,
-                                  config: config,
+                                  config: config ?? GameConfig(variantID: save.variant),
                                   agent: agent,
                                   aiColor: aiColor,
                                   searchConfig: searchConfig,
@@ -1233,8 +1234,8 @@ public final class GameSession: ObservableObject {
     }
 
     /// Apply each recorded half-move directly to the board, alternating the mover
-    /// every ply (a pass still passes the turn). Mirrors `applyHalfMove`
-    /// (`from.pop()` / `to.push(mover)`) without re-deriving legal moves, so the
+    /// every ply (a pass still passes the turn). Uses the variant's `applyHalfMove`
+    /// without re-deriving legal moves, so the
     /// reconstruction is exact and independent of the bundled model. `undoHistory`
     /// is left empty after replay — Move objects cannot be reconstructed from saved
     /// indices, so decision-point undo is unavailable until the first new move.
@@ -1250,8 +1251,9 @@ public final class GameSession: ObservableObject {
             for pair in ply.halfMoves where pair.count == 2 {
                 let from = pair[0], to = pair[1]
                 guard (0...upper).contains(from), (0...upper).contains(to) else { continue }
-                board.points[from].pop()
-                board.points[to].push(mover)
+                game.variant.applyHalfMove(
+                    HalfMove(from: board.points[from], to: board.points[to], color: mover),
+                    on: board)
             }
             record.plies.append(ply)
             if game.isOver() { break }
