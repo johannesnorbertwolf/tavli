@@ -9,6 +9,8 @@ or modifying anything here.
 | `agent.py` | Inference interface (`Agent`) over evaluator + encoder; 1/2/N-ply expectimax search with branch pruning and time-budget iterative deepening. Never updates weights. Also `RandomAgent`. |
 | `board_encoder.py` | `BoardEncoder` → flat float32 vector, always from the current player's perspective (board flip). Three checkpoint-tagged versions; current `unary_v3` (486-dim, +18 smart features). |
 | `portes_encoder.py` | `PortesEncoder` (`portes_v1`, 414 floats) for the Portes variant: mover-perspective points (owner bit + 15 unary), bars, borne-off, 18 smart features. |
+| `plakoto_std_encoder.py` | `PlakotoStdEncoder` (`plakoto_std_v1`, 494-dim) for `plakoto_standard`: the unchanged `unary_v3` vector + 8 mother/start/borne-off features. |
+| `fevga_encoder.py` | `FevgaEncoder` (`fevga_v1`, 406-dim) for Fevga, in the mover's path coordinates (colour swap = rotation by 12; a position and its colour-swapped twin encode identically). |
 | `board_evaluator.py` | `BoardEvaluator` MLP → win prob ∈ [0,1]. `forward` (sigmoid) vs `forward_logits` (raw). |
 | `checkpoint_io.py` | Save/load checkpoints (format_version=2, with Adam state, `variant` tag). Encoder-version + legacy-layer-name back-compat; `check_checkpoint_variant` / `VariantMismatchError`. |
 | `bearoff.py` | Exact race equity: one-sided bear-off database (`BearoffDB`, DP over dice outcomes, disk-cached npz) + exact-race detector (`race_state`) + `exact_value_on_roll`. Replaces net evals and TD targets with ground truth in pure races. |
@@ -20,6 +22,7 @@ or modifying anything here.
 | `evaluator.py` | Older vs-random eval helper (`AIEvaluator`); likely vestigial. |
 | `lookahead_eval.py` | Parallel harness: flexible search vs fixed 2-ply (gold self-play) to validate deeper search. |
 | `paired_eval.py` | Variance-reduced head-to-head (`main.py eval-paired A B [pairs]`): plays each trial twice on the SAME seeded dice (A-White-vs-B and B-White-vs-A), cancelling dice luck + first-mover edge. Paired one-sided z-test on `d_k∈{-1,0,+1}`; far more power per game for near-identical models. Self-comparison ⇒ all `d_k=0`. |
+| `plateau_driver.py` | Unattended train-until-plateau driver (`main.py plateau` / `plateau-status`): rounds of train subprocess + paired eval vs a self-built ladder `models/<variant>_gold_vK.pth` (bootstraps v1 vs random), promotes on z≥2 & ≥52%, stops when the pooled non-promotion streak's edge UCB < +1.5pp; staged config overrides; resumable JSON state. |
 
 ## Conventions / gotchas
 

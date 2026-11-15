@@ -64,6 +64,9 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// Maps each participant's `gamePlayerID` to the colour they play, carried in the
     /// payload so each device computes its own side independent of turn order.
     private var colorByPlayerID: [String: TavliEngine.Color] = [:]
+    /// `GameVariant.id` of the match's rules (#136), carried in every payload. New
+    /// matches are Plakoto; an opened match takes the payload's.
+    private var variantID = GameVariants.defaultID
     /// Full ply logs + winners for the match's finished games, in order — the history
     /// re-sent in every payload so reconnection stays exact.
     private var completedGameLogs: [GameLog] = []
@@ -160,6 +163,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         session = nil
         match = nil
         colorByPlayerID = [:]
+        variantID = GameVariants.defaultID
         completedGameLogs = []
         syncedGameIndex = 0
         syncedPlyCount = 0
@@ -235,6 +239,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// observing local turns. A decided match is shown at its last game.
     private func openFresh(_ match: GKTurnBasedMatch, _ payload: OnlineMatchPayload) {
         colorByPlayerID = payload.colorByPlayerID.compactMapValues(TavliEngine.Color.init(rawValue:))
+        variantID = payload.variant
         localColor = payload.color(forPlayerID: localPlayerID) ?? .white
         opponentName = match.participants
             .first { $0.player?.gamePlayerID != localPlayerID }?
@@ -279,7 +284,8 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         let payload = OnlineMatchPayload(targetWins: targetWins,
                                          startingPlayer: .white,
                                          colorByPlayerID: colors,
-                                         games: [GameLog()])
+                                         games: [GameLog()],
+                                         variant: variantID)
         guard let data = try? payload.encoded() else { return }
         // Persist the colours WITHOUT ending the turn — we move first.
         match.saveCurrentTurn(withMatch: data) { _ in }
@@ -302,7 +308,8 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// advance path, where the next game's log is created empty.
     private func startEmptyGame(index: Int, starter: TavliEngine.Color) {
         let save = GameSave(name: "Online match", savedAt: Date(),
-                            startingPlayer: starter.rawValue, aiColor: nil, history: [])
+                            startingPlayer: starter.rawValue, aiColor: nil, history: [],
+                            variant: variantID)
         let next = GameSession.resume(from: save, animationTimings: .standard)
         self.session = next
         syncedGameIndex = index
@@ -409,7 +416,8 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         OnlineMatchPayload(targetWins: matchState.targetWins,
                            startingPlayer: matchState.baseStartingPlayer,
                            colorByPlayerID: colorByPlayerID,
-                           games: games)
+                           games: games,
+                           variant: variantID)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────

@@ -10,6 +10,10 @@ public final class GameBoard: CustomStringConvertible {
     public var boardSize: Int { config.boardSize }
     public var homeSize: Int { config.homeSize }
     public var numberOfPieces: Int { config.piecesPerPlayer }
+    /// The rules this board is played under (#136). The stack-of-colours container is
+    /// variant-neutral; the Plakoto-specific helpers below (`initializeBoard`,
+    /// `apply`/`undo`, `hasWon`, …) are reached by shared code only via `PlakotoVariant`.
+    public var variant: any GameVariant { config.variant }
 
     public init(config: GameConfig = .standard) {
         self.config = config

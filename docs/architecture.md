@@ -33,6 +33,12 @@ it. `ruleset.legal_moves` is bound as a `staticmethod` to the generator, so the 
 an attribute lookup. Bear-off DB code runs only when `supports_bearoff_db` (else `bearoff=None`).
 Seed-pool and race-calibration are Plakoto-only and refuse other variants.
 
+**Fevga** (#138, spec `docs/variants/fevga.md`): `FevgaRules` (`domain/fevga_rules.py`, `"fevga"`)
+over `FevgaBoard` (`domain/fevga_board.py`). Physical slots, both colours run the same way round
+(Black path = slots 13…24,1…12, bears off to slot 0), so `dst = src + color*die` does not hold for
+Black. Encoder `fevga_v1` (`ai/fevga_encoder.py`, 406 inputs, mover's path coordinates). No bear-off
+DB; mars = 2 points; random starter. Config `config/config-fevga.yml`.
+
 **Per-run config.** `main.py --config PATH` (anywhere on the command line), `$TAVLI_CONFIG`, or
 `./run.sh --config PATH <cmd>` pick the config file (default `config/config.yml`). Each config
 carries its own `model_save_path`, `training_state_path`, `gold_eval_log_path`,

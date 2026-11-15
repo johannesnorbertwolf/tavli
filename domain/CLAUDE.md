@@ -37,6 +37,42 @@ Module helper `score_for(outcome, color) -> (win_credit 1/0.5/0, signed_points)`
     bear-off only all-home, larger die only from the highest point. Two-dice single-checker plays are
     two halves (never merged). Tests cross-check it against a brute-force reference.
 
+## plakoto_standard_*.py — standard (bkgm) Plakoto, `"plakoto_standard"` (#139)
+
+Spec + diff vs the house rules: `docs/variants/plakoto-standard.md` (all DECISIONs implemented as
+recommended). Config: `config/config-plakoto-standard.yml`. Encoder `plakoto_std_v1` (ai/REFERENCE.md).
+
+- `plakoto_standard_board.py` — `StandardPlakotoBoard(Board)`: same state/apply/undo; overrides
+  `has_won`/`clone`, adds `mother_pinned(c)`, `checkers_on_start(c)`, `mother_win(c)`, `is_draw()`,
+  `is_over()`, `outcome() -> (winner|None, points)`. Both mothers pinned = draw (0); mother pinned and the
+  pinner's own start empty = 2-point win (otherwise play continues); bear-off win = 1, or 2 if the loser
+  has borne off none. Pure functions of the position (= "checked after every complete move").
+- `plakoto_standard_moves.py` — independent generator: brute force over half-move sequences on local
+  arrays in mover-perspective coordinates; only max-dice plays; single playable die ⇒ the larger;
+  larger-die bear-off only from the highest occupied point (own pinned checkers count; any own checker
+  pinned outside home forbids bear-off). Doubles enumerate sources in movement order (any legal multiset
+  is legal in that order). Non-doubles de-duplicate the two die orders; one checker's net movement ⇒
+  merged single half (also `q→p, p→t` ⇒ `q→t`). Bear-off notation `(src, off)` even when the die overshoots.
+- `plakoto_standard_rules.py` — `StandardPlakotoRules`: `max_points=2`, `random_starting_player=True`,
+  `supports_bearoff_db=False` (DB assumes exact-die bear-off), `is_over`/`outcome` overrides.
+- Tests: `tests/domain/test_plakoto_standard.py` pins every spec example under both engines and fuzzes
+  the generator against a brute-force reference (`apply_half` on a clone) and the current engine.
+## fevga_board.py / fevga_rules.py — Fevga (#138, spec `docs/variants/fevga.md`)
+
+- `FevgaBoard`: physical slots like `Board` (`n`, `color`, `borne_off`; `pinned` is an all-False
+  compat list). White path = slots 1..24 → off 25; Black path = 13..24,1..12 → off **0**.
+  `SLOT_OF[c][p]` / `PATH_OF[c][s]` convert slot ↔ per-colour path index (25 = off). One colour per
+  point; undo token is just `(move, color)` (no hitting ⇒ moving back is exact). `has_won` = all off.
+- `fevga_legal_moves` (bound as `FevgaRules.legal_moves`): DFS over play sequences in the mover's
+  path coordinates with transposition pruning (additive position hash), recording **every prefix**;
+  drops R1 (own path 1–6 all held) / R2 (six-run consecutive in the opponent's path with no opponent
+  checker ahead, none borne off) end positions, then keeps most-dice plays and the larger-die rule.
+  First-checker lock (unlocked at path ≥ 14 or any off) is checked per half-move. One `Move` per
+  distinct resulting position; non-double one-checker plays merge into one half, doubles list steps.
+- `FevgaRules`: `max_points = 2` (mars when loser bore off none), `random_starting_player = True`,
+  `supports_bearoff_db = False`, encoder `fevga_v1`. Tests: `tests/domain/test_fevga.py` (spec
+  examples F1–F10 + a slow spec-literal reference generator cross-check).
+
 ---
 
 ## constants.py

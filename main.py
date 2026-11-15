@@ -1141,6 +1141,12 @@ def main():
                 print("Invalid x. Please provide a positive integer.")
                 return
         generate_human_progress_graph(last_x=last_x)
+    elif mode == 'plateau':  # unattended train-until-plateau driver (ai/plateau_driver.py)
+        from ai.plateau_driver import run_driver
+        sys.exit(run_driver(config.config_file))
+    elif mode == 'plateau-status':
+        from ai.plateau_driver import format_status
+        print(format_status(config.config_file))
     elif mode == 'tournament':
         from tournaments.tournament_cli import run_tournament_cli
         run_tournament_cli(config, sys.argv[2:])

@@ -86,3 +86,26 @@ play:
   eval_lookahead_plies: 4       # Default lookahead depth for ranked moves
   drill_correct_floor: 0.01     # Absolute floor for drill "correct" threshold (1 pp)
   drill_correct_relative: 0.03  # Fraction of best_score for drill "correct" threshold (3%)
+
+# Unattended train-until-plateau driver (`./run.sh --config CFG plateau`, ai/plateau_driver.py).
+# Defaults shown; uncomment in a variant config to override. Ladder snapshots go to
+# models/<variant>_gold_vK.pth; state in plateau_state_<variant>.json; log in
+# training_runs/plateau_<variant>.log; per-stage derived configs in training_runs/plateau_<variant>/.
+# plateau:
+#   round_games: 20000            # self-play games per round (one `train` subprocess)
+#   eval_pairs: 2000              # paired duplicate-dice trials (2 games each) vs ladder top per round
+#   patience: 4                   # non-promoting rounds before a plateau can be declared
+#   min_edge: 0.015               # plateau iff pooled one-sided UCB on (win rate - 0.5) < +1.5pp
+#   plateau_ucb_z: 1.645          # UCB = pooled edge + this * SE (95% one-sided)
+#   promote_z: 2.0                # paired one-sided z needed to promote a new rung ...
+#   promote_min_winrate: 0.52     # ... and at least this win rate vs the current top
+#   max_rounds: 200               # per stage; a stage that never plateaus ends here
+#   random_eval_pairs: 500        # bootstrap eval vs random before _gold_v1 exists (1000 games)
+#   random_promote_winrate: 0.90  # promote _gold_v1 once win rate vs random >= this
+#   final_random_eval_pairs: 500  # final model vs random after the last stage (0 = skip)
+#   max_retries: 1                # retries per failed train/eval subprocess, then status FAILED
+#   eval_workers: null            # null = num_self_play_workers
+#   stages:                       # [] = single stage; a plateau ends a stage, the last one ends the run
+#     - {name: d1, overrides: {bootstrap_depth: 1, learning_rate: 1.0e-4}}
+#     - {name: lr-drop, overrides: {learning_rate: 3.0e-5}}
+#     - {name: d2, overrides: {bootstrap_depth: 2}}

@@ -98,6 +98,43 @@ float32, always from the mover's perspective (Black is mirrored: White slot `i` 
 
 ---
 
+## plakoto_std_encoder.py
+
+`PlakotoStdEncoder(config)` — version `PLAKOTO_STD_V1 = "plakoto_std_v1"`, the default encoder of the `plakoto_standard` variant (`StandardPlakotoRules.make_encoder`; any other version string falls through to `BoardEncoder`). It composes an unmodified `BoardEncoder(config, UNARY_V3)`: output `[0 .. 485]` is exactly the `unary_v3` vector, followed by 8 features (current player's perspective; a side's "start" is its own starting slot, White 1 / Black `board_size`). **`input_size` = 486 + 8 = 494.**
+
+| Index | Feature | Value |
+|---|---|---|
+| 486 / 487 | our / their mother still on start (≥1 own checker on own start, pinned or not) | 0/1 |
+| 488 / 489 | our / their mother pinned (opponent owns that start slot with the checker under it) | 0/1 |
+| 490 / 491 | our / their checkers on own start | `/ pieces_per_player` |
+| 492 / 493 | we / they have borne off ≥ 1 (safe from a bear-off double loss) | 0/1 |
+
+Mirror-symmetric like `unary_v3` (colour-swapped reflected board, other side to move ⇒ identical vector). ~1µs over `unary_v3` (one extra alloc + copy).
+## fevga_encoder.py
+
+`FevgaEncoder(config, version="fevga_v1")` encodes a `FevgaBoard` (24 points, 6-point homes only) from the mover's perspective, indexed by the **mover's path index** p = 1..24 (White p = slot; Black p = slot−12 / slot+12). The colour flip is therefore a rotation by 12, and a position and its colour-swapped twin (colours exchanged, every checker moved to the same path index of the other colour, borne-off swapped) give identical vectors (unit-tested). `input_size = 24·(1+P) + 2 + 20` = **406** for P = 15 checkers; float32, all values in [0, 1]; ~20µs per call.
+
+| Index | Content |
+|---|---|
+| `(p−1)·16 + 0` | owner bit of mover path point p: 0 = ours/empty, 1 = theirs |
+| `(p−1)·16 + 1..15` | unary count of the checkers on p |
+| 384 / 385 | our / their borne-off `/ P` |
+| 386 + 0 / 1 | our / their pip count (remaining path distance, Σ 25−p) `/ (24·P)` |
+| 386 + 2 | pip difference `0.5 + (ours − theirs)/(2·24·P)` |
+| 386 + 3 / 4 | our / their checkers still on the start point (path 1) `/ P` |
+| 386 + 5 / 6 | our / their unlocked flag (checker at own path ≥ 14 or borne off) |
+| 386 + 7 / 8 | our / their number of held points `/ P` |
+| 386 + 9 / 10 | our / their longest run of held points consecutive in the **opponent's** path, `min(run,6)/6` |
+| 386 + 11 / 12 | same, restricted to the part of the opponent's path in front of the opponent's rearmost checker |
+| 386 + 13 / 14 | opponent-held points among the 6 / 12 points ahead of our rearmost checker, `/6` / `/12` |
+| 386 + 15 / 16 | the same for them (our held points ahead of their rearmost checker) |
+| 386 + 17 / 18 | our / their checkers in the final quadrant (path 19–24) `/ P` |
+| 386 + 19 | race flag: 1 iff neither side has an opposing checker ahead of its rearmost checker |
+
+Per-side features are computed by one helper applied to (ours in our path, theirs in our path) and to the rotated pair, which is what makes the symmetry exact. `RuleSet.make_encoder` for `fevga` returns this class; unknown versions raise `ValueError`.
+
+---
+
 ## board_evaluator.py
 
 ### Auxiliary heads (#106)
@@ -294,3 +331,21 @@ Each *pair* k uses one seed `s_k`. The same seed is set (`random.seed`/`np.rando
 - o2: White=B, Black=A → winner2 (A won iff winner2==BLACK)
 
 with `a_wins_k = [A won o1] + [A won o2] ∈ {0,1,2}` and `d_k = a_wins_k − 1 ∈ {−1,0,+1}`. Sharing the dice cancels luck and playing both sides cancels the ~3pp first-mover edge, so a pair is decided only where the two models actually *disagree*; for near-identical models most pairs cancel to `d_k=0` and the estimator's variance collapses. The test is one-sided on `mean(d_k)`: `z = mean(d_k)·√n / std(d_k)`, significant at p<0.05 iff `z > 1.645`. The win-rate identity `rate = 0.5 + mean(d_k)/2` makes the result comparable to a plain head-to-head percentage. **Invariant** (and unit test): A vs itself yields `d_k = 0` for every pair, since the two orientations are byte-identical deterministic games. `run_pairs(agent_a, agent_b, config, seeds, lookahead)` is the single-process core (tested directly); `_worker` loads both checkpoints once per spawn process and streams `(d_k, a_wins_k)` to the parent, which prints a live block (running rate, z, decisive ±/tie counts, variance-reduction factor) and a final summary. Bear-off DB stays on (deployment-realistic); races are then identical for both models and cancel automatically.
+
+## plateau_driver.py
+
+Unattended "train until plateau" driver for training a variant from scratch with no reference model and nobody watching (#140–#142). Start/resume: `./run.sh --config config/config-<variant>.yml plateau` (caffeinate-wrapped; same as `main.py --config CFG plateau`). Poll: `main.py --config CFG plateau-status`. Settings: the `plateau:` section of the variant config (defaults documented as a commented block at the end of `config/config.yml`, and in `DEFAULTS`).
+
+**Round loop.** Each round (1) writes a derived config `training_runs/plateau_<variant>/stage<N>_config.yml` = user yml + current stage's `overrides` + `gold_model_path: <ladder top>` (or `eval_against_gold: false` before a ladder exists) — the user's yml is never edited; (2) runs `main.py --config <derived> train ceil(round_games / games_per_epoch)` as a subprocess (stdout appended to `training_log_path`; resumes from the config's model/state paths like any train run); (3) runs a paired duplicate-dice eval subprocess (`python -m ai.plateau_driver _eval …` → `paired_eval.evaluate_paired`, summary written as JSON) of `model_save_path` vs the ladder top, `eval_pairs` pairs, base seed `round·1000003`. Before a ladder exists the opponent is a random mover (own RNG so the shared dice stream stays paired; `run_pairs` in spawn workers), `random_eval_pairs` pairs.
+
+**Decisions** (pure functions `decide` / `should_promote` / `plateau_check` / `pool_results`, unit-tested):
+- *Bootstrap:* no `<variant>_gold_v*.pth` yet → promote `_gold_v1` once rate vs random ≥ `random_promote_winrate` (0.90). That rate (and its game count) is recorded per round as `vs_random`.
+- *Promotion:* paired one-sided `z ≥ promote_z` (2.0) **and** `rate ≥ promote_min_winrate` (0.52) → copy the model to `_gold_v{K+1}` (K = highest version on disk; `open(…, "xb")`, never overwrites) and reset the streak. Later evals and the trainer's own gold eval point at the new top via the derived config.
+- *Plateau:* every non-promoting round vs the top joins the streak. The streak's per-round summaries are pooled exactly via sufficient statistics (`n`, `Σd`, `Σd²` reconstructed from `num_pairs`, `mean_d`, `std_d`), giving pooled edge `= mean(d)/2` (win-rate minus 0.5) and `SE = std(d)/√n / 2`. Plateau iff `len(streak) ≥ patience` (4) **and** `edge + plateau_ucb_z·SE < min_edge` (1.645, +1.5pp). So the stop requires power: with few pairs the UCB stays wide and the run continues; the streak keeps growing (and gaining power) until the bound clears or a promotion resets it. Between-round differences in the candidates inflate the pooled variance (conservative). A stage also ends at `max_rounds` rounds (200) without a plateau.
+- *Stages:* `stages: [{name, overrides}]` (empty → one stage). A stage end advances to the next stage (ladder kept, streak reset); the last stage's end finishes the run, then the final model is measured vs random over `final_random_eval_pairs` pairs and a verdict line is written.
+
+**State / resume.** Everything lives in `plateau_state_<variant>.json` (atomic writes): `status` (running/finished/failed), `stage`, `round`, `stage_round`, `phase` (train → eval → decide → … → final → done), `ladder`, `streak`, `rounds` (per-round record: games, opponent, pairs, rate, z, mean_d, std_d, promoted/new_top, vs_random, pooled edge/UCB), `stage_results`, `games_played` (from the trainer's `training_state_path`), `pending` eval result, `verdict`, `error`. Killing the driver at any point and rerunning resumes the exact phase (a kill mid-train re-runs that round's training; mid-eval re-runs only the eval; a promotion's destination is fixed in state before copying). Snapshots found on disk but missing from state are adopted. Human-readable append-only log: `training_runs/plateau_<variant>.log` (one line per round + stage/verdict lines); subprocess eval output in `training_runs/plateau_<variant>/eval_output.log`.
+
+**Robustness.** A non-zero train/eval subprocess is retried `max_retries` (1) times, then `status: failed` with the error and exit 1 (never loops forever). Rerunning after FAILED resets the retry budget and resumes; rerunning after FINISHED prints the verdict and exits.
+
+**Fragile bits.** Pooling assumes `paired_eval.summarize`'s scale (`d_k ∈ {−1,0,1}`, `rate = 0.5 + mean_d/2`); if summaries move to points/draws, update `pool_results`. The random-opponent eval calls `paired_eval.run_pairs` with a duck-typed `get_best_move` mover. Promotion compares `model_save_path` (raw weights, not the EMA shadow).

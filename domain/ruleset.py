@@ -157,6 +157,8 @@ def _load_builtins() -> None:
         _BUILTINS_LOADED = True
         import domain.plakoto_rules  # noqa: F401  (registers "plakoto")
         import domain.portes_rules  # noqa: F401  (registers "portes")
+        import domain.plakoto_standard_rules  # noqa: F401  (registers "plakoto_standard")
+        import domain.fevga_rules  # noqa: F401  (registers "fevga")
 
 
 def get_ruleset(name: str) -> RuleSet:
