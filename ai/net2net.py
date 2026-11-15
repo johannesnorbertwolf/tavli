@@ -72,13 +72,15 @@ def expand_checkpoint(in_path, out_path, new_hidden_sizes, config,
                       noise_std=1e-3, seed=0):
     """Widen the net in a checkpoint and save it (without optimizer state).
     Returns (old_evaluator, new_evaluator) for verification."""
-    from ai.board_encoder import BoardEncoder
+    from ai.checkpoint_io import check_checkpoint_variant
 
     state_dict, meta = load_state_dict(in_path)
-    if meta["encoder_version"] != ENCODER_VERSION_CURRENT:
+    check_checkpoint_variant(meta, config, in_path)
+    ruleset = config.get_ruleset()
+    if meta["encoder_version"] != ruleset.default_encoder_version:
         raise ValueError(f"Refusing to expand a {meta['encoder_version']} checkpoint; "
-                         f"current encoder is {ENCODER_VERSION_CURRENT}")
-    encoder = BoardEncoder(config, version=meta["encoder_version"])
+                         f"current encoder is {ruleset.default_encoder_version}")
+    encoder = ruleset.make_encoder(config, version=meta["encoder_version"])
     old_eval = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"])
     old_eval.load_state_dict(state_dict)
     old_eval.eval()

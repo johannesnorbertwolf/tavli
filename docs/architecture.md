@@ -5,6 +5,33 @@ Deep architecture detail for the TD(λ) self-play training system. The root
 reimplementation-grade detail. Read it when working on training, encoding,
 checkpoints, eval, or the tournament system.
 
+## Game variants: the RuleSet seam (`domain/ruleset.py`, #136)
+
+Everything variant-specific sits behind a `RuleSet` (ABC, stateless singleton per variant):
+`name`, `initial_board(config)`, `legal_moves(board, color, dice)`, `has_won`, `is_open_for`,
+`result_points(board, winner)` (1 single / 2 double; currently ignored by training),
+`make_encoder(config, version=None)` + `default_encoder_version`, and `supports_bearoff_db`.
+Variants register by name (`register_ruleset`, `get_ruleset(name)`); `variant:` in the config
+selects one (`ConfigLoader.get_variant()` defaults to `plakoto`, `get_ruleset()` returns the instance).
+The only implementation today is `PlakotoRules` (`domain/plakoto_rules.py`), a thin wrapper over
+`Board` + `move_generation.legal_moves` — Plakoto behaviour is bit-identical.
+
+Each variant owns its board class; shared code relies only on the duck-typed contract
+`apply(move, color) -> token`, `undo(token)`, `clone()`, `has_won(color)`. `HalfMove`/`Move` are shared.
+Threading: `Game` derives `game.ruleset` from the config (`game.legal_moves()` convenience);
+`Agent(…, ruleset=)` caches `ruleset.legal_moves` for search; the trainer, workers (rebuild the
+ruleset from the config file they are handed), eval helpers, play and tournaments all go through
+it. `ruleset.legal_moves` is bound as a `staticmethod` to the generator, so the hot path pays only
+an attribute lookup. Bear-off DB code runs only when `supports_bearoff_db` (else `bearoff=None`).
+Seed-pool and race-calibration are Plakoto-only and refuse other variants.
+
+**Per-run config.** `main.py --config PATH` (anywhere on the command line), `$TAVLI_CONFIG`, or
+`./run.sh --config PATH <cmd>` pick the config file (default `config/config.yml`). Each config
+carries its own `model_save_path`, `training_state_path`, `gold_eval_log_path`,
+`training_log_path` (run.sh train tee target) and `last_game_log_path`, so several variant
+trainings can run side by side without clobbering each other. Subprocess workers receive
+`config.config_file`.
+
 ## Training loop (`ai/td_lambda_training.py`)
 
 Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
@@ -41,7 +68,7 @@ The encoder uses pre-allocated `np.zeros(..., dtype=float32)` with slice writes 
 
 ## Checkpoint backward compatibility (`ai/checkpoint_io.py`)
 
-Checkpoints store `encoder_version`, `hidden_sizes`, and `network_type`. Two things to know:
+Checkpoints store `variant`, `encoder_version`, `hidden_sizes`, and `network_type`. A checkpoint without `variant` (every pre-#136 file, all gold models) is `plakoto`. `load_agent_from_checkpoint()` builds the encoder via the checkpoint variant's `RuleSet` and raises `VariantMismatchError` if it differs from the config's `variant`; `main.py train` checks this before resuming so a mismatch aborts instead of starting fresh over the other variant's model. Other things to know:
 
 - All three encoder versions above are still loadable; gold_v1–v4 stay at `legacy_unary_v1` and gold_v5 at `unary_v2`. New checkpoints are saved as `unary_v3`.
 - **Legacy layer names**: old checkpoints use `fc1/fc2/fc3/fc4`; `_migrate_state_dict()` remaps these to `layers.0/1/2/3` on load automatically.
@@ -83,6 +110,8 @@ Future encoder optimization ideas (GPU fixed-features layer, incremental caching
 | `selfplay_league_opponents` | List of opponent checkpoint paths, sampled uniformly per league game (any encoder version — each loads its own agent) |
 | `aux_heads` | Auxiliary output heads (#106): 0 = off; 2 adds [P(game ends by pinning), final borne-off margin] as side targets sharing the trunk. Training-only — eval/play/Core ML use the main head; old checkpoints load with the head initialized fresh |
 | `aux_loss_weight` | Weight of the aux BCE term added to the main value loss |
+| `variant` | Game variant / RuleSet registry key (default `plakoto`); new checkpoints are tagged with it |
+| `gold_eval_log_path` / `training_log_path` / `last_game_log_path` | Per-run output paths (defaults `training_runs/eval_gold_history.log`, `training_log_td.txt`, `last_game_log.txt`) — give each variant config its own |
 | `model_save_path` | Live checkpoint path (default `trained_model.pth`); training resumes weights + Adam state from it. `config-test.yml` points it at a test-local file so tests never touch live artifacts |
 | `gold_model_path` | Reference model for eval |
 | `use_bearoff_db` | Exact race equity from the bear-off DB (`ai/bearoff.py`): replaces net evals at search leaves and TD bootstrap values/targets for pure-race states (no pins, all checkers home). `false` in `config-test.yml` to keep tests fast |
@@ -96,7 +125,7 @@ The `alpha`, `alpha_decay`, `alpha_decay_every`, `alpha_min` keys are deprecated
 
 ## Eval and logging
 
-Each eval run appends one line to `training_runs/eval_gold_history.log`:
+Each eval run appends one line to `gold_eval_log_path` (default `training_runs/eval_gold_history.log`):
 ```
 2026-05-01 17:00:58 epoch=100 games_per_color=100 white=0.04 black=0.02 avg=0.03
 ```

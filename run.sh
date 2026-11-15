@@ -1,8 +1,20 @@
 #!/bin/bash
 
+# Optional leading `--config PATH` selects the config file for this run (e.g. a
+# per-variant config with its own model / training-state / log paths). It is
+# exported as TAVLI_CONFIG, which main.py reads (same as `main.py --config PATH`).
+if [ "$1" == "--config" ]; then
+    if [ -z "$2" ]; then
+        echo "--config requires a path"
+        exit 1
+    fi
+    export TAVLI_CONFIG="$2"
+    shift 2
+fi
+
 # Check for a command-line argument
 if [ -z "$1" ]; then
-    echo "Usage: ./run.sh [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]]"
+    echo "Usage: ./run.sh [--config PATH] [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]]"
     exit 1
 fi
 
@@ -22,7 +34,10 @@ fi
 # Run the appropriate command
 if [ "$1" == "train" ]; then
     NUM_EPOCHS="$2"
-    echo "Starting AI training..."
+    # stdout tee target comes from the active config's training_log_path.
+    TRAIN_LOG=$(${PY_RUNNER%% *} -c "from config.config_loader import ConfigLoader, resolve_config_path; print(ConfigLoader(resolve_config_path()).get_training_log_path())" 2>/dev/null)
+    TRAIN_LOG="${TRAIN_LOG:-training_log_td.txt}"
+    echo "Starting AI training (config: ${TAVLI_CONFIG:-config/config.yml}, log: $TRAIN_LOG)..."
     if command -v caffeinate >/dev/null 2>&1; then
         RUNNER="caffeinate -dimsu"
     else
@@ -30,15 +45,15 @@ if [ "$1" == "train" ]; then
     fi
     if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
         if [ -n "$NUM_EPOCHS" ]; then
-            $RUNNER $PY_RUNNER main.py train "$NUM_EPOCHS" | tee training_log_td.txt
+            $RUNNER $PY_RUNNER main.py train "$NUM_EPOCHS" | tee "$TRAIN_LOG"
         else
-            $RUNNER $PY_RUNNER main.py train | tee training_log_td.txt
+            $RUNNER $PY_RUNNER main.py train | tee "$TRAIN_LOG"
         fi
     else
         if [ -n "$NUM_EPOCHS" ]; then
-            $RUNNER nix-shell --run "python3 main.py train $NUM_EPOCHS" | tee training_log_td.txt
+            $RUNNER nix-shell --run "python3 main.py train $NUM_EPOCHS" | tee "$TRAIN_LOG"
         else
-            $RUNNER nix-shell --run "python3 main.py train" | tee training_log_td.txt
+            $RUNNER nix-shell --run "python3 main.py train" | tee "$TRAIN_LOG"
         fi
     fi
 elif [ "$1" == "play" ]; then
@@ -233,6 +248,6 @@ elif [ "$1" == "tournament" ]; then
     fi
 else
     echo "Invalid argument: $1"
-    echo "Usage: ./run.sh [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]|tournament [num_runs] [seed]]"
+    echo "Usage: ./run.sh [--config PATH] [train [num_epochs]|play [network]|eval-random [games_per_color] [network]|eval-gold [games_per_color] [gold_version|gold_model_path] [network]|eval-gold-stats [x]|eval-gold-graph [x]|human-stats|human-graph [last_x]|tournament [num_runs] [seed]]"
     exit 1
 fi

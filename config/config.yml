@@ -1,3 +1,4 @@
+variant: plakoto           # Game variant (RuleSet registry key, domain/ruleset.py); checkpoints are tagged with it
 board_size: 24
 pieces_per_player: 15
 home_size: 6
@@ -49,6 +50,11 @@ use_bearoff_db: true               # Exact bear-off DB: exact equity at race lea
                                          # (~/.cache/tavli/, or $TAVLI_BEAROFF_DB) shared across all git worktrees.
                                          # Set this to pin a specific path.
 training_state_path: training_state.json # Persisted scheduler state for resumed training
+# Per-run output paths — give each variant config its own so parallel trainings never clobber each other.
+model_save_path: trained_model.pth                      # Live trained model (train resumes from / saves to it; default for play/eval)
+gold_eval_log_path: training_runs/eval_gold_history.log # Eval-vs-gold history (eval-gold-stats / eval-gold-graph)
+training_log_path: training_log_td.txt                  # stdout tee target of ./run.sh train
+last_game_log_path: last_game_log.txt                   # Verbose log of each epoch's last local self-play game
 state_save_every_games: 100 # Save scheduler state every N games
 model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)
 lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this test

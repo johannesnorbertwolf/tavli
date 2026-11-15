@@ -6,13 +6,10 @@ from ai.board_evaluator import BoardEvaluator
 from ai.board_encoder import BoardEncoder
 from ai.checkpoint_io import (
     save_checkpoint,
-    ENCODER_VERSION_LEGACY,
-    HIDDEN_SIZES_LEGACY,
-    _migrate_state_dict,
+    check_checkpoint_variant,
     load_state_dict,
 )
 from domain.constants import WHITE, BLACK
-from domain.move_generation import legal_moves
 from game.game import Game
 from tqdm import tqdm
 import numpy as np
@@ -129,17 +126,26 @@ def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
 
 
 class TdLambdaTraining:
-    def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder, config):
+    def __init__(self, board_evaluator: BoardEvaluator, board_encoder: BoardEncoder, config,
+                 ruleset=None):
         self.board_evaluator = board_evaluator
         self.board_encoder = board_encoder
         self.config = config
+        # Game variant (domain.ruleset.RuleSet); defaults to the config's `variant`.
+        self.ruleset = ruleset if ruleset is not None else config.get_ruleset()
+        if self.ruleset.name != config.get_variant():
+            raise ValueError(f"TdLambdaTraining got ruleset '{self.ruleset.name}' but the config "
+                             f"selects variant '{config.get_variant()}' (workers rebuild the "
+                             f"ruleset from the config, so they must agree)")
 
         # Exact bear-off DB: built eagerly here (cached on disk) so self-play
-        # workers spawned later only ever load the cache.
+        # workers spawned later only ever load the cache. Only for variants whose
+        # bear-off semantics match ai/bearoff.py.
         self.bearoff = None
-        if bool(self.config.get_use_bearoff_db()):
+        if self.ruleset.supports_bearoff_db and bool(self.config.get_use_bearoff_db()):
             self.bearoff = BearoffDB.load_or_build(self.config.get_bearoff_db_path())
-        self.agent = Agent(self.board_evaluator, self.board_encoder, bearoff=self.bearoff)
+        self.agent = Agent(self.board_evaluator, self.board_encoder, bearoff=self.bearoff,
+                           ruleset=self.ruleset)
 
         # TD(Lambda) parameters
         self.lambda_start = self.config.get_lambda_start()
@@ -156,6 +162,9 @@ class TdLambdaTraining:
         self.selfplay_seeded_fraction = self.config.get_selfplay_seeded_fraction()
         self.seed_pool = None
         if self.selfplay_seeded_fraction > 0.0:
+            if self.ruleset.name != "plakoto":
+                raise ValueError("selfplay_seeded_fraction > 0 is only supported for plakoto "
+                                 "(the seed pool stores Plakoto board arrays)")
             pool_path = self.config.get_selfplay_seed_pool_path()
             if not os.path.exists(pool_path):
                 raise FileNotFoundError(
@@ -206,7 +215,7 @@ class TdLambdaTraining:
         self.eval_gold_lookahead_plies = max(1, int(self.config.get_eval_gold_lookahead_plies()))
         self.num_self_play_workers = max(1, int(self.config.get_num_self_play_workers()))
         self.gold_model_path = self.config.get_gold_model_path()
-        self.gold_eval_log_path = os.path.join("training_runs", "eval_gold_history.log")
+        self.gold_eval_log_path = self.config.get_gold_eval_log_path()
         self.random_agent = RandomAgent()
         self.device = next(self.board_evaluator.parameters()).device
         self.gold_agent = None
@@ -384,7 +393,7 @@ class TdLambdaTraining:
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
-                possible_moves = legal_moves(game.board, current_player, game.dice)
+                possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
                 if not possible_moves:
                     game.switch_turn()
                     continue
@@ -435,20 +444,15 @@ class TdLambdaTraining:
             print(f"Gold model not found at {self.gold_model_path}; skipping gold eval.")
             return
         try:
-            payload = torch.load(self.gold_model_path, map_location=self.device, weights_only=True)
-            if isinstance(payload, dict) and "state_dict" in payload:
-                state_dict = payload["state_dict"]
-                encoder_version = payload.get("encoder_version", ENCODER_VERSION_LEGACY)
-                hidden_sizes = payload.get("hidden_sizes", HIDDEN_SIZES_LEGACY)
-            else:
-                state_dict = payload
-                encoder_version = ENCODER_VERSION_LEGACY
-                hidden_sizes = HIDDEN_SIZES_LEGACY
-            gold_encoder = BoardEncoder(self.config, version=encoder_version)
-            gold_evaluator = BoardEvaluator(gold_encoder.input_size, hidden_sizes=hidden_sizes).to(self.device)
-            gold_evaluator.load_state_dict(_migrate_state_dict(state_dict))
+            state_dict, meta = load_state_dict(self.gold_model_path, device=self.device)
+            check_checkpoint_variant(meta, self.config, self.gold_model_path)
+            gold_encoder = self.ruleset.make_encoder(self.config, version=meta["encoder_version"])
+            gold_evaluator = BoardEvaluator(gold_encoder.input_size,
+                                            hidden_sizes=meta["hidden_sizes"]).to(self.device)
+            gold_evaluator.load_state_dict(state_dict)
             gold_evaluator.eval()
-            self.gold_agent = Agent(gold_evaluator, gold_encoder, bearoff=self.bearoff)
+            self.gold_agent = Agent(gold_evaluator, gold_encoder, bearoff=self.bearoff,
+                                    ruleset=self.ruleset)
             print(f"Loaded gold model from {self.gold_model_path}")
         except Exception as exc:
             print(f"Could not load gold model from {self.gold_model_path}: {exc}. Skipping gold eval.")
@@ -463,7 +467,7 @@ class TdLambdaTraining:
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
-                possible_moves = legal_moves(game.board, current_player, game.dice)
+                possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
                 if not possible_moves:
                     game.switch_turn()
                     continue
@@ -697,7 +701,7 @@ class TdLambdaTraining:
                 is_white_to_move = current_player == WHITE
 
                 dice = game.dice.roll()
-                possible_moves = legal_moves(game.board, current_player, game.dice)
+                possible_moves = game.ruleset.legal_moves(game.board, current_player, game.dice)
 
                 move, score = None, None
                 if not possible_moves:
@@ -738,7 +742,8 @@ class TdLambdaTraining:
                         "exact_values": exact_values,
                         "bootstrap_values": bootstrap_values,
                         "terminal_winner_white": (winner == WHITE),
-                        "win_by_pin": bool(game.board.captured_starting(winner)),
+                        "win_by_pin": bool(getattr(game.board, "captured_starting",
+                                                   lambda _c: False)(winner)),
                         "final_borne_off_white": int(game.board.borne_off[WHITE]),
                         "final_borne_off_black": int(game.board.borne_off[BLACK]),
                         "plies": len(movers),
@@ -776,7 +781,7 @@ class TdLambdaTraining:
             epoch_td_count = 0
             for i in tqdm(range(games_per_epoch), desc=f"Training epoch {epoch+1}"):
                 is_last_game = (epoch == num_epochs - 1) and (i == games_per_epoch - 1)
-                log_file = "last_game_log.txt" if is_last_game else None
+                log_file = self.config.get_last_game_log_path() if is_last_game else None
 
                 stats = self.train_one_game(verbose_log_file=log_file)
                 total_game_seconds += stats["game_seconds"]

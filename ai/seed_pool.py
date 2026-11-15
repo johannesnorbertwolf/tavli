@@ -115,7 +115,10 @@ def build_seed_pool(config, config_path, checkpoint_path="trained_model.pth",
                     out_path="models/seed_pool.npz", num_games=600, sample_every=2,
                     top_k=8000, num_workers=6, base_seed=None):
     """Mine self-play games in parallel and save the top_k highest-residual
-    pre-roll positions as the seed pool."""
+    pre-roll positions as the seed pool. Plakoto only: the pool stores
+    Plakoto `Board` arrays (n / color / pinned)."""
+    if config.get_variant() != "plakoto":
+        raise ValueError(f"seed-pool supports only variant 'plakoto', not '{config.get_variant()}'")
     if base_seed is None:
         base_seed = random.randrange(2**31)
     games_per_worker = [num_games // num_workers] * num_workers

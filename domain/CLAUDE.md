@@ -1,5 +1,24 @@
 # domain/ — Game Rules and Board State
 
+## ruleset.py / plakoto_rules.py — the variant seam (#136)
+
+`RuleSet` (ABC) is everything variant-specific: `name`, `initial_board(config)`,
+`legal_moves(board, color, dice)`, `has_won(board, c)`, `is_open_for(board, i, c)`,
+`result_points(board, winner)` (1/2; training ignores it for now), `make_encoder(config, version=None)`,
+`default_encoder_version`, `supports_bearoff_db`. Registry: `register_ruleset(instance, replace=False)`,
+`get_ruleset(name)` (case-insensitive; unknown → `ValueError`), `registered_variants()`. Config key
+`variant:` selects one (default `plakoto`).
+
+- `PlakotoRules` (`plakoto_rules.py`, registered as `"plakoto"`) wraps `Board` + `move_generation`
+  with no logic of its own; `legal_moves` is a `staticmethod` bound to the generator itself (zero
+  wrapper overhead — keep that pattern for new variants). `make_encoder` lazily imports `ai.board_encoder`.
+- **New variant**: own board class honouring the duck-typed contract `apply(move, c) -> token`,
+  `undo(token)`, `clone()`, `has_won(c)`; own move generator; a `RuleSet` subclass registered at import
+  (and imported from `ruleset._load_builtins`); a config with `variant: <name>` and its own output paths.
+  `HalfMove`/`Move` are shared. `board.py` / `move_generation.py` below are the Plakoto implementation.
+
+---
+
 ## constants.py
 
 Defines the two player constants and a pair of helpers:

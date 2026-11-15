@@ -39,7 +39,6 @@ from ai.bearoff import exact_value_on_roll
 from ai.checkpoint_io import load_agent_from_checkpoint
 from domain.constants import WHITE
 from domain.dice import Dice
-from domain.move_generation import legal_moves
 from game.game import Game
 
 _DIE_SIDES = 6
@@ -80,7 +79,7 @@ def state_search_value(agent, board, mover_color: int, move_plies: int = 1) -> f
     expected = 0.0
     for (d1, d2, weight) in _DICE_OUTCOMES:
         dice.set(d1, d2)
-        moves = legal_moves(board, mover_color, dice)
+        moves = agent.ruleset.legal_moves(board, mover_color, dice)
         if moves:
             scores = agent.evaluate_moves(board, moves, mover_color, lookahead_plies=move_plies)
             expected += weight * max(scores)
@@ -110,7 +109,7 @@ def rollout_value(agent, board, mover_color: int, rng: np.random.Generator,
         d2 = int(rng.integers(1, _DIE_SIDES + 1))
         dice = Dice(_DIE_SIDES)
         dice.set(d1, d2)
-        moves = legal_moves(b, cur, dice)
+        moves = agent.ruleset.legal_moves(b, cur, dice)
         if moves:
             move, _ = agent.get_best_move(b, moves, cur, lookahead_plies=1)
             b.apply(move, cur)
@@ -160,7 +159,7 @@ def mine_games(agent, config, num_games: int, sample_every: int,
                         v_search=v_search,
                     ))
             game.dice.roll()
-            moves = legal_moves(game.board, cur, game.dice)
+            moves = game.legal_moves()
             if moves:
                 move, _ = agent.get_best_move(game.board, moves, cur, lookahead_plies=1)
                 game.board.apply(move, cur)

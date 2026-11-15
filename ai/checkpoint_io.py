@@ -8,6 +8,24 @@ ENCODER_VERSION_LEGACY = "legacy_unary_v1"
 ENCODER_VERSION_CURRENT = "unary_v3"
 HIDDEN_SIZES_LEGACY = [512, 256, 128]
 CHECKPOINT_FORMAT_VERSION = 2  # bumped when optimizer_state_dict was added
+# Checkpoints saved before the RuleSet seam (#136) carry no `variant` field; they
+# are all Plakoto.
+VARIANT_LEGACY = "plakoto"
+
+
+class VariantMismatchError(ValueError):
+    """A checkpoint trained for one game variant was loaded under a config for another."""
+
+
+def check_checkpoint_variant(meta: Dict[str, Any], config, path: str = "checkpoint") -> None:
+    """Raise VariantMismatchError if the checkpoint's variant differs from the config's."""
+    ckpt_variant = meta.get("variant", VARIANT_LEGACY)
+    config_variant = config.get_variant()
+    if ckpt_variant != config_variant:
+        raise VariantMismatchError(
+            f"{path} was trained for variant '{ckpt_variant}' but the config "
+            f"({getattr(config, 'config_file', '?')}) selects variant '{config_variant}'. "
+            f"Use a config with `variant: {ckpt_variant}` (e.g. via --config).")
 
 
 def _is_metadata_checkpoint(obj: Any) -> bool:
@@ -51,6 +69,7 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
             "optimizer_state_dict": obj.get("optimizer_state_dict"),
             "format_version": obj.get("format_version", 1),
             "aux_heads": obj.get("aux_heads", 0),
+            "variant": obj.get("variant", VARIANT_LEGACY),
         }
         return _migrate_state_dict(obj["state_dict"]), meta
 
@@ -63,15 +82,18 @@ def load_state_dict(path: str, device: Optional[torch.device] = None) -> Tuple[D
         "optimizer_state_dict": None,
         "format_version": 1,
         "aux_heads": 0,
+        "variant": VARIANT_LEGACY,
     }
     return _migrate_state_dict(obj), meta
 
 
 def save_checkpoint(path: str, evaluator, config, optimizer=None) -> None:
+    ruleset = config.get_ruleset()
     payload = {
         "state_dict": evaluator.state_dict(),
         "network_type": NETWORK_TYPE,
-        "encoder_version": ENCODER_VERSION_CURRENT,
+        "variant": ruleset.name,
+        "encoder_version": ruleset.default_encoder_version,
         "hidden_sizes": evaluator.hidden_sizes,
         "board_spec": _board_spec_from_config(config),
         "format_version": CHECKPOINT_FORMAT_VERSION,
@@ -83,20 +105,25 @@ def save_checkpoint(path: str, evaluator, config, optimizer=None) -> None:
 
 
 def load_agent_from_checkpoint(path: str, config, device: Optional[torch.device] = None):
+    """Build an inference Agent from a checkpoint. The encoder comes from the
+    checkpoint's variant RuleSet (missing `variant` = plakoto); raises
+    VariantMismatchError when that differs from `config.get_variant()`."""
     from ai.board_evaluator import BoardEvaluator
-    from ai.board_encoder import BoardEncoder
     from ai.agent import Agent
     from ai.bearoff import BearoffDB
+    from domain.ruleset import get_ruleset
 
     if device is None:
         device = torch.device("cpu")
     state_dict, meta = load_state_dict(path, device=device)
-    encoder = BoardEncoder(config, version=meta["encoder_version"])
+    check_checkpoint_variant(meta, config, path)
+    ruleset = get_ruleset(meta["variant"])
+    encoder = ruleset.make_encoder(config, version=meta["encoder_version"])
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"],
                                aux_heads=meta.get("aux_heads", 0)).to(device)
     evaluator.load_state_dict(state_dict)
     evaluator.eval()
     bearoff = None
-    if config.get_use_bearoff_db():
+    if ruleset.supports_bearoff_db and config.get_use_bearoff_db():
         bearoff = BearoffDB.load_or_build(config.get_bearoff_db_path())
-    return Agent(evaluator, encoder, bearoff=bearoff), meta
+    return Agent(evaluator, encoder, bearoff=bearoff, ruleset=ruleset), meta

@@ -4,12 +4,13 @@
 
 `Game` ties together the board, dice, and turn state into a single object that the training loop and interactive play use to run a game.
 
-**Construction**: `Game(config, starting_player=BLACK)` creates a `Board.initial(config)`, a `Dice` with the configured number of die sides, and sets `self.player` to `starting_player`. Black starts by default (convention for self-play; either color can be specified for eval).
+**Construction**: `Game(config, starting_player=BLACK, ruleset=None)` takes the variant `RuleSet` (default `config.get_ruleset()`, stored as `game.ruleset`) and creates `ruleset.initial_board(config)`, a `Dice` with the configured number of die sides, and sets `self.player` to `starting_player`. Black starts by default (convention for self-play; either color can be specified for eval).
 
 **Properties and methods**:
 - `current_player` → the color whose turn it is (`WHITE` or `BLACK`)
 - `switch_turn()` → flips `self.player` to `-self.player`
-- `dice.roll()` → rolls both dice in-place (callers read `game.dice.die1.value`, `game.dice.die2.value` after rolling, or pass the `Dice` object to `legal_moves`)
+- `dice.roll()` → rolls both dice in-place (callers read `game.dice.die1.value`, `game.dice.die2.value` after rolling, or pass the `Dice` object to `game.ruleset.legal_moves`)
+- `legal_moves()` → `ruleset.legal_moves(board, player, dice)` for the player on roll (callers on the hot path may use `game.ruleset.legal_moves(...)` directly)
 - `is_over()` → `board.has_won(WHITE) or board.has_won(BLACK)`
 - `get_winner()` → `WHITE`, `BLACK`, or `None` if not over
 - `check_winner(color)` → alias for `board.has_won(color)`

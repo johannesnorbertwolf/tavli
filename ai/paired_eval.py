@@ -37,7 +37,6 @@ import torch
 from config.config_loader import ConfigLoader
 from ai.checkpoint_io import load_agent_from_checkpoint
 from game.game import Game
-from domain.move_generation import legal_moves
 from domain.constants import WHITE, BLACK
 
 
@@ -48,7 +47,7 @@ def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: in
     while not game.is_over():
         current = game.current_player
         game.dice.roll()
-        moves = legal_moves(game.board, current, game.dice)
+        moves = game.legal_moves()
         if not moves:
             game.switch_turn()
             continue
@@ -135,7 +134,7 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
     ctx = mp.get_context("spawn")
     result_q = ctx.Queue()
     procs = [ctx.Process(target=_worker,
-                         args=(model_a, model_b, "config/config.yml", chunk, lookahead, result_q))
+                         args=(model_a, model_b, config.config_file, chunk, lookahead, result_q))
              for chunk in chunks]
     for p in procs:
         p.start()

@@ -6,7 +6,7 @@ detail. Read it when implementing or modifying anything under `ai/`.
 
 ## agent.py
 
-`Agent` is the inference interface wrapping a `BoardEvaluator` and `BoardEncoder`. It never updates weights.
+`Agent(board_evaluator, board_encoder, bearoff=None, ruleset=None)` is the inference interface wrapping a `BoardEvaluator` and encoder. It never updates weights. `ruleset` (a `domain.ruleset.RuleSet`, default Plakoto) supplies move generation for the 2-ply/N-ply/lookahead searches; `ruleset.legal_moves` is cached as `self._legal_moves`.
 
 **1-ply evaluation** (`_evaluate_moves_batch`): For each candidate move, apply it to the board, encode the resulting position from the *opponent's* perspective (since after our move it's their turn), run a batched forward pass, then return `1 - opponent_value` as our score. Winning moves are short-circuited to score 1.0 before the forward pass.
 
@@ -107,8 +107,11 @@ Construction: `sizes = [input_size] + hidden_sizes + [1]`; one `nn.Linear(sizes[
 
 Handles saving and loading model checkpoints. The canonical entry point for loading is `load_agent_from_checkpoint(path, config, device)` which returns a ready-to-use `(Agent, meta)` pair — never construct an `Agent` manually from a checkpoint. When `use_bearoff_db` is true in config, it also attaches the bear-off DB to the returned `Agent`, so standalone consumers (eval-gold, play, lookahead-eval) get exact race play for free.
 
+**Variants** (#136): `load_agent_from_checkpoint` reads `variant` from the checkpoint (missing → `plakoto`, `VARIANT_LEGACY`), calls `check_checkpoint_variant(meta, config, path)` (raises `VariantMismatchError`, a `ValueError`, when it differs from `config.get_variant()`), builds the encoder with `get_ruleset(variant).make_encoder(config, version=encoder_version)`, attaches the bear-off DB only if the ruleset `supports_bearoff_db`, and passes the ruleset to the `Agent`.
+
 **Checkpoint format (format_version=2)**: a dict saved by `torch.save` containing:
 - `state_dict`: network weights
+- `variant`: RuleSet name from `config.get_variant()` (absent in pre-#136 checkpoints ⇒ `plakoto`)
 - `network_type`: always `"mlp"` currently
 - `encoder_version`: one of the three version strings from `board_encoder.py`
 - `hidden_sizes`: list of ints
@@ -120,7 +123,7 @@ Handles saving and loading model checkpoints. The canonical entry point for load
 
 **Legacy layer name migration** (`_migrate_state_dict`): old checkpoints used `fc1.weight/bias` … `fc4.weight/bias`; new code uses `layers.0.weight/bias` … `layers.3.weight/bias`. Migration happens automatically on every load if any key starts with `"fc"`.
 
-**`save_checkpoint(path, evaluator, config, optimizer=None)`**: saves format_version=2 always. Optimizer state is included if `optimizer` is provided.
+**`save_checkpoint(path, evaluator, config, optimizer=None)`**: saves format_version=2 always, tagged with the config's `variant` and that ruleset's `default_encoder_version`. Optimizer state is included if `optimizer` is provided.
 
 **`load_state_dict(path, device)`**: lower-level function that returns `(migrated_state_dict, meta_dict)`. Used internally and by the training loop to load optimizer state without constructing a full Agent.
 
@@ -209,9 +212,9 @@ where `G^(n)_i = U(i+n, mover_i)`: the bootstrap value at step `i+n` converted t
 
 ### TdLambdaTraining
 
-The main orchestrator. Constructed with `(board_evaluator, board_encoder, config)`.
+The main orchestrator. Constructed with `(board_evaluator, board_encoder, config, ruleset=None)`; `ruleset` defaults to `config.get_ruleset()` and must match the config's `variant` (workers rebuild it from the config). Self-play/eval games use `game.ruleset.legal_moves`; the gold opponent is loaded via `load_state_dict` + `check_checkpoint_variant`; the gold-eval log path is `gold_eval_log_path` and the verbose last-game log `last_game_log_path` from config. Seeded starts (`selfplay_seeded_fraction > 0`) are rejected for non-Plakoto variants.
 
-**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `model_save_path`, default `trained_model.pth`; skipped with a message when the saved state's tensor shapes don't match the current architecture), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `selfplay_seeded_fraction > 0` it also loads the `SeedPool` (failing fast if the pool file is missing); when `selfplay_league_fraction > 0` it loads each `selfplay_league_opponents` checkpoint as a frozen opponent agent (workers load their own copies). When `use_bearoff_db` is true, the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
+**Init**: reads all knobs from config, constructs `ReplayBuffer` and `Adam` optimizer, then calls `_try_load_optimizer_state()` (loads Adam state from `model_save_path`, default `trained_model.pth`; skipped with a message when the saved state's tensor shapes don't match the current architecture), `_load_training_state()` (loads `training_state.json` for game count, epsilon, lambda, optimizer step count), and `_try_load_gold_agent()`. When `selfplay_seeded_fraction > 0` it also loads the `SeedPool` (failing fast if the pool file is missing); when `selfplay_league_fraction > 0` it loads each `selfplay_league_opponents` checkpoint as a frozen opponent agent (workers load their own copies). When `use_bearoff_db` is true (and the ruleset `supports_bearoff_db`), the bear-off DB is built/loaded **eagerly here, before any workers are spawned**, so workers only ever read the disk cache; the trainer's own agent and the gold agent both get it.
 
 **Per-game training cycle** (`train_one_game` or via parallel workers):
 1. Play one full self-play game to a real terminal (`_play_one_game_local` or worker), collecting trajectory `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, plies, game_seconds}`. Weights do not change mid-game. `exact_values` carries the bear-off DB equity for exact-race states (NaN elsewhere), computed at play time so ingest never has to decode boards from encodings.
@@ -238,7 +241,7 @@ The main orchestrator. Constructed with `(board_evaluator, board_encoder, config
 
 Runs inside a worker subprocess spawned by the parallel training loop.
 
-`worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Constructs its own `BoardEncoder`, `BoardEvaluator`, bear-off DB (cache load only — the trainer builds it before spawning), and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
+`worker_main(worker_id, weight_q, traj_q, config_path, hidden_sizes, base_seed)`: entry point. Rebuilds the `RuleSet` from the config file (`config.get_ruleset()` — rule sets are never pickled), then constructs its own encoder (`ruleset.make_encoder(config)`), `BoardEvaluator`, bear-off DB (only if `ruleset.supports_bearoff_db`) (cache load only — the trainer builds it before spawning), and `Agent` (seeded deterministically from `base_seed + worker_id * 9176 + 7`). Loops: read `(weights, epsilon, exploration_temperature)` from `weight_q`, load weights into the evaluator via `load_state_dict`, call `play_one_game_record`, push `(worker_id, trajectory)` to `traj_q`. Stops on a `None` message.
 
 `play_one_game_record(agent, encoder, config, epsilon, exploration_temperature, seed_pool=None, seeded_fraction=0.0, league_opponents=None, league_fraction=0.0)`: plays one full self-play game. When a `SeedPool` is given, a `seeded_fraction` share of games starts from a sampled high-residual position instead of the initial board (see `seed_pool.py`). When `league_opponents` (a list of loaded `Agent`s) is given, a `league_fraction` share of games has one randomly chosen color played by a uniformly sampled opponent at 1-ply greedy with no exploration — league play (#83): diversifies the data-generating distribution at the cost of slightly off-policy values. At each step: roll dice, get legal moves, call `select_self_play_move` (or the opponent's `get_best_move` for its color), apply move, record `(is_white_to_move, encoded_board_after)` plus the position's exact race equity (`exact_values`, NaN outside exact races or without a DB). Returns trajectory dict.
 
