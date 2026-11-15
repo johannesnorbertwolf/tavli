@@ -94,6 +94,7 @@ def _load_builtins() -> None:
     if not _BUILTINS_LOADED:
         _BUILTINS_LOADED = True
         import domain.plakoto_rules  # noqa: F401  (registers "plakoto")
+        import domain.plakoto_standard_rules  # noqa: F401  (registers "plakoto_standard")
 
 
 def get_ruleset(name: str) -> RuleSet:

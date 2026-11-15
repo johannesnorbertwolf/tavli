@@ -81,6 +81,21 @@ Smart features are computed in a single pass over the board slots, using running
 
 ---
 
+## plakoto_std_encoder.py
+
+`PlakotoStdEncoder(config)` — version `PLAKOTO_STD_V1 = "plakoto_std_v1"`, the default encoder of the `plakoto_standard` variant (`StandardPlakotoRules.make_encoder`; any other version string falls through to `BoardEncoder`). It composes an unmodified `BoardEncoder(config, UNARY_V3)`: output `[0 .. 485]` is exactly the `unary_v3` vector, followed by 8 features (current player's perspective; a side's "start" is its own starting slot, White 1 / Black `board_size`). **`input_size` = 486 + 8 = 494.**
+
+| Index | Feature | Value |
+|---|---|---|
+| 486 / 487 | our / their mother still on start (≥1 own checker on own start, pinned or not) | 0/1 |
+| 488 / 489 | our / their mother pinned (opponent owns that start slot with the checker under it) | 0/1 |
+| 490 / 491 | our / their checkers on own start | `/ pieces_per_player` |
+| 492 / 493 | we / they have borne off ≥ 1 (safe from a bear-off double loss) | 0/1 |
+
+Mirror-symmetric like `unary_v3` (colour-swapped reflected board, other side to move ⇒ identical vector). ~1µs over `unary_v3` (one extra alloc + copy).
+
+---
+
 ## board_evaluator.py
 
 ### Auxiliary heads (#106)
