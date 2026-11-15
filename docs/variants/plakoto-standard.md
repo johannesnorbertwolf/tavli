@@ -1,7 +1,8 @@
 # Standard Plakoto — rules spec and diff vs. the current engine
 
-Implementation spec for `StandardPlakotoRules` (issue #139). Items marked **DECISION** are
-open for review; the recommendation is what engineers should implement unless overruled.
+Implementation spec for `StandardPlakotoRules` (issue #139). Items marked **DECISION** were
+reviewed and **approved as recommended**; the Python implementation
+(`domain/plakoto_standard_*.py`, variant `plakoto_standard`) follows them.
 
 ## Bottom line
 
