@@ -19,8 +19,11 @@ that is degenerate). Every cell reuses the same seeds (common random numbers). W
 no handicap A and B are the same game, so the baseline is exactly 50% — the harness
 asserts its own symmetry; shift = rate - baseline.
 
-All play is 1-ply and the bear-off DB is off (it assumes fair dice and a 6-point
-home for both sides, which several handicaps break).
+All play is 1-ply. The exact bear-off DB (part of the deployed gold's strength:
+without it the 1-ply net stacks checkers on the last point and stalls under the
+exact-die bear-off rule) stays on except for geometry cells (smaller/larger house),
+where its 6-point-home race values would be wrong. Under dice handicaps it still
+assumes fair dice ahead, exactly like the net.
 """
 
 import json
@@ -120,13 +123,19 @@ def _init_worker(model_path: str, config_path: str) -> None:
     torch.set_num_threads(1)
     config = ConfigLoader(config_path)
     agent, _ = load_agent_from_checkpoint(model_path, config)
-    agent.bearoff = None
-    _W["agent"], _W["config"] = agent, config
+    _W["agent"], _W["config"], _W["db"] = agent, config, agent.bearoff
+
+
+def cell_uses_bearoff_db(cell: Cell) -> bool:
+    """The DB's race values assume 6-point homes: off for geometry handicaps."""
+    return not any(KINDS[k].category == "geometry" for k, _ in cell)
 
 
 def _task(args):
     cell, seed = args
-    return cell, play_pair(_W["agent"], _W["config"], cell, seed)
+    agent = _W["agent"]
+    agent.bearoff = _W["db"] if cell_uses_bearoff_db(cell) else None
+    return cell, play_pair(agent, _W["config"], cell, seed)
 
 
 def run_cells(cells: Sequence[Cell], num_pairs: int, model_path: str, config_path: str,
@@ -191,6 +200,7 @@ def summarize_cell(cell: Cell, pairs: List[Dict]) -> Dict:
         "pin_win_frac": sum(1 for g in games if g["pin"]) / len(games) if games else 0.0,
         "capped": sum(1 for g in games if g["winner"] is None),
         "on_distribution": all(KINDS[k].on_distribution for k in kinds),
+        "bearoff_db": cell_uses_bearoff_db(cell),
         "categories": sorted({KINDS[k].category for k in kinds}),
     }
 
@@ -207,21 +217,22 @@ def default_cells(only: Optional[Sequence[str]] = None) -> List[Cell]:
 #: Combos of the two most promising orthogonal levers (chosen from the singles run;
 #: see docs/handicap-phase1.md).
 DEFAULT_COMBOS = [
-    "dice_ceiling:5+first_mover",
-    "dice_ceiling:5+pass_turns:2",
-    "dice_ceiling:4+pass_turns:2",
-    "dice_ceiling:5+pre_borne:2",
-    "pass_turns:2+first_mover",
-    "pre_borne:2+pass_turns:2",
+    "smaller_house:5+first_mover",
+    "smaller_house:4+first_mover",
+    "smaller_house:5+pip_headstart:2",
+    "smaller_house:4+pip_headstart:2",
+    "smaller_house:3+pip_headstart:4",
+    "pip_headstart:2+first_mover",
 ]
 
 
 def _note(s: Dict) -> str:
     if s["label"] == "baseline":
         return "reference"
+    db = "" if s.get("bearoff_db", True) else "; DB off"
     if s["on_distribution"]:
-        return "dice/tempo only (net assumes fair dice ahead)"
-    return "position/geometry off-distribution"
+        return "dice/tempo only (net assumes fair dice ahead)" + db
+    return "position/geometry off-distribution" + db
 
 
 def to_markdown(summaries: List[Dict]) -> str:
@@ -245,9 +256,10 @@ def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
               base_seed: int = 0, out_json: str = "training_runs/handicap_sweep.json",
               out_md: Optional[str] = None) -> List[Dict]:
     cells = default_cells(only)
+    # Explicit --combos always run; the default combos follow the --only filter.
     for c in (DEFAULT_COMBOS if combos is None else combos):
         cell = parse_cell(c)
-        if not only or all(k in only for k, _ in cell):
+        if combos is not None or not only or all(k in only for k, _ in cell):
             cells.append(cell)
     num_pairs = max(1, games // 2)
     print(f"Handicap sweep: {len(cells)} cells x {num_pairs} pairs ({2*num_pairs} games), "
@@ -261,7 +273,8 @@ def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
         s["shift"] = s["rate"] - base["rate"]
     md = to_markdown(summaries)
     payload = {"model": model_path, "pairs_per_cell": num_pairs, "base_seed": base_seed,
-               "lookahead_plies": 1, "bearoff_db": False,
+               "lookahead_plies": 1,
+               "bearoff_db": "on (from config) except geometry cells",
                "baseline_first_mover_win": base["first_mover_win"],
                "cells": summaries}
     import os

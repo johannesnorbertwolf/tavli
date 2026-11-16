@@ -1,0 +1,882 @@
+{
+ "model": "models/gold_v11.pth",
+ "lookahead_plies": 1,
+ "base_seed": 0,
+ "note": "singles 600 games/cell (300 duplicate-dice pairs), combos 400 games; bear-off DB on except geometry cells; seeds 0..N-1 shared by all cells",
+ "baseline_first_mover_win": 0.5333333333333333,
+ "cells": [
+  {
+   "label": "baseline",
+   "cell": [],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5,
+   "ci_lo": 0.5,
+   "ci_hi": 0.5,
+   "se": 0.0,
+   "first_mover_win": 0.5333333333333333,
+   "mean_plies": 106.10666666666667,
+   "pin_win_frac": 0.07,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [],
+   "shift": 0.0
+  },
+  {
+   "label": "dice_ceiling:5",
+   "cell": [
+    [
+     "dice_ceiling",
+     5
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5783333333333334,
+   "ci_lo": 0.5391174038311695,
+   "ci_hi": 0.6175492628354973,
+   "se": 0.02000812729702242,
+   "first_mover_win": 0.6066666666666667,
+   "mean_plies": 108.56166666666667,
+   "pin_win_frac": 0.03333333333333333,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.07833333333333337
+  },
+  {
+   "label": "dice_ceiling:4",
+   "cell": [
+    [
+     "dice_ceiling",
+     4
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.63,
+   "ci_lo": 0.5916002531595116,
+   "ci_hi": 0.6683997468404884,
+   "se": 0.01959170757167776,
+   "first_mover_win": 0.6433333333333333,
+   "mean_plies": 115.41,
+   "pin_win_frac": 0.02666666666666667,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.13
+  },
+  {
+   "label": "dice_ceiling:3",
+   "cell": [
+    [
+     "dice_ceiling",
+     3
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5516666666666666,
+   "ci_lo": 0.5143878924305547,
+   "ci_hi": 0.5889454409027786,
+   "se": 0.019019782773526506,
+   "first_mover_win": 0.5433333333333333,
+   "mean_plies": 125.80833333333334,
+   "pin_win_frac": 0.005,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.05166666666666664
+  },
+  {
+   "label": "no_doubles:0.5",
+   "cell": [
+    [
+     "no_doubles",
+     0.5
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.48,
+   "ci_lo": 0.44638777628518717,
+   "ci_hi": 0.5136122237148127,
+   "se": 0.01714909373204735,
+   "first_mover_win": 0.5033333333333333,
+   "mean_plies": 107.16666666666667,
+   "pin_win_frac": 0.08666666666666667,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": -0.020000000000000018
+  },
+  {
+   "label": "no_doubles:1",
+   "cell": [
+    [
+     "no_doubles",
+     1.0
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5233333333333333,
+   "ci_lo": 0.48611923723593586,
+   "ci_hi": 0.5605474294307308,
+   "se": 0.018986783723161964,
+   "first_mover_win": 0.5566666666666666,
+   "mean_plies": 111.46333333333334,
+   "pin_win_frac": 0.06333333333333334,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.023333333333333317
+  },
+  {
+   "label": "forced_low:0.25",
+   "cell": [
+    [
+     "forced_low",
+     0.25
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5933333333333334,
+   "ci_lo": 0.5552377809536774,
+   "ci_hi": 0.6314288857129894,
+   "se": 0.01943650631615101,
+   "first_mover_win": 0.6366666666666667,
+   "mean_plies": 109.16,
+   "pin_win_frac": 0.03666666666666667,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.09333333333333338
+  },
+  {
+   "label": "forced_low:0.5",
+   "cell": [
+    [
+     "forced_low",
+     0.5
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.69,
+   "ci_lo": 0.6549592255345382,
+   "ci_hi": 0.7250407744654617,
+   "se": 0.017877946155847816,
+   "first_mover_win": 0.7366666666666667,
+   "mean_plies": 115.93333333333334,
+   "pin_win_frac": 0.02666666666666667,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.18999999999999995
+  },
+  {
+   "label": "forced_low:1",
+   "cell": [
+    [
+     "forced_low",
+     1.0
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.6333333333333333,
+   "ci_lo": 0.5942500436779558,
+   "ci_hi": 0.6724166229887109,
+   "se": 0.019940453905804848,
+   "first_mover_win": 0.6433333333333333,
+   "mean_plies": 139.96333333333334,
+   "pin_win_frac": 0.016666666666666666,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.1333333333333333
+  },
+  {
+   "label": "dice_floor:2",
+   "cell": [
+    [
+     "dice_floor",
+     2
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.945,
+   "ci_lo": 0.9255397962042383,
+   "ci_hi": 0.9644602037957616,
+   "se": 0.009928675406000837,
+   "first_mover_win": 0.9533333333333334,
+   "mean_plies": 111.455,
+   "pin_win_frac": 0.04666666666666667,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.44499999999999995
+  },
+  {
+   "label": "dice_floor:3",
+   "cell": [
+    [
+     "dice_floor",
+     3
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.9116666666666666,
+   "ci_lo": 0.8913276627604781,
+   "ci_hi": 0.9320056705728551,
+   "se": 0.010377042809279834,
+   "first_mover_win": 0.9133333333333333,
+   "mean_plies": 178.81333333333333,
+   "pin_win_frac": 0.08333333333333333,
+   "capped": 32,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "shift": 0.4116666666666666
+  },
+  {
+   "label": "first_mover:1",
+   "cell": [
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.4716666666666667,
+   "ci_lo": 0.415367416985356,
+   "ci_hi": 0.5279659163479774,
+   "se": 0.028724106980260556,
+   "first_mover_win": 0.4766666666666667,
+   "mean_plies": 106.15833333333333,
+   "pin_win_frac": 0.06833333333333333,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "shift": -0.02833333333333332
+  },
+  {
+   "label": "pass_turns:1",
+   "cell": [
+    [
+     "pass_turns",
+     1
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5266666666666666,
+   "ci_lo": 0.5023676058770339,
+   "ci_hi": 0.5509657274562993,
+   "se": 0.012397479994710579,
+   "first_mover_win": 0.55,
+   "mean_plies": 107.66333333333333,
+   "pin_win_frac": 0.04833333333333333,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "shift": 0.026666666666666616
+  },
+  {
+   "label": "pass_turns:2",
+   "cell": [
+    [
+     "pass_turns",
+     2
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5483333333333333,
+   "ci_lo": 0.5186674723594681,
+   "ci_hi": 0.5779991943071986,
+   "se": 0.015135643354012882,
+   "first_mover_win": 0.5333333333333333,
+   "mean_plies": 107.025,
+   "pin_win_frac": 0.06,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "shift": 0.04833333333333334
+  },
+  {
+   "label": "pass_turns:4",
+   "cell": [
+    [
+     "pass_turns",
+     4
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.5716666666666667,
+   "ci_lo": 0.5372180662293171,
+   "ci_hi": 0.6061152671040162,
+   "se": 0.01757581654966812,
+   "first_mover_win": 0.5933333333333334,
+   "mean_plies": 110.22166666666666,
+   "pin_win_frac": 0.045,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "shift": 0.07166666666666666
+  },
+  {
+   "label": "pass_turns:8",
+   "cell": [
+    [
+     "pass_turns",
+     8
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.58,
+   "ci_lo": 0.5429338883449875,
+   "ci_hi": 0.6170661116550125,
+   "se": 0.018911281456639003,
+   "first_mover_win": 0.6333333333333333,
+   "mean_plies": 114.19333333333333,
+   "pin_win_frac": 0.056666666666666664,
+   "capped": 0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "shift": 0.07999999999999996
+  },
+  {
+   "label": "pre_borne:1",
+   "cell": [
+    [
+     "pre_borne",
+     1
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.6566666666666666,
+   "ci_lo": 0.6219533450040152,
+   "ci_hi": 0.691379988329318,
+   "se": 0.017710878399311934,
+   "first_mover_win": 0.71,
+   "mean_plies": 105.66,
+   "pin_win_frac": 0.056666666666666664,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": 0.15666666666666662
+  },
+  {
+   "label": "pre_borne:2",
+   "cell": [
+    [
+     "pre_borne",
+     2
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.74,
+   "ci_lo": 0.7061718633137872,
+   "ci_hi": 0.7738281366862128,
+   "se": 0.017259253411333025,
+   "first_mover_win": 0.7766666666666666,
+   "mean_plies": 104.03333333333333,
+   "pin_win_frac": 0.04833333333333333,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": 0.24
+  },
+  {
+   "label": "pre_borne:3",
+   "cell": [
+    [
+     "pre_borne",
+     3
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.8066666666666666,
+   "ci_lo": 0.7757720786224813,
+   "ci_hi": 0.837561254710852,
+   "se": 0.015762544920502705,
+   "first_mover_win": 0.8233333333333334,
+   "mean_plies": 102.26666666666667,
+   "pin_win_frac": 0.065,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": 0.30666666666666664
+  },
+  {
+   "label": "pre_borne:5",
+   "cell": [
+    [
+     "pre_borne",
+     5
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.75,
+   "ci_lo": 0.7158380145687276,
+   "ci_hi": 0.7841619854312724,
+   "se": 0.017429584403710396,
+   "first_mover_win": 0.7666666666666667,
+   "mean_plies": 100.45666666666666,
+   "pin_win_frac": 0.06166666666666667,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": 0.25
+  },
+  {
+   "label": "pip_headstart:1",
+   "cell": [
+    [
+     "pip_headstart",
+     1
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.485,
+   "ci_lo": 0.4475874349676937,
+   "ci_hi": 0.5224125650323063,
+   "se": 0.019088043383829734,
+   "first_mover_win": 0.5166666666666667,
+   "mean_plies": 105.715,
+   "pin_win_frac": 0.056666666666666664,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": -0.015000000000000013
+  },
+  {
+   "label": "pip_headstart:2",
+   "cell": [
+    [
+     "pip_headstart",
+     2
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.4533333333333333,
+   "ci_lo": 0.41554253521860834,
+   "ci_hi": 0.4911241314480583,
+   "se": 0.019281019446288246,
+   "first_mover_win": 0.4866666666666667,
+   "mean_plies": 105.32,
+   "pin_win_frac": 0.056666666666666664,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": -0.04666666666666669
+  },
+  {
+   "label": "pip_headstart:4",
+   "cell": [
+    [
+     "pip_headstart",
+     4
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.42833333333333334,
+   "ci_lo": 0.39033768512469635,
+   "ci_hi": 0.46632898154197033,
+   "se": 0.019385534800324986,
+   "first_mover_win": 0.4633333333333333,
+   "mean_plies": 103.47833333333334,
+   "pin_win_frac": 0.07333333333333333,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "shift": -0.07166666666666666
+  },
+  {
+   "label": "smaller_house:5",
+   "cell": [
+    [
+     "smaller_house",
+     5
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.445,
+   "ci_lo": 0.4266731800361096,
+   "ci_hi": 0.4633268199638904,
+   "se": 0.009350418348923683,
+   "first_mover_win": 0.4766666666666667,
+   "mean_plies": 108.10833333333333,
+   "pin_win_frac": 0.07,
+   "capped": 0,
+   "on_distribution": false,
+   "categories": [
+    "geometry"
+   ],
+   "shift": -0.05499999999999999,
+   "bearoff_db": false
+  },
+  {
+   "label": "smaller_house:4",
+   "cell": [
+    [
+     "smaller_house",
+     4
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.38333333333333336,
+   "ci_lo": 0.3589199785558729,
+   "ci_hi": 0.40774668811079384,
+   "se": 0.012455793253806363,
+   "first_mover_win": 0.4,
+   "mean_plies": 109.76,
+   "pin_win_frac": 0.07,
+   "capped": 0,
+   "on_distribution": false,
+   "categories": [
+    "geometry"
+   ],
+   "shift": -0.11666666666666664,
+   "bearoff_db": false
+  },
+  {
+   "label": "smaller_house:3",
+   "cell": [
+    [
+     "smaller_house",
+     3
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.2733333333333333,
+   "ci_lo": 0.24511959689485108,
+   "ci_hi": 0.30154706977181556,
+   "se": 0.014394763489021549,
+   "first_mover_win": 0.2966666666666667,
+   "mean_plies": 113.31,
+   "pin_win_frac": 0.07,
+   "capped": 0,
+   "on_distribution": false,
+   "categories": [
+    "geometry"
+   ],
+   "shift": -0.22666666666666668,
+   "bearoff_db": false
+  },
+  {
+   "label": "larger_house:7",
+   "cell": [
+    [
+     "larger_house",
+     7
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.495,
+   "ci_lo": 0.48770528970991467,
+   "ci_hi": 0.5022947102900853,
+   "se": 0.00372179096432925,
+   "first_mover_win": 0.5333333333333333,
+   "mean_plies": 105.915,
+   "pin_win_frac": 0.06666666666666667,
+   "capped": 0,
+   "on_distribution": false,
+   "categories": [
+    "geometry"
+   ],
+   "shift": -0.0050000000000000044,
+   "bearoff_db": false
+  },
+  {
+   "label": "larger_house:9",
+   "cell": [
+    [
+     "larger_house",
+     9
+    ]
+   ],
+   "pairs": 300,
+   "games": 600,
+   "rate": 0.475,
+   "ci_lo": 0.4610214768971025,
+   "ci_hi": 0.48897852310289747,
+   "se": 0.007131899542294625,
+   "first_mover_win": 0.5133333333333333,
+   "mean_plies": 105.23833333333333,
+   "pin_win_frac": 0.06666666666666667,
+   "capped": 0,
+   "on_distribution": false,
+   "categories": [
+    "geometry"
+   ],
+   "shift": -0.025000000000000022,
+   "bearoff_db": false
+  },
+  {
+   "label": "smaller_house:5 + first_mover:1",
+   "cell": [
+    [
+     "smaller_house",
+     5
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.4325,
+   "ci_lo": 0.36419346691339427,
+   "ci_hi": 0.5008065330866057,
+   "se": 0.0348502719829621,
+   "first_mover_win": 0.435,
+   "mean_plies": 107.2325,
+   "pin_win_frac": 0.075,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": false,
+   "categories": [
+    "geometry",
+    "tempo"
+   ],
+   "shift": -0.0675
+  },
+  {
+   "label": "smaller_house:4 + first_mover:1",
+   "cell": [
+    [
+     "smaller_house",
+     4
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.4,
+   "ci_lo": 0.33228867066285733,
+   "ci_hi": 0.4677113293371427,
+   "se": 0.03454659660058301,
+   "first_mover_win": 0.4,
+   "mean_plies": 109.26,
+   "pin_win_frac": 0.07,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": false,
+   "categories": [
+    "geometry",
+    "tempo"
+   ],
+   "shift": -0.09999999999999998
+  },
+  {
+   "label": "smaller_house:5 + pip_headstart:2",
+   "cell": [
+    [
+     "smaller_house",
+     5
+    ],
+    [
+     "pip_headstart",
+     2
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.3725,
+   "ci_lo": 0.3285644607630656,
+   "ci_hi": 0.4164355392369344,
+   "se": 0.0224160914474155,
+   "first_mover_win": 0.385,
+   "mean_plies": 106.3575,
+   "pin_win_frac": 0.065,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": false,
+   "categories": [
+    "geometry",
+    "position"
+   ],
+   "shift": -0.1275
+  },
+  {
+   "label": "smaller_house:4 + pip_headstart:2",
+   "cell": [
+    [
+     "smaller_house",
+     4
+    ],
+    [
+     "pip_headstart",
+     2
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.3025,
+   "ci_lo": 0.2597333907782999,
+   "ci_hi": 0.3452666092217001,
+   "se": 0.021819698582500054,
+   "first_mover_win": 0.31,
+   "mean_plies": 108.0075,
+   "pin_win_frac": 0.065,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": false,
+   "categories": [
+    "geometry",
+    "position"
+   ],
+   "shift": -0.1975
+  },
+  {
+   "label": "smaller_house:3 + pip_headstart:4",
+   "cell": [
+    [
+     "smaller_house",
+     3
+    ],
+    [
+     "pip_headstart",
+     4
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.22,
+   "ci_lo": 0.1821785097381377,
+   "ci_hi": 0.2578214902618623,
+   "se": 0.019296678705031788,
+   "first_mover_win": 0.245,
+   "mean_plies": 108.915,
+   "pin_win_frac": 0.0775,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": false,
+   "categories": [
+    "geometry",
+    "position"
+   ],
+   "shift": -0.28
+  },
+  {
+   "label": "pip_headstart:2 + first_mover:1",
+   "cell": [
+    [
+     "pip_headstart",
+     2
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 200,
+   "games": 400,
+   "rate": 0.4125,
+   "ci_lo": 0.34570812532490897,
+   "ci_hi": 0.479291874675091,
+   "se": 0.034077487079128076,
+   "first_mover_win": 0.41,
+   "mean_plies": 104.7225,
+   "pin_win_frac": 0.095,
+   "capped": 0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position",
+    "tempo"
+   ],
+   "shift": -0.08750000000000002
+  }
+ ]
+}

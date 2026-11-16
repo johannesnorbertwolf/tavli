@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ai.checkpoint_io import load_agent_from_checkpoint
 from ai.handicap_sweep import (
-    cell_label, default_cells, parse_cell, play_game, play_pair, rules_for,
+    cell_label, cell_uses_bearoff_db, default_cells, parse_cell, play_game, play_pair, rules_for,
     summarize_cell, to_markdown,
 )
 from config.config_loader import ConfigLoader
@@ -24,6 +24,11 @@ class TestCells(unittest.TestCase):
         self.assertEqual(cell_label(c), "dice_ceiling:5 + first_mover:1")
         self.assertEqual(cell_label(()), "baseline")
         self.assertEqual(default_cells(["first_mover"]), [(), (("first_mover", 1),)])
+
+    def test_bearoff_db_only_off_for_geometry(self):
+        self.assertTrue(cell_uses_bearoff_db(()))
+        self.assertTrue(cell_uses_bearoff_db(parse_cell("dice_ceiling:4+pre_borne:2")))
+        self.assertFalse(cell_uses_bearoff_db(parse_cell("smaller_house:4+first_mover")))
 
     def test_summary_stats(self):
         mk = lambda s, h, wa: {"seed": s, "h": h,
