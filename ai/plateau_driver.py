@@ -404,7 +404,10 @@ class PlateauDriver:
 
     def _phase_train(self, cfg_path, cfg):
         gpe = max(1, int(cfg.get("games_per_epoch", 100)))
-        epochs = max(1, math.ceil(self.s["round_games"] / gpe))
+        # A stage may carry its own `round_games` (depth-1 rounds are cheap, depth-2 rounds are not).
+        stage = self.s["stages"][self.state["stage"]]
+        round_games = int(stage.get("round_games") or self.s["round_games"])
+        epochs = max(1, math.ceil(round_games / gpe))
         rc = self.train_runner(cfg_path, epochs, self.training_log_path)
         if rc != 0:
             return self._fail_or_retry("training", rc)

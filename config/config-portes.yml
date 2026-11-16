@@ -34,7 +34,7 @@ beam_threshold: 0.08              # Absolute beam fallback (used only when searc
 search_relative_cutoff: 0.08      # Keep moves within this relative fraction of the best
 search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
 search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
-num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
+num_self_play_workers: 2          # Parallel self-play processes (1 = single-process)
 selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when runner-up is within this of the best 1-ply score (0 = off). E8 (#90) measured 0.03 flat at 13x cost — keep off
 selfplay_2ply_max_moves: 2        # Max candidates re-scored at 2-ply when escalating
 selfplay_seeded_fraction: 0.0     # Seed pool stores Plakoto boards — must stay 0 for Portes
@@ -93,6 +93,6 @@ plateau:
   eval_pairs: 2000
   patience: 4
   stages:
-    - {name: depth1, overrides: {bootstrap_depth: 1, learning_rate: 0.0001}}
-    - {name: depth1-lowlr, overrides: {bootstrap_depth: 1, learning_rate: 0.00003}}
-    - {name: depth2, overrides: {bootstrap_depth: 2, learning_rate: 0.00003}}
+    - {name: depth1, round_games: 100000, overrides: {bootstrap_depth: 1, learning_rate: 0.0001}}
+    - {name: depth1-lowlr, round_games: 100000, overrides: {bootstrap_depth: 1, learning_rate: 0.00003}}
+    - {name: depth2, round_games: 20000, overrides: {bootstrap_depth: 2, learning_rate: 0.00003}}
