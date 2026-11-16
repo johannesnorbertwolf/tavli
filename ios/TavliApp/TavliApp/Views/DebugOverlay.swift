@@ -52,7 +52,8 @@ struct DebugOverlay: View {
                     }
                 }
                 .frame(height: 8)
-                Text(String(format: "%.0f%%", session.winProbability * 100))
+                // Equity for a 2-point variant (#143), else a percentage.
+                Text(EvalScale(variant: session.game.variant).value(session.winProbability))
                     .font(ChromeType.caption2.monospacedDigit())
                     .foregroundStyle(ChromeTheme.ink)
             }

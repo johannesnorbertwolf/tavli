@@ -353,8 +353,31 @@ by generated parity fixtures.
   net delta (Portes: `10→14→15` hitting on 14 vs `10→11→15`) by resulting position.
 - **Persistence ids.** `GameRecord.variantID`, `GameSave.variant`, `OnlineMatchPayload.variant`
   are always written; absent ⇒ `"plakoto"`. `GameConfig(variantID:)` resolves unknown ids to
-  Plakoto. `GameSession.makeAgent` loads `variant.modelResourceName` — no trained model is
-  bundled for the new variants yet, so they fall back to random play in the app.
+  Plakoto. `GameSession.makeAgent` loads `variant.modelResourceName` via `ModelCatalog.main`.
+- **Models + gating (#143, `ModelCatalog.swift`).** `ModelCatalog` resolves a variant's model
+  (`.mlmodelc`, else `.mlpackage` compiled at load) from a bundle / directory / custom lookup;
+  `isAvailable(variant)` is the vs-AI gate — the app never builds a vs-AI session (new, resumed
+  or auto-resumed) for a variant without its model; it shows "AI not available yet" and offers
+  two-player play instead. The new variants' models (`PlakotoStandardValue`, `FevgaValue`,
+  `PortesValue`) are optional: `setup.sh` converts each from its config's `gold_model_path`
+  once that checkpoint exists, and any `<Name>Value.mlpackage` dropped into
+  `TavliApp/Resources/` (then `setup.sh` to regenerate the project) enables it. Only
+  `PlakotoValue` is required by the `project.yml` build guard (the others only warn).
+  `VariantPreference` persists the chosen id under `settings.variant` (unknown → Plakoto).
+- **Display mapping (#143, `BoardLayout.swift`).** Views draw *display slots*: engine 0…25,
+  with each colour's bar checkers split out of the end stacks into slots 26 (White) / 27
+  (Black). Purely hook-driven: a checker of colour `c` at end `e` is borne off iff
+  `e == bearOffPoint(c)`, on the bar iff `pathIndex(e, c) == 0`. `displayStacks`,
+  `displaySlot(forSource:)` / `sourcePosition(forDisplaySlot:)` (trays are never sources),
+  `borneOffCount`/`barCount`, and `hits(from:to:)` (bar growth → hit animation). For every
+  variant but Portes the display is the engine stacks plus two empty bars.
+- **Results + matches (#143).** `GameRecord.result` → `MatchGameResult` (winner + points, or
+  `.draw`). `MatchState` stores `results` and scores **points** (`score(for:)`; a double game
+  counts 2, a draw 0 and extends `maxGames`); `wins(for:)` still counts games. Codable writes
+  `results` plus the legacy `gameWinners`; legacy JSON decodes as 1-point wins. Online
+  `GameLog` gains optional `drawn`/`points` keys (omitted for Plakoto, so its payloads are
+  unchanged); `OnlineMatchPayload.matchState` is built from `completedGameResults`.
+  `reportsEquity`/`equity(fromValue:)` convert a `maxPoints > 1` value to expected points.
 - **Parity tests** (`VariantParityTests.swift`, fixtures from `generate_test_fixtures.py
   --variant <id>`, gitignored like Plakoto's): metadata, encodings (≤1e-6), exact ordered
   legal-move lists for all 21 rolls per sampled position plus apply → Python afterstate and undo
@@ -513,6 +536,16 @@ are all "decode + replay", with no board state to reconcile.
   `pendingPlies` diff, and `applyRemoteMove` it calls are tested headlessly. UI wiring (lobby +
   match-length toggle, online turn lock, "Leave match", scoreboard, match transition overlay) is in
   `Views/CLAUDE.md`.
+
+**Variants online (#143).** The lobby's variant picker (shared `settings.variant`) goes to
+`presentInvite(targetWins:variantID:)`; the creator writes it into the opening payload, and
+game 1's starter is `variant.startingPlayer(default: .white)` (White for house Plakoto, a coin
+flip for the bkgm-rules variants — when Black starts, the creator ends its turn right away).
+Every variant works online (two humans, no model). A finished game — win of 1/2 points or a
+draw — is logged as `GameLog(plies:result:)`, recorded into `MatchState` by points, and
+`pendingGameResult` is a `MatchGameResult`; a draw never ends the match (even a single game
+rolls into a replay). Older builds don't know the new variant ids and would fall back to
+Plakoto, so both players need this build.
 
 ## Human game stats (#64)
 
@@ -689,6 +722,7 @@ ios/
 │       ├── Info.plist           iPad, all orientations; UIAppFonts registration
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
+│           ├── {PlakotoStandard,Fevga,Portes}Value.mlpackage  (optional, #143)
 │           ├── CormorantGaramond.ttf    (variable font, committed)
 │           └── Inter.ttf                (variable font, committed)
 └── scripts/

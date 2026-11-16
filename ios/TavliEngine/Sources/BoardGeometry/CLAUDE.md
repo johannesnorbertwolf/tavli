@@ -91,6 +91,14 @@ placed by bearing direction (refined now that #31 renders borne-off checkers):
 - `center` is the tray's midpoint, `tip == center`, `quadrant == nil`,
   `isTop == (index == 25)`.
 
+## Bar slots (26 and 27, #143)
+
+Checkers on the centre bar (Portes' hit checkers). `lowerBarSlot = 26` stacks up from the
+bottom frame, `upperBarSlot = 27` down from the top frame, both centred on the bar
+(`x = 450`); they use the playable-point stacking formula, so five checkers stay clear of the
+dice row at the board centre. `hitRect` is the bar's width (90) × `pointH`. `flipIndex` swaps
+26 ↔ 27; `quadrant == nil`. The engine-side `BoardLayout` assigns White's bar to 26, Black's to 27.
+
 ## Checker stacking — `checkerCenter(point:slot:)`
 
 Mirrors `Stack()` in the reference. `slot 0` is the base checker (closest to the
@@ -139,5 +147,5 @@ headless on macOS — no simulator). Covers quadrant mapping, row mapping, exact
 baseline centers + within-row ordering, tip direction & baseline width, bear-off
 slot placement, bear-off checker stacking, dice layout (`boardCenter`,
 `diceSize`, the horizontal two-dice row + the four-in-a-row pasch, and that both
-scale with the board), scaling/centered-square fit, and hit-testing (playable
-point, bar-gap miss, bear-off).
+scale with the board), scaling/centered-square fit, hit-testing (playable
+point, bar-gap miss, bear-off), and the bar slots (stacking, dice clearance, hit, flip).

@@ -296,20 +296,10 @@ public final class GameSession: ObservableObject {
     ///
     /// The model is the one named by `config.variant.modelResourceName` (#136), wrapped
     /// with that variant's encoder and rules.
+    /// Resolution goes through `ModelCatalog.main` (#143), so a variant whose model is
+    /// not bundled yields `nil` — the app gates vs-AI play on `ModelCatalog.isAvailable`.
     public static func makeAgent(config: GameConfig = .standard) -> Agent? {
-        let name = config.variant.modelResourceName
-        let compiledURL: URL?
-        if let c = Bundle.main.url(forResource: name, withExtension: "mlmodelc") {
-            compiledURL = c
-        } else if let pkg = Bundle.main.url(forResource: name, withExtension: "mlpackage") {
-            compiledURL = try? MLModel.compileModel(at: pkg)
-        } else {
-            compiledURL = nil
-        }
-        guard let compiledURL, let model = try? MLModel(contentsOf: compiledURL) else {
-            return nil
-        }
-        return Agent(model: model, config: config)
+        ModelCatalog.main.makeAgent(config: config)
     }
 
     /// Kick off the first move. If the AI owns the turn it thinks immediately;

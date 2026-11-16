@@ -2664,6 +2664,438 @@
           }
         }
       }
+    },
+    "Plakoto" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto"
+          }
+        }
+      }
+    },
+    "Standard" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standaard"
+          }
+        }
+      }
+    },
+    "Portes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portes"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portes"
+          }
+        }
+      }
+    },
+    "Fevga" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fevga"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fevga"
+          }
+        }
+      }
+    },
+    "Plakoto (house rules)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto (Hausregeln)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto (huisregels)"
+          }
+        }
+      }
+    },
+    "Plakoto (standard rules)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto (Standardregeln)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto (standaardregels)"
+          }
+        }
+      }
+    },
+    "The pinning game, as TavTav first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Festsetz-Spiel, so wie TavTav es zuerst gelernt hat. Landest du auf einem einzelnen gegnerischen Stein, setzt du ihn unter deinem fest, bis du weiterziehst. Abgetragen wird nur mit genauen Würfen; jeder Sieg zählt als ein Spiel."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het vastzetspel, zoals TavTav het als eerste leerde. Land je op een losse steen van je tegenstander, dan zet je die onder de jouwe vast tot je verder trekt. Uitspelen alleen met precieze worpen; elke winst telt als één spel."
+          }
+        }
+      }
+    },
+    "Plakoto by the standard (bkgm) rules: use both dice whenever you can (the larger one if only one fits), bear off with higher rolls from your highest point. Pinning your opponent's last checker on its start point (the mother) wins two points once your own start point is clear; if both mothers are pinned, the game is a draw. Winning before your opponent bears off any checker also scores two points." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto nach den Standardregeln (bkgm): Nutze wann immer möglich beide Würfel (den größeren, wenn nur einer passt), und trage mit höheren Würfen von deinem höchsten Punkt ab. Setzt du den letzten Stein deines Gegners auf seinem Startpunkt fest (die Mutter), gewinnst du zwei Punkte, sobald dein eigener Startpunkt leer ist; sind beide Mütter festgesetzt, endet das Spiel unentschieden. Ein Sieg, bevor dein Gegner einen Stein abgetragen hat, zählt ebenfalls zwei Punkte."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plakoto volgens de standaardregels (bkgm): gebruik waar mogelijk beide dobbelstenen (de hoogste als er maar één past), en speel met hogere worpen uit vanaf je hoogste punt. Zet je de laatste steen van je tegenstander op zijn startpunt vast (de moeder), dan win je twee punten zodra je eigen startpunt leeg is; staan beide moeders vast, dan is het gelijkspel. Winnen voordat je tegenstander een steen heeft uitgespeeld levert ook twee punten op."
+          }
+        }
+      }
+    },
+    "Greek backgammon without the doubling cube. A lone checker that is hit goes to the bar and must re-enter in your opponent's home before anything else moves. Winning before your opponent bears off any checker scores two points." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Griechisches Backgammon ohne Verdopplungswürfel. Ein einzelner Stein, der geschlagen wird, kommt auf die Bar und muss im Heimfeld des Gegners wieder einsteigen, bevor sonst etwas zieht. Ein Sieg, bevor dein Gegner einen Stein abgetragen hat, zählt zwei Punkte."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grieks backgammon zonder verdubbelingskubus. Een losse steen die geslagen wordt gaat naar de bar en moet weer binnenkomen in het thuisveld van je tegenstander voordat er iets anders mag bewegen. Winnen voordat je tegenstander een steen heeft uitgespeeld levert twee punten op."
+          }
+        }
+      }
+    },
+    "The running game: both sides race the same way round the board from opposite corners. One checker holds a point, nothing is ever hit or pinned, and you may not lock your opponent in behind six points in a row. A win before your opponent bears off scores two points." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Laufspiel: Beide Seiten ziehen von gegenüberliegenden Ecken in dieselbe Richtung um das Brett. Ein einzelner Stein hält einen Punkt, nichts wird geschlagen oder festgesetzt, und du darfst deinen Gegner nicht hinter sechs Punkten in Folge einsperren. Ein Sieg, bevor dein Gegner abträgt, zählt zwei Punkte."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het renspel: beide kanten lopen vanuit tegenovergestelde hoeken dezelfde kant op rond het bord. Eén steen houdt een punt bezet, er wordt nooit geslagen of vastgezet, en je mag je tegenstander niet opsluiten achter zes punten op een rij. Winnen voordat je tegenstander uitspeelt levert twee punten op."
+          }
+        }
+      }
+    },
+    "Game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spel"
+          }
+        }
+      }
+    },
+    "AI not available yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KI noch nicht verfügbar"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI nog niet beschikbaar"
+          }
+        }
+      }
+    },
+    "Equity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equity"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equity"
+          }
+        }
+      }
+    },
+    "−%@ equity" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ Equity"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ equity"
+          }
+        }
+      }
+    },
+    "Double game · 2 points" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doppelsieg · 2 Punkte"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dubbele winst · 2 punten"
+          }
+        }
+      }
+    },
+    "Single game · 1 point" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einfacher Sieg · 1 Punkt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enkele winst · 1 punt"
+          }
+        }
+      }
+    },
+    "Draw" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unentschieden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelijkspel"
+          }
+        }
+      }
+    },
+    "Both mother checkers are pinned — nobody scores." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beide Mutter-Steine sind festgesetzt – niemand punktet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beide moedersstenen staan vast – niemand scoort."
+          }
+        }
+      }
+    },
+    "Applies to the next new game; a game in progress keeps its rules." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt ab dem nächsten neuen Spiel; ein laufendes Spiel behält seine Regeln."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geldt vanaf het volgende nieuwe spel; een lopend spel houdt zijn regels."
+          }
+        }
+      }
+    },
+    "Two players on this iPad" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwei Spieler auf diesem iPad"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Twee spelers op deze iPad"
+          }
+        }
+      }
+    },
+    "TavTav is still learning %@. Play it with two players for now." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav lernt %@ noch. Spiel es vorerst zu zweit."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav leert %@ nog. Speel het voorlopig met z'n tweeën."
+          }
+        }
+      }
+    },
+    "%@ · two players" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · zwei Spieler"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · twee spelers"
+          }
+        }
+      }
+    },
+    "%@ wins a double game!" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ gewinnt doppelt!"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wint dubbel!"
+          }
+        }
+      }
+    },
+    "TavTav still rates your position at %@ points. Are you sure you want to give up?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav bewertet deine Stellung noch mit %@ Punkten. Willst du wirklich aufgeben?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav waardeert je stelling nog op %@ punten. Weet je zeker dat je wilt opgeven?"
+          }
+        }
+      }
+    },
+    "Equity through the game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equity im Spielverlauf"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Equity in het spelverloop"
+          }
+        }
+      }
+    },
+    "−%@ equity vs your move" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ Equity gegenüber deinem Zug"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "−%@ equity t.o.v. jouw zet"
+          }
+        }
+      }
+    },
+    "bar" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bar"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "bar"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

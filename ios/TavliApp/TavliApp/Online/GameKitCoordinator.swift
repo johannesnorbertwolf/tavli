@@ -52,10 +52,11 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     @Published private(set) var matches: [GKTurnBasedMatch] = []
     /// The running best-of-three score (#145).
     @Published private(set) var matchState = MatchState.single(baseStartingPlayer: .white)
-    /// Set to the just-finished game's winner while the between-games / match-over
-    /// overlay should show; the session has already advanced to the next game behind it.
-    /// Cleared when the player taps "Next game". `nil` during normal play.
-    @Published var pendingGameResult: TavliEngine.Color?
+    /// Set to the just-finished game's result (winner + points, or a draw, #143) while
+    /// the between-games / match-over overlay should show; the session has already
+    /// advanced to the next game behind it. Cleared when the player taps "Next game".
+    /// `nil` during normal play.
+    @Published var pendingGameResult: MatchGameResult?
 
     // ── Private match state ─────────────────────────────────────────────────────
 
@@ -64,9 +65,11 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// Maps each participant's `gamePlayerID` to the colour they play, carried in the
     /// payload so each device computes its own side independent of turn order.
     private var colorByPlayerID: [String: TavliEngine.Color] = [:]
-    /// `GameVariant.id` of the match's rules (#136), carried in every payload. New
-    /// matches are Plakoto; an opened match takes the payload's.
+    /// `GameVariant.id` of the match's rules (#136), carried in every payload. A new
+    /// match takes the variant chosen in the lobby (#143); an opened match the payload's.
     private var variantID = GameVariants.defaultID
+    /// The variant chosen in the lobby for a match this device creates (#143).
+    private var pendingMatchVariantID = GameVariants.defaultID
     /// Full ply logs + winners for the match's finished games, in order — the history
     /// re-sent in every payload so reconnection stays exact.
     private var completedGameLogs: [GameLog] = []
@@ -114,8 +117,9 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// match is delivered back through the turn-event listener (`receivedTurnEventFor`),
     /// so there is no completion handler here — `handleMatchUpdate` picks it up. The
     /// chosen match length (#145) is remembered for when we initialise the new match.
-    func presentInvite(targetWins: Int) {
+    func presentInvite(targetWins: Int, variantID: String = GameVariants.defaultID) {
         pendingMatchTargetWins = max(1, targetWins)
+        pendingMatchVariantID = variantID
         guard isAuthenticated else { authenticate(); return }
         let request = GKMatchRequest()
         request.minPlayers = 2
@@ -221,7 +225,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
             }
             let hasNextGame = payload.games.count > syncedGameIndex + 1
             if session.isTerminal && hasNextGame && !payload.matchState.isComplete {
-                pendingGameResult = session.record.outcome
+                pendingGameResult = session.record.result
                 advanceToGame(syncedGameIndex + 1, payload: payload)
                 continue   // apply any plies already present in the new current game
             }
@@ -229,7 +233,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         }
 
         if payload.matchState.isComplete, let session, session.isTerminal {
-            pendingGameResult = session.record.outcome
+            pendingGameResult = session.record.result
         }
         statusBanner = nil
     }
@@ -262,18 +266,21 @@ final class GameKitCoordinator: NSObject, ObservableObject {
             // Reconnecting to a finished match: surface the match-over overlay; no need
             // to observe local turns (there are none left).
             recordCancellable = nil
-            pendingGameResult = rebuilt.record.outcome
+            pendingGameResult = rebuilt.record.result
         } else {
             pendingGameResult = nil
             observeLocalTurns(of: rebuilt)
         }
     }
 
-    /// First-time setup by the match creator: assign colours (creator = White and moves
-    /// first), persist the opening payload so the joiner can read its colour and the
-    /// match length, and open the local session. A randomized starting player / colour
-    /// swap is a later refinement.
+    /// First-time setup by the match creator: assign colours (creator = White), pick
+    /// game 1's starter per the variant (`startingPlayer(default: .white)` — White for
+    /// house Plakoto, a coin flip for the bkgm-rules variants, #143), persist the opening
+    /// payload so the joiner can read its colour, the variant and the match length, and
+    /// open the local session.
     private func initializeNewMatch(_ match: GKTurnBasedMatch, targetWins: Int) {
+        variantID = pendingMatchVariantID
+        let starter = GameConfig(variantID: variantID).variant.startingPlayer(default: .white)
         let opponentID = match.participants
             .first { $0.player?.gamePlayerID != localPlayerID }?
             .player?.gamePlayerID
@@ -282,13 +289,22 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         if let opponentID { colors[opponentID] = .black }
 
         let payload = OnlineMatchPayload(targetWins: targetWins,
-                                         startingPlayer: .white,
+                                         startingPlayer: starter,
                                          colorByPlayerID: colors,
                                          games: [GameLog()],
                                          variant: variantID)
         guard let data = try? payload.encoded() else { return }
-        // Persist the colours WITHOUT ending the turn — we move first.
-        match.saveCurrentTurn(withMatch: data) { _ in }
+        if starter == .white {
+            // Persist the colours WITHOUT ending the turn — we move first.
+            match.saveCurrentTurn(withMatch: data) { _ in }
+        } else {
+            // The opponent starts game 1: hand them the turn with the opening state.
+            match.endTurn(withNextParticipants: opponents(of: match),
+                          turnTimeout: GKTurnTimeoutDefault,
+                          match: data) { [weak self] error in
+                Task { @MainActor in self?.reportIfError(error) }
+            }
+        }
         openFresh(match, payload)
     }
 
@@ -346,13 +362,15 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     private func pushLocalTurn() {
         guard let session, let match else { return }
 
-        if session.isTerminal, let winner = session.record.outcome {
-            completedGameLogs.append(GameLog(plies: session.record.plies, winner: winner))
-            matchState.recordGame(winner: winner)
+        // A finished game (a win of 1 or 2 points, or a draw, #143). A draw scores
+        // nothing and the match rolls on to the next game, like a non-deciding win.
+        if session.isTerminal, let result = session.record.result {
+            completedGameLogs.append(GameLog(plies: session.record.plies, result: result))
+            matchState.record(result)
             if matchState.isComplete {
-                endMatch(match, gameWinner: winner)
+                endMatch(match, gameResult: result)
             } else {
-                advanceMatchAfterLocalWin(match, gameWinner: winner)
+                advanceMatchAfterLocalWin(match, gameResult: result)
             }
             return
         }
@@ -367,7 +385,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
 
     /// End the whole Game Center match (the local move decided it): set each
     /// participant's outcome by the **match** winner and write the final log.
-    private func endMatch(_ match: GKTurnBasedMatch, gameWinner: TavliEngine.Color) {
+    private func endMatch(_ match: GKTurnBasedMatch, gameResult: MatchGameResult) {
         let data = (try? payload(games: completedGameLogs).encoded()) ?? Data()
         let localWonMatch = matchState.matchWinner == localColor
         for participant in match.participants {
@@ -377,17 +395,17 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         match.endMatchInTurn(withMatch: data) { [weak self] error in
             Task { @MainActor in self?.reportIfError(error) }
         }
-        pendingGameResult = gameWinner
+        pendingGameResult = gameResult
     }
 
     /// The local move won a game but not the match: start the next game locally, raise
     /// the between-games result, and hand the turn to whoever starts that game (keeping
     /// the turn when that is us).
-    private func advanceMatchAfterLocalWin(_ match: GKTurnBasedMatch, gameWinner: TavliEngine.Color) {
+    private func advanceMatchAfterLocalWin(_ match: GKTurnBasedMatch, gameResult: MatchGameResult) {
         let nextIndex = matchState.completedGames           // == completedGameLogs.count
         let nextStarter = matchState.currentStartingPlayer
         startEmptyGame(index: nextIndex, starter: nextStarter)
-        pendingGameResult = gameWinner
+        pendingGameResult = gameResult
 
         let data = (try? payload(games: completedGameLogs + [GameLog()]).encoded()) ?? Data()
         if nextStarter == localColor {
@@ -408,7 +426,7 @@ final class GameKitCoordinator: NSObject, ObservableObject {
     /// game's plies.
     private func currentPayload() -> OnlineMatchPayload? {
         guard let session else { return nil }
-        let current = GameLog(plies: session.record.plies, winner: session.record.outcome)
+        let current = GameLog(plies: session.record.plies, result: session.record.result)
         return payload(games: completedGameLogs + [current])
     }
 

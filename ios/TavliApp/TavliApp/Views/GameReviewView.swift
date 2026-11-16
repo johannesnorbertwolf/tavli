@@ -50,6 +50,9 @@ struct GameReviewView: View {
     }
 
     private var flipped: Bool { humanColor == .black }
+    /// The game's rules (#143): board layout (Portes bar) + win chance vs equity.
+    private var variant: any GameVariant { GameConfig(variantID: record.variantID).variant }
+    private var scale: EvalScale { EvalScale(variant: variant) }
 
     var body: some View {
         ZStack {
@@ -155,12 +158,12 @@ struct GameReviewView: View {
     private func boardArea(_ eval: PlyEvaluation) -> some View {
         ZStack {
             BoardView(flipped: flipped)
-            CheckersView(stacks: eval.boardStacks, flipped: flipped)
+            CheckersView(stacks: eval.boardStacks, flipped: flipped, variant: variant)
             // Always show your move (amber); `.both` overlays the best move (blue),
             // with shared elements in green (#133).
             MoveHighlightView(playedMove: eval.playedMove,
                               bestMove: overlay == .both ? eval.bestMove : nil,
-                              stacks: eval.boardStacks, flipped: flipped)
+                              stacks: eval.boardStacks, flipped: flipped, variant: variant)
         }
         .aspectRatio(1, contentMode: .fit)
     }
@@ -183,7 +186,7 @@ struct GameReviewView: View {
             // passes refine it in place (needs ≥2 points to trace a line).
             if model.firstPassComplete, model.chartEvaluations.count >= 2 {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Win chance through the game")
+                    Text(scale.isEquity ? LocalizedStringKey("Equity through the game") : LocalizedStringKey("Win chance through the game"))
                         .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
                     WinProbabilityChart(evaluations: model.chartEvaluations,
                                         selectedPly: eval.plyNumber,
@@ -233,7 +236,7 @@ struct GameReviewView: View {
                             .font(.callout.bold())
                             .foregroundStyle(ReviewTint.best)
                     } else {
-                        Text("−\(percent(eval.absoluteGap)) win chance")
+                        Text(scale.lossLabel(eval.absoluteGap))
                             .font(.callout.bold())
                             .foregroundStyle(isBlunder ? ReviewTint.gap : ChromeKit.inkSecondary)
                     }
@@ -345,7 +348,8 @@ struct GameReviewView: View {
             Text(label)
         }
     }
-    private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
+    /// "63%" — or equity ("+0.52") for a 2-point variant (#143).
+    private func percent(_ p: Double) -> String { scale.value(p) }
     /// Whether two moves are the *same* move (order-independent), so the panel claims
     /// "best move played" only when they genuinely match — not merely scoring alike,
     /// which let the text disagree with the highlighted board move (#103).
@@ -365,7 +369,10 @@ struct GameReviewView: View {
             if a0 != b0 { return a0 < b0 }
             return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
         }
-        return ordered.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
+        // A source on an end index is a Portes bar entry (#143); nothing else ever
+        // moves *from* 0 / 25.
+        func label(_ p: Int) -> String { p == 0 || p == 25 ? String(localized: "bar") : "\(p)" }
+        return ordered.map { $0.count == 2 ? "\(label($0[0]))→\($0[1])" : "?" }.joined(separator: ", ")
     }
 }
 

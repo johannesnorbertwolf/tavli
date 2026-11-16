@@ -114,10 +114,22 @@ public struct BoardGeometry {
         switch n {
         case 0:      return 25
         case 25:     return 0
+        case lowerBarSlot: return upperBarSlot
+        case upperBarSlot: return lowerBarSlot
         case 1...12: return n + 12
         default:     return n - 12  // 13...24
         }
     }
+
+    /// Bar slots (#143): checkers on the centre bar (Portes' hit checkers), past the
+    /// 0…25 point/tray range. `lowerBarSlot` stacks up from the bottom frame along the
+    /// bar, `upperBarSlot` down from the top frame (the two swap when `flipped`),
+    /// leaving the middle of the bar to the dice. The caller decides which colour
+    /// uses which.
+    public static let lowerBarSlot = 26
+    public static let upperBarSlot = 27
+
+    private static func isBar(_ n: Int) -> Bool { n == lowerBarSlot || n == upperBarSlot }
 
     /// Visual quadrant of a logical index, accounting for `flipped`.
     public func quadrant(of index: Int) -> BoardQuadrant? {
@@ -148,8 +160,10 @@ public struct BoardGeometry {
         let tipYDesign = raw.top ? raw.baseY + Self.pointH : raw.baseY - Self.pointH
         let half = Self.pointW / 2 - 1.5
         let laneY = raw.top ? raw.baseY : raw.baseY - Self.pointH
-        let laneDesign = CGRect(x: raw.cx - Self.pointW / 2, y: laneY,
-                                width: Self.pointW, height: Self.pointH)
+        // A bar slot's lane spans the bar's width (wider than a point), same depth.
+        let laneW = Self.isBar(physical) ? Self.bar : Self.pointW
+        let laneDesign = CGRect(x: raw.cx - laneW / 2, y: laneY,
+                                width: laneW, height: Self.pointH)
         return PointGeometry(
             index: index,
             isTop: raw.top,
@@ -231,8 +245,13 @@ public struct BoardGeometry {
     }
 
     /// Design-space baseline center and orientation for a playable point 1…24.
+    /// Bar slots (26/27) sit centred on the bar, baseline on the bottom / top frame.
     private static func rawPoint(_ n: Int) -> (cx: CGFloat, baseY: CGFloat, top: Bool) {
         switch n {
+        case lowerBarSlot:
+            return (frame + halfW + bar / 2, designSide - frame, false)
+        case upperBarSlot:
+            return (frame + halfW + bar / 2, frame, true)
         case 1...6:
             let i = CGFloat(n - 1)
             return (frame + inner - pointW * (i + 0.5), designSide - frame, false)

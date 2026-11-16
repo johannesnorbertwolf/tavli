@@ -76,6 +76,43 @@ struct PlayableBoardView: View {
     /// replaced on each new failed drop so overlapping drags don't clobber.
     @State private var snapBackTask: Task<Void, Never>? = nil
 
+    /// Checkers sent to the bar that are still flying there (#143, Portes hits).
+    @State private var hitFlights: [HitFlight] = []
+
+    private struct HitFlight: Identifiable {
+        let id = UUID()
+        let from: Int
+        let to: Int
+        let color: TavliEngine.Color
+        let duration: TimeInterval
+    }
+
+    // ── Engine ↔ display slots (#143) ────────────────────────────────────────
+    // Board views work in `BoardLayout` display slots: 0…25 as the engine, with
+    // each colour's bar checkers split out of the end stacks into slots 26/27. All
+    // mapping goes through the session's variant hooks.
+
+    private var variant: any GameVariant { session.game.variant }
+    private var boardSize: Int { session.game.board.boardSize }
+
+    /// The live position as display stacks (trays = borne-off only, bars split out).
+    private var layoutStacks: [[TavliEngine.Color]] {
+        BoardLayout.displayStacks(session.game.board.points.map(\.pieces), variant: variant)
+    }
+
+    /// Display slot of an engine move source (a bar position → its bar slot).
+    private func displaySlot(_ position: Int) -> Int {
+        BoardLayout.displaySlot(forSource: position, variant: variant, boardSize: boardSize)
+    }
+
+    /// Engine source position of a display slot (`-1` = never a source).
+    private func sourcePosition(_ slot: Int) -> Int {
+        BoardLayout.sourcePosition(forDisplaySlot: slot, variant: variant, boardSize: boardSize) ?? -1
+    }
+
+    /// Selectable sources as display slots (bar entries pick up from the bar).
+    private var sourceSlots: [Int] { session.selectableSources.map(displaySlot) }
+
     var body: some View {
         GeometryReader { proxy in
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: proxy.size),
@@ -83,15 +120,20 @@ struct PlayableBoardView: View {
 
             // During a drag or an AI flight (#93): show one fewer checker at
             // the source (it's in the air, drawn by the overlay views below).
-            let boardStacks = session.game.board.points.map(\.pieces)
+            let boardStacks = layoutStacks
+            let hopFrom = session.aiHopInFlight.map { displaySlot($0.from) }
             let displayStacks: [[TavliEngine.Color]] = {
                 var s = boardStacks
-                if let drag = liveDrag, drag.sourcePoint >= 1, drag.sourcePoint <= 24,
+                if let drag = liveDrag, drag.sourcePoint != 0, drag.sourcePoint != boardSize + 1,
                    !s[drag.sourcePoint].isEmpty {
                     s[drag.sourcePoint] = Array(s[drag.sourcePoint].dropLast())
                 }
-                if let hop = session.aiHopInFlight, !s[hop.from].isEmpty {
-                    s[hop.from] = Array(s[hop.from].dropLast())
+                if let from = hopFrom, !s[from].isEmpty {
+                    s[from] = Array(s[from].dropLast())
+                }
+                // A hit checker still in flight hasn't reached the bar yet.
+                for f in hitFlights where !s[f.to].isEmpty {
+                    s[f.to] = Array(s[f.to].dropLast())
                 }
                 return s
             }()
@@ -100,14 +142,14 @@ struct PlayableBoardView: View {
             // dragging; fall back to the session's selection-driven targets otherwise.
             let highlightTargets: Set<Int> = {
                 guard let drag = liveDrag,
-                      session.selectableSources.contains(drag.sourcePoint) else {
+                      session.selectableSources.contains(sourcePosition(drag.sourcePoint)) else {
                     return session.validTargets
                 }
-                return session.moveBuilder.validDestinations(for: drag.sourcePoint)
+                return session.moveBuilder.validDestinations(for: sourcePosition(drag.sourcePoint))
             }()
 
             // Source ring: drag source while dragging, session selection otherwise.
-            let ringPoint: Int? = liveDrag?.sourcePoint ?? session.selectedPoint
+            let ringPoint: Int? = liveDrag?.sourcePoint ?? session.selectedPoint.map(displaySlot)
 
             ZStack {
                 ZStack {
@@ -137,9 +179,20 @@ struct PlayableBoardView: View {
                 // flight (#93). `.id` forces a fresh view per hop so the flight
                 // restarts even when consecutive hops share endpoints (a Pasch
                 // moving two checkers along the same route).
-                if let hop = session.aiHopInFlight {
-                    AIFlightCheckerView(hop: hop, geo: geo, stacks: boardStacks)
+                if let hop = session.aiHopInFlight, let from = hopFrom {
+                    AIFlightCheckerView(from: from, to: hop.to, color: hop.color,
+                                        duration: hop.duration, geo: geo, stacks: boardStacks)
                         .id(hop.id)
+                }
+
+                // Hit checkers flying to the bar (#143): from the hit point's base
+                // to the next free bar slot.
+                ForEach(hitFlights) { f in
+                    ArcFlightView(geo: geo, color: f.color,
+                                  start: geo.checkerCenter(point: f.from, slot: 0),
+                                  end: geo.checkerCenter(point: f.to,
+                                                         slot: min(displayStacks[f.to].count, 4)),
+                                  duration: f.duration)
                 }
             }
             .accessibilityElement()
@@ -147,6 +200,23 @@ struct PlayableBoardView: View {
             .accessibilityValue(boardSignature)
         }
         .aspectRatio(1, contentMode: .fit)
+        // Animate a hit (#143): when a colour's bar grows, fly the hit checker(s)
+        // from the point they were taken on to the bar, for the AI's hops and the
+        // human's own moves alike. Undo (bar shrinking) snaps without animation.
+        .onChange(of: layoutStacks) { old, new in
+            let duration = session.animationTimings.aiMoveAnimationDuration
+            guard duration > 0 else { return }
+            let flights = BoardLayout.hits(from: old, to: new).map {
+                HitFlight(from: $0.from, to: $0.to, color: $0.color, duration: duration)
+            }
+            guard !flights.isEmpty else { return }
+            hitFlights += flights
+            let ids = Set(flights.map(\.id))
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                hitFlights.removeAll { ids.contains($0.id) }
+            }
+        }
         // Online (#134): lock the board on the opponent's turn — blocks tap-to-roll
         // and tap/drag while letting the incoming move animate.
         .disabled(!interactive)
@@ -179,23 +249,24 @@ struct PlayableBoardView: View {
             .updating($liveDrag) { value, state, _ in
                 let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
                 guard moved,
-                      let src = geo.hitTest(value.startLocation,
-                                            candidates: Array(session.selectableSources))
+                      let src = geo.hitTest(value.startLocation, candidates: sourceSlots)
                 else { return }
                 state = LiveDrag(sourcePoint: src, location: value.location)
             }
             .onEnded { value in
                 let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
                 if moved,
-                   let src = geo.hitTest(value.startLocation,
-                                         candidates: Array(session.selectableSources)) {
-                    session.selectPoint(src)
+                   let src = geo.hitTest(value.startLocation, candidates: sourceSlots) {
+                    // `src` is a display slot (a bar slot for a bar entry); the
+                    // session speaks engine positions.
+                    let from = sourcePosition(src)
+                    session.selectPoint(from)
                     if let dest = geo.hitTest(value.location,
                                               candidates: Array(session.validTargets)) {
-                        session.commitHalfMove(from: src, to: dest)
+                        session.commitHalfMove(from: from, to: dest)
                     } else {
                         // Failed drop: spring the checker back to its stack position.
-                        let pieces = session.game.board.points[src].pieces
+                        let pieces = layoutStacks[src]
                         let topSlot = max(0, min(pieces.count, 5) - 1)
                         let origin = geo.checkerCenter(point: src, slot: topSlot)
                         snapBack = SnapBack(position: value.location,
@@ -224,11 +295,13 @@ struct PlayableBoardView: View {
     /// otherwise (re)select the tapped point. Tapping empty space or a
     /// non-selectable point clears the selection (`selectPoint` ignores it).
     private func handleTap(_ location: CGPoint, geo: BoardGeometry) {
-        let tapped = geo.hitTest(location, candidates: Array(0...25)) ?? -1
+        // Display slots 0…27 (incl. the bar, #143). Targets are points or trays,
+        // identical in both spaces; a source tap maps a bar slot to its engine end.
+        let tapped = geo.hitTest(location, candidates: Array(0..<BoardLayout.slotCount)) ?? -1
         if let sel = session.selectedPoint, session.validTargets.contains(tapped) {
             session.commitHalfMove(from: sel, to: tapped)
         } else {
-            session.selectPoint(tapped)
+            session.selectPoint(sourcePosition(tapped))
         }
     }
 }
@@ -308,7 +381,9 @@ struct SourceRingView: View {
 
     var body: some View {
         Canvas { context, size in
-            guard let sel = selectedPoint, sel >= 1, sel <= 24 else { return }
+            // Points 1…24 and the bar slots (#143); never a tray.
+            guard let sel = selectedPoint, stacks.indices.contains(sel),
+                  (1...24).contains(sel) || BoardLayout.isBarSlot(sel) else { return }
             let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
             let r = geo.checkerRadius
             let s = geo.scale
@@ -357,6 +432,13 @@ struct MoveHighlightView: View {
     /// Pre-move per-slot stacks, so rings track the real checker positions.
     let stacks: [[TavliEngine.Color]]
     var flipped: Bool = false
+    /// The game's rules (#143): a source on a bar position (Portes entry) is ringed
+    /// on the bar, and `stacks` are split into trays + bars the same way the board is.
+    var variant: any GameVariant = GameVariants.plakoto
+
+    private var displayStacks: [[TavliEngine.Color]] {
+        stacks.count == BoardLayout.slotCount ? stacks : BoardLayout.displayStacks(stacks, variant: variant)
+    }
 
     /// The genuine source points and landing points of a move, after cancelling
     /// hop-overs *by count* (#133). `sources` lists each genuine source point
@@ -413,8 +495,10 @@ struct MoveHighlightView: View {
             // the best move lifts from there are blue, and any extra you lifted that the
             // best wouldn't are amber. So played-1 / best-2 from one point reads as one
             // green + one blue, not two green.
-            let playedSources = played.sources
-            let bestSources = best?.sources ?? []
+            let toDisplay = { (p: Int) in BoardLayout.displaySlot(forSource: p, variant: variant) }
+            let playedSources = played.sources.map(toDisplay)
+            let bestSources = (best?.sources ?? []).map(toDisplay)
+            let shown = displayStacks
             for src in Set(playedSources).union(bestSources) {
                 let played = playedSources.filter { $0 == src }.count
                 let best = bestSources.filter { $0 == src }.count
@@ -422,7 +506,8 @@ struct MoveHighlightView: View {
                 let colors = Array(repeating: CaramelPalette.hlBoth, count: green)
                     + Array(repeating: CaramelPalette.hlBest, count: best - green)   // best wants more off here
                     + Array(repeating: CaramelPalette.hl, count: played - green)     // you lifted more than best
-                drawSourceRings(&context, geo: geo, point: src, colors: colors, s: s)
+                drawSourceRings(&context, geo: geo, point: src, colors: colors,
+                                stacks: shown, s: s)
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -451,8 +536,11 @@ struct MoveHighlightView: View {
     /// Ring the top checkers of the source point (the ones lifted off), one ring per
     /// entry in `colors`, applied top-down.
     private func drawSourceRings(_ context: inout GraphicsContext, geo: BoardGeometry,
-                                 point n: Int, colors: [SwiftUI.Color], s: CGFloat) {
-        guard n >= 1 && n <= 24, !colors.isEmpty else { return }
+                                 point n: Int, colors: [SwiftUI.Color],
+                                 stacks: [[TavliEngine.Color]], s: CGFloat) {
+        // Points 1…24 and the bar slots (a Portes entry, #143).
+        guard (1...24).contains(n) || BoardLayout.isBarSlot(n), stacks.indices.contains(n),
+              !colors.isEmpty else { return }
         let r = geo.checkerRadius
         let visible = min(stacks[n].count, 5)
         let count = min(colors.count, visible)

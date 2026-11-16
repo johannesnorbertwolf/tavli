@@ -46,7 +46,7 @@ private struct OnlineGameView: View {
             state: coordinator.matchState,
             localColor: coordinator.localColor,
             opponentName: coordinator.opponentName,
-            lastGameWinner: coordinator.pendingGameResult,
+            lastGameResult: coordinator.pendingGameResult,
             showResultOverlay: coordinator.pendingGameResult != nil,
             onNextGame: { coordinator.continueToNextGame() },
             onRematch: nil,
@@ -79,6 +79,8 @@ private struct OnlineLobbyView: View {
 
     /// Match length for the next invite (#145). Defaults to best-of-three.
     @AppStorage(SettingsKey.onlineMatchLength) private var matchLength: MatchLengthSetting = .bestOfThree
+    /// Variant for the next invite (#143), shared with the start screen / Settings.
+    @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
 
     var body: some View {
         ZStack {
@@ -116,6 +118,13 @@ private struct OnlineLobbyView: View {
 
     @ViewBuilder
     private var authenticatedBody: some View {
+        // Variant for the invite (#143) — every variant works online (two humans, no
+        // model needed); the match carries it in its payload, so the joiner plays the
+        // same rules.
+        VariantPickerView(selection: $variant, showsAIAvailability: false)
+            .frame(maxWidth: 392)
+            .chromeCard(padding: 20)
+
         Picker("Match length", selection: $matchLength) {
             ForEach(MatchLengthSetting.allCases) { option in
                 Text(option.label).tag(option)
@@ -126,7 +135,7 @@ private struct OnlineLobbyView: View {
         .frame(maxWidth: 392)
 
         Button {
-            coordinator.presentInvite(targetWins: matchLength.targetWins)
+            coordinator.presentInvite(targetWins: matchLength.targetWins, variantID: variant.rawValue)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "person.2.fill")

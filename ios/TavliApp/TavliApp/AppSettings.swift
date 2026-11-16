@@ -106,6 +106,67 @@ enum MatchLengthSetting: String, CaseIterable, Identifiable {
     }
 }
 
+/// Which Tavli variant to play (#143). The raw value is the engine's persisted
+/// `GameVariant.id`, so the stored setting, saves and online payloads share one key
+/// space. Defaults to `.plakoto` — the app's original house rules.
+enum GameVariantSetting: String, CaseIterable, Identifiable {
+    case plakoto = "plakoto"
+    case plakotoStandard = "plakoto_standard"
+    case portes = "portes"
+    case fevga = "fevga"
+
+    var id: String { rawValue }
+
+    init(variant: any GameVariant) {
+        self = GameVariantSetting(rawValue: variant.id) ?? .plakoto
+    }
+
+    init(variantID: String) {
+        self = GameVariantSetting(rawValue: variantID) ?? .plakoto
+    }
+
+    /// The engine rules for this choice.
+    var variant: any GameVariant {
+        GameVariants.variant(forID: rawValue) ?? GameVariants.plakoto
+    }
+
+    var config: GameConfig { GameConfig(variant: variant) }
+
+    /// Short name for segmented pickers.
+    var shortLabel: String {
+        switch self {
+        case .plakoto:         return String(localized: "Plakoto")
+        case .plakotoStandard: return String(localized: "Standard")
+        case .portes:          return String(localized: "Portes")
+        case .fevga:           return String(localized: "Fevga")
+        }
+    }
+
+    /// Full display name (game chrome, settings, saves).
+    var name: String {
+        switch self {
+        case .plakoto:         return String(localized: "Plakoto (house rules)")
+        case .plakotoStandard: return String(localized: "Plakoto (standard rules)")
+        case .portes:          return String(localized: "Portes")
+        case .fevga:           return String(localized: "Fevga")
+        }
+    }
+
+    /// One-paragraph rules summary — what this variant is and how it differs.
+    var summary: String {
+        switch self {
+        case .plakoto:
+            return String(localized: "The pinning game, as TavTav first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game.")
+        case .plakotoStandard:
+            return String(localized: "Plakoto by the standard (bkgm) rules: use both dice whenever you can (the larger one if only one fits), bear off with higher rolls from your highest point. Pinning your opponent's last checker on its start point (the mother) wins two points once your own start point is clear; if both mothers are pinned, the game is a draw. Winning before your opponent bears off any checker also scores two points.")
+        case .portes:
+            return String(localized: "Greek backgammon without the doubling cube. A lone checker that is hit goes to the bar and must re-enter in your opponent's home before anything else moves. Winning before your opponent bears off any checker scores two points.")
+        case .fevga:
+            return String(localized: "The running game: both sides race the same way round the board from opposite corners. One checker holds a point, nothing is ever hit or pinned, and you may not lock your opponent in behind six points in a row. A win before your opponent bears off scores two points.")
+        }
+    }
+}
+
 /// `UserDefaults` keys for the persisted settings.
 enum SettingsKey {
     static let preferredColor     = "settings.preferredColor"
@@ -118,6 +179,8 @@ enum SettingsKey {
     static let aiStrength          = "settings.aiStrength"
     static let matchLength         = "settings.matchLength"
     static let onlineMatchLength   = "settings.onlineMatchLength"
+    /// The selected variant's id (#143) — the engine's `VariantPreference.key`.
+    static let variant             = VariantPreference.key
 }
 
 /// Static, non-reactive reads of the persisted settings, for contexts where
@@ -194,6 +257,17 @@ enum AppSettings {
     /// How many games a newly-invited online match plays (#145). Default `.bestOfThree`.
     static var onlineMatchLength: MatchLengthSetting {
         raw(SettingsKey.onlineMatchLength).flatMap(MatchLengthSetting.init) ?? .bestOfThree
+    }
+
+    /// The variant new offline games are played under (#143). Default Plakoto.
+    static var variant: GameVariantSetting {
+        GameVariantSetting(variant: VariantPreference.load())
+    }
+
+    /// Whether `variant`'s Core ML model is bundled, i.e. it can be played against
+    /// the AI (#143). Without it the variant stays playable two-player only.
+    static func aiAvailable(_ variant: GameVariantSetting) -> Bool {
+        ModelCatalog.main.isAvailable(variant.variant)
     }
 
     /// The animation timings a new or resumed session should use, honouring the

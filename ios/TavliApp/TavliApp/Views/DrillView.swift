@@ -385,11 +385,13 @@ private struct DrillCard: View {
                     // Compare what you played (yellow) against the best (blue), both
                     // green where they agree (#133).
                     MoveHighlightView(playedMove: eval.playedMove, bestMove: eval.bestMove,
-                                      stacks: eval.boardStacks, flipped: flipped)
+                                      stacks: eval.boardStacks, flipped: flipped,
+                                      variant: session.game.variant)
                 } else if !solved {
                     // The move you originally played — "you did this; find better" (#114).
                     MoveHighlightView(playedMove: eval.playedMove, bestMove: nil,
-                                      stacks: eval.boardStacks, flipped: flipped)
+                                      stacks: eval.boardStacks, flipped: flipped,
+                                      variant: session.game.variant)
                 }
             }
         }
@@ -431,8 +433,15 @@ private struct DrillCard: View {
             if showingSolution {
                 moveRow(label: "Best move", move: eval.bestMove,
                         pct: Double(eval.bestScore), tint: CaramelPalette.hlBest)
-                Text("−\(percent(Double(eval.bestScore - eval.playedScore))) win chance vs your move")
-                    .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+                let gap = scale.gap(Double(eval.bestScore - eval.playedScore))
+                Group {
+                    if scale.isEquity {
+                        Text("−\(gap) equity vs your move")
+                    } else {
+                        Text("−\(gap) win chance vs your move")
+                    }
+                }
+                .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             }
         }
     }
@@ -445,7 +454,9 @@ private struct DrillCard: View {
         }
     }
 
-    private func percent(_ p: Double) -> String { "\(Int((p * 100).rounded()))%" }
+    /// Win chance vs equity for the drilled game's rules (#143).
+    private var scale: EvalScale { EvalScale(variant: session.game.variant) }
+    private func percent(_ p: Double) -> String { scale.value(p) }
 
     /// Half-moves sorted by start point then end point, so the same move always reads
     /// identically however its half-moves were ordered when played.
@@ -456,7 +467,9 @@ private struct DrillCard: View {
             if a0 != b0 { return a0 < b0 }
             return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
         }
-        return ordered.map { $0.count == 2 ? "\($0[0])→\($0[1])" : "?" }.joined(separator: ", ")
+        // A source on an end index is a Portes bar entry (#143).
+        func label(_ p: Int) -> String { p == 0 || p == 25 ? String(localized: "bar") : "\(p)" }
+        return ordered.map { $0.count == 2 ? "\(label($0[0]))→\($0[1])" : "?" }.joined(separator: ", ")
     }
 
     @ViewBuilder

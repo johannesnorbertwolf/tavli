@@ -73,10 +73,10 @@ struct GameView: View {
         /// Display name for the opponent in the scoreboard ("TavTav" offline, the Game
         /// Center display name online).
         var opponentName: String
-        /// The just-finished game's winner. Online sets this (the session has already
-        /// advanced to the next game); offline leaves it `nil` and the overlay reads it
-        /// from `session.phase`.
-        var lastGameWinner: TavliEngine.Color?
+        /// The just-finished game's result (winner + points, or a draw, #143). Online
+        /// sets this (the session has already advanced to the next game); offline
+        /// leaves it `nil` and the overlay reads it from `session.record`.
+        var lastGameResult: MatchGameResult?
         /// Online drives the result overlay with this flag (its session has advanced
         /// behind the overlay); offline leaves it `false` and the overlay keys on
         /// `session.phase == .gameOver`.
@@ -152,17 +152,23 @@ struct GameView: View {
         return false
     }
 
-    /// The winner of the just-finished game, for the match overlay's per-game verdict.
-    private var lastGameWinner: TavliEngine.Color? {
-        if let w = match?.lastGameWinner { return w }
-        if case .gameOver(let w) = session.phase { return w }
-        return nil
+    /// The just-finished game's result (winner + points, or a draw), for the match
+    /// overlay's per-game verdict.
+    private var lastGameResult: MatchGameResult? {
+        if let r = match?.lastGameResult { return r }
+        return session.record.result
     }
 
     /// Turn/phase status — the normal indicator, or an online "waiting for opponent"
     /// state plus any transient banner (opponent left, match ended).
     @ViewBuilder private var turnStatus: some View {
         VStack(spacing: 6) {
+            // Which game this is (#143) — always visible with the turn status.
+            Text(GameVariantSetting(variant: session.game.variant).name)
+                .font(ChromeType.caption.weight(.semibold))
+                .foregroundStyle(ChromeKit.inkSecondary)
+                .textCase(.uppercase)
+                .accessibilityIdentifier("variantName")
             if let online, !online.isLocalTurn, !session.isTerminal {
                 OnlineWaitingView(opponentName: online.opponentName)
             } else {
@@ -275,21 +281,29 @@ struct GameView: View {
                     // transition (score + "Next game") or the match verdict once decided.
                     SColor.black.opacity(0.65).ignoresSafeArea()
                     MatchOverlayView(match: match,
-                                     lastGameWinner: lastGameWinner,
+                                     lastGameResult: lastGameResult,
+                                     variant: session.game.variant,
                                      aiColor: session.aiColor,
                                      onReview: session.aiColor != nil ? { showReview = true } : nil,
                                      onHistory: { showHistory = true })
-                } else if case .gameOver(let winner?) = session.phase {
+                } else if case .gameOver(let winner) = session.phase {
                     // The scrim is a direct ZStack child (like the page background)
                     // so it provably spans the whole screen in both orientations —
                     // hosted inside the overlay it sized itself to the board column
-                    // in landscape, leaving the panel bright.
+                    // in landscape, leaving the panel bright. `winner == nil` is a draw
+                    // (standard Plakoto, #143).
                     SColor.black.opacity(0.65).ignoresSafeArea()
-                    WinOverlayView(title: verdict(winner), stats: stats, onNewGame: onNewGame,
+                    WinOverlayView(title: winner.map(verdict) ?? ResultCopy.drawTitle,
+                                   subtitle: winner == nil
+                                       ? ResultCopy.drawSubtitle
+                                       : ResultCopy.pointsSubtitle(points: session.record.points,
+                                                                   variant: session.game.variant),
+                                   stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
                                    onReview: { showReview = true },
                                    tournamentExit: tournamentExit,
                                    onlineExit: online?.onLeave,
+                                   showsStats: session.aiColor != nil,
                                    mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
@@ -305,8 +319,11 @@ struct GameView: View {
             // launched from inside review (reusing its precomputed analysis) rather
             // than as a parallel top-level choice.
             .fullScreenCover(isPresented: $showReview) {
+                // A two-player game has no agent of its own; review it with the
+                // variant's model when bundled (#143).
                 GameReviewView(record: session.record,
-                               agent: session.agent,
+                               agent: session.agent
+                                   ?? GameSession.makeAgent(config: session.game.board.config),
                                humanColor: humanColor)
             }
             .alert("Save game", isPresented: $showingSaveDialog) {
@@ -328,7 +345,12 @@ struct GameView: View {
                 Button("I'm sure") { DispatchQueue.main.async { showSurrenderConfirm = true } }
                 Button("Keep playing", role: .cancel) {}
             } message: {
-                Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
+                if session.game.variant.reportsEquity {
+                    // 2-point variants (#143): the network value is equity, not a win chance.
+                    Text("TavTav still rates your position at \(EvalScale(variant: session.game.variant).value(session.humanWinProbability ?? 0.5)) points. Are you sure you want to give up?")
+                } else {
+                    Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
+                }
             }
             // Standard confirmation (#74). The default ends the game in place (AI
             // recorded as winner) and clears the auto-save slot via `onAutosave`. In
@@ -632,15 +654,17 @@ private struct WinProbabilityBar: View {
     @ObservedObject var session: GameSession
 
     private var p: Double { session.humanWinProbability ?? session.winProbability }
+    /// Win chance, or equity for a 2-point variant (#143).
+    private var scale: EvalScale { EvalScale(variant: session.game.variant) }
 
     var body: some View {
         VStack(spacing: 6) {
             HStack {
-                Text("Win chance")
+                Text(scale.title)
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
                 Spacer()
-                Text(String(format: "%.0f%%", p * 100))
+                Text(scale.value(p))
                     .font(ChromeType.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(ChromeTheme.ink)
             }
@@ -686,7 +710,12 @@ private struct TurnIndicatorView: View {
         case .moving:            return String(localized: "Choose destination")
         case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
-        case .gameOver(let w?):  return String(localized: "\(ChromeTheme.displayName(w)) wins!")
+        case .gameOver(let w?):
+            // A 2-point result (#143) says so.
+            if (session.record.points ?? 1) >= 2 {
+                return String(localized: "\(ChromeTheme.displayName(w)) wins a double game!")
+            }
+            return String(localized: "\(ChromeTheme.displayName(w)) wins!")
         case .gameOver(nil):     return String(localized: "Draw")
         }
     }
@@ -710,11 +739,11 @@ private struct BorneOffView: View {
     @ObservedObject var session: GameSession
     let color: TavliEngine.Color
 
+    /// Only this colour's borne-off checkers in its own tray (#143): Portes keeps the
+    /// opponent's bar checkers in the same end stack, so a raw stack count would lie.
     private var count: Int {
-        let board = session.game.board
-        return color == .white
-            ? board.points[board.boardSize + 1].count
-            : board.points[0].count
+        BoardLayout.borneOffCount(color, stacks: session.game.board.points.map(\.pieces),
+                                  variant: session.game.variant)
     }
 
     var body: some View {
@@ -789,6 +818,9 @@ private struct WinOverlayView: View {
     /// Pre-formatted verdict ("You win!" / "Red wins") — the caller knows which
     /// side the human played; this view stays presentation-only.
     let title: String
+    /// A line under the verdict: the points a 2-point-variant result was worth, or
+    /// why a game was drawn (#143). `nil` = none.
+    var subtitle: String? = nil
     let stats: HumanGameStats
     let onNewGame: () -> Void
     let onHistory: () -> Void
@@ -799,13 +831,15 @@ private struct WinOverlayView: View {
     /// Online (#134): when set, the primary action returns to the lobby, and the
     /// vs-AI record + Review (which needs a model the online session lacks) are hidden.
     var onlineExit: (() -> Void)? = nil
+    /// Whether this game counts toward the vs-AI record (`false` for two-player, #143).
+    var showsStats: Bool = true
     /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
     /// `nil` in human-vs-human games (no mascot shown).
     var mascot: TavTavPersona? = nil
 
     /// The vs-AI record is the main app's, never written from tournament or online
     /// games — hide it there so it doesn't read "No games yet".
-    private var showsStats: Bool { tournamentExit == nil && onlineExit == nil }
+    private var showsRecord: Bool { showsStats && tournamentExit == nil && onlineExit == nil }
     /// Review needs the bundled model the online session deliberately omits.
     private var showsReview: Bool { onlineExit == nil }
 
@@ -826,7 +860,13 @@ private struct WinOverlayView: View {
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
-            if showsStats {
+            if let subtitle {
+                Text(subtitle)
+                    .font(ChromeType.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+            }
+            if showsRecord {
                 StatsPanelView(stats: stats)
             }
             Button {
@@ -875,8 +915,9 @@ private struct MatchScoreboardView: View {
     let localColor: TavliEngine.Color
     let opponentName: String
 
-    private var localWins: Int { state.wins(for: localColor) }
-    private var opponentWins: Int { state.wins(for: localColor.opponent) }
+    // The score in points (#143): games for Plakoto, a double game counts 2.
+    private var localWins: Int { state.score(for: localColor) }
+    private var opponentWins: Int { state.score(for: localColor.opponent) }
     private var gameNumber: Int { min(state.currentGameNumber, state.maxGames) }
 
     var body: some View {
@@ -910,8 +951,11 @@ private struct MatchScoreboardView: View {
 /// only — every action is a closure supplied by the match context.
 private struct MatchOverlayView: View {
     let match: GameView.Match
-    /// The just-finished game's winner (offline reads it from `session.phase`).
-    let lastGameWinner: TavliEngine.Color?
+    /// The just-finished game's result (offline reads it from `session.record`);
+    /// a `nil` winner is a draw (#143).
+    let lastGameResult: MatchGameResult?
+    /// The match's rules, for the points subtitle (#143).
+    var variant: any GameVariant = GameVariants.plakoto
     /// The AI's colour offline (drives the mascot); `nil` online (no mascot).
     let aiColor: TavliEngine.Color?
     /// Open the just-finished game's review — offline only (review needs the model the
@@ -922,8 +966,9 @@ private struct MatchOverlayView: View {
 
     private var state: MatchState { match.state }
     private var localColor: TavliEngine.Color { match.localColor }
-    private var localWins: Int { state.wins(for: localColor) }
-    private var opponentWins: Int { state.wins(for: localColor.opponent) }
+    private var localWins: Int { state.score(for: localColor) }
+    private var opponentWins: Int { state.score(for: localColor.opponent) }
+    private var lastGameWinner: TavliEngine.Color? { lastGameResult?.winner }
     private var isComplete: Bool { state.isComplete }
     private var localWonMatch: Bool { state.matchWinner == localColor }
 
@@ -941,10 +986,18 @@ private struct MatchOverlayView: View {
                 ? String(localized: "You won the match!")
                 : String(localized: "\(match.opponentName) won the match")
         }
-        guard let w = lastGameWinner else { return String(localized: "Game over") }
+        guard let result = lastGameResult else { return String(localized: "Game over") }
+        guard let w = result.winner else { return ResultCopy.drawTitle }
         return w == localColor
             ? String(localized: "You win!")
             : String(localized: "\(ChromeTheme.displayName(w)) wins")
+    }
+
+    /// Points / draw line for the just-finished game (#143), `nil` for Plakoto wins.
+    private var resultSubtitle: String? {
+        guard let result = lastGameResult else { return nil }
+        if result.isDraw { return ResultCopy.drawSubtitle }
+        return ResultCopy.pointsSubtitle(points: result.points, variant: variant)
     }
 
     private var progressCaption: String {
@@ -962,6 +1015,12 @@ private struct MatchOverlayView: View {
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+            if let sub = resultSubtitle {
+                Text(sub)
+                    .font(ChromeType.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+            }
 
             VStack(spacing: 6) {
                 Text("You \(localWins) – \(opponentWins) \(match.opponentName)")

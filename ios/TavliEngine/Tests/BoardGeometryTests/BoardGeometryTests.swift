@@ -241,4 +241,38 @@ final class BoardGeometryTests: XCTestCase {
         XCTAssertEqual(geom.hitTest(geom.point(25).center, candidates: all), 25)
         XCTAssertEqual(geom.hitTest(geom.point(0).center, candidates: all), 0)
     }
+
+    // ── Bar slots (#143) ──────────────────────────────────────────────────────
+    func testBarSlotsStackAlongTheBarFromEachFrame() {
+        let lower = BoardGeometry.lowerBarSlot, upper = BoardGeometry.upperBarSlot
+        let r = geom.checkerRadius
+        XCTAssertNil(geom.point(lower).quadrant)
+        XCTAssertFalse(geom.point(lower).isTop)
+        XCTAssertTrue(geom.point(upper).isTop)
+        // Centred on the bar, stacking inward from the bottom / top frame.
+        XCTAssertEqual(geom.checkerCenter(point: lower, slot: 0).x, 450, accuracy: eps)
+        XCTAssertEqual(geom.checkerCenter(point: lower, slot: 0).y, 860 - r - 1, accuracy: eps)
+        XCTAssertEqual(geom.checkerCenter(point: upper, slot: 0).y, 40 + r + 1, accuracy: eps)
+        XCTAssertLessThan(geom.checkerCenter(point: lower, slot: 1).y,
+                          geom.checkerCenter(point: lower, slot: 0).y)
+        // Five checkers stay clear of the dice row at the board centre.
+        XCTAssertGreaterThan(geom.checkerCenter(point: lower, slot: 4).y - r, 450 + geom.diceSize / 2)
+        XCTAssertLessThan(geom.checkerCenter(point: upper, slot: 4).y + r, 450 - geom.diceSize / 2)
+        // The lane spans the bar's width.
+        XCTAssertEqual(geom.point(lower).hitRect.width, 90, accuracy: eps)
+    }
+
+    func testBarSlotsHitTestAndFlip() {
+        let lower = BoardGeometry.lowerBarSlot, upper = BoardGeometry.upperBarSlot
+        let all = Array(0...27)
+        XCTAssertEqual(geom.hitTest(geom.checkerCenter(point: lower, slot: 0), candidates: all), lower)
+        XCTAssertEqual(geom.hitTest(geom.checkerCenter(point: upper, slot: 0), candidates: all), upper)
+        // The board centre (dice) is not a bar hit.
+        XCTAssertNil(geom.hitTest(geom.boardCenter, candidates: [lower, upper]))
+        // Flipped (Black's view): the two bar halves swap.
+        XCTAssertEqual(BoardGeometry.flipIndex(lower), upper)
+        XCTAssertEqual(BoardGeometry.flipIndex(upper), lower)
+        let flipped = BoardGeometry(rect: CGRect(x: 0, y: 0, width: 900, height: 900), flipped: true)
+        XCTAssertEqual(flipped.checkerCenter(point: lower, slot: 0), geom.checkerCenter(point: upper, slot: 0))
+    }
 }

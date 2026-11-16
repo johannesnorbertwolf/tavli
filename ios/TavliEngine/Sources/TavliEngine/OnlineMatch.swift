@@ -7,21 +7,44 @@ public enum OnlineMatchError: Error, Equatable {
 }
 
 /// One game within an online match (#145): its ordered ply log and, once the game is
-/// over, the winner. Storing the winner explicitly lets every device read the match
+/// over, its result. Storing the result explicitly lets every device read the match
 /// score without re-running the engine; the plies stay so the opponent can replay and
-/// animate the game (including its final, winning move) and so reconnection is exact.
+/// animate the game (including its final move) and so reconnection is exact.
+///
+/// #143 adds `drawn` and `points` for the new variants (a standard-Plakoto draw, a
+/// 2-point win). Both are optional keys written only when meaningful (synthesized
+/// `Codable` skips `nil`), so a Plakoto payload is byte-identical to before and an
+/// older payload decodes as 1-point wins.
 public struct GameLog: Codable, Equatable, Sendable {
     public var plies: [PlyRecord]
     /// Raw `Color` value ("W"/"B") of the winner once the game is over, else `nil`.
     public var winnerRaw: String?
+    /// `true` when the game ended in a draw (absent otherwise).
+    public var drawn: Bool?
+    /// Points the win was worth, written only for 2-point results (absent = 1).
+    public var points: Int?
 
     public init(plies: [PlyRecord] = [], winner: Color? = nil) {
         self.plies = plies
         self.winnerRaw = winner?.rawValue
     }
 
+    /// A game log carrying a finished game's `result` (`nil` = still in progress).
+    public init(plies: [PlyRecord], result: MatchGameResult?) {
+        self.init(plies: plies, winner: result?.winner)
+        if result?.isDraw == true { drawn = true }
+        if let p = result?.points, p > 1 { points = p }
+    }
+
     public var winner: Color? { winnerRaw.flatMap(Color.init(rawValue:)) }
-    public var isComplete: Bool { winner != nil }
+    public var isDraw: Bool { drawn == true && winner == nil }
+    public var isComplete: Bool { winner != nil || isDraw }
+
+    /// The finished game's result, or `nil` while it is in progress.
+    public var result: MatchGameResult? {
+        if isDraw { return .draw }
+        return winner.map { .win($0, points: points ?? 1) }
+    }
 }
 
 /// The wire payload stored in a Game Center turn-based match's `matchData` (#134, #145).
@@ -149,11 +172,14 @@ public extension OnlineMatchPayload {
     /// Winners of the completed games, in order — the match score.
     var completedGameWinners: [Color] { games.compactMap(\.winner) }
 
+    /// Results (wins with points, draws) of the completed games, in order.
+    var completedGameResults: [MatchGameResult] { games.compactMap(\.result) }
+
     /// The match score as a `MatchState`.
     var matchState: MatchState {
         MatchState(targetWins: targetWins,
                    baseStartingPlayer: startingColor,
-                   gameWinners: completedGameWinners)
+                   results: completedGameResults)
     }
 
     /// 0-based index of the current (in-progress or last) game.
