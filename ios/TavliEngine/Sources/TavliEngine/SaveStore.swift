@@ -10,6 +10,11 @@ public struct SaveMetadata: Equatable, Identifiable {
     public let savedAt: Date
     public let plyCount: Int
     public let isAutosave: Bool
+    /// `GameVariant.id` of the saved game (#143), so the picker can name it and gate a
+    /// vs-AI resume on that variant's model being bundled.
+    public var variantID: String = GameVariants.defaultID
+    /// Whether the save has an AI side (`false` = two-player).
+    public var isVsAI: Bool = true
 }
 
 public enum SaveStoreError: Error {
@@ -56,7 +61,9 @@ public final class SaveStore {
                     name: save.name,
                     savedAt: save.savedAt,
                     plyCount: save.history.count,
-                    isAutosave: url.lastPathComponent == Self.autosaveFilename
+                    isAutosave: url.lastPathComponent == Self.autosaveFilename,
+                    variantID: save.variant,
+                    isVsAI: save.aiColor != nil
                 )
             }
             .sorted { $0.savedAt > $1.savedAt }

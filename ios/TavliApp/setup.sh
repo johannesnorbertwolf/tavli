@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # One-command setup for the TavliApp Xcode project:
 #   1. ensure the Python venv exists (creates it with uv if missing)
-#   2. ensure the bundled Core ML model (PlakotoValue.mlpackage) exists
+#   2. ensure the bundled Core ML model (PlakotoValue.mlpackage) exists, plus the
+#      other variants' models (PlakotoStandard/Fevga/PortesValue) once their trained
+#      checkpoints exist (optional — missing = "AI not available yet")
 #   3. ensure xcodegen is installed
 #   4. generate TavliApp.xcodeproj from project.yml
 #   5. resolve Swift Package dependencies
@@ -59,6 +61,34 @@ if [ "$FORCE_MODEL" = true ] || [ ! -f "$MODEL/Manifest.json" ]; then
 else
   echo "→ Core ML model present (pass --force-model to regenerate)."
 fi
+
+# ── 2b. Other variants' models (#143) ────────────────────────────────────────
+# Optional: a variant without its model is shown as "AI not available yet" (still
+# playable two-player). Each model is converted from the variant config's
+# gold_model_path once that checkpoint exists; otherwise it is skipped. A
+# hand-supplied <Name>Value.mlpackage dropped into Resources/ is used as-is.
+for spec in "plakoto_standard:config-plakoto-standard.yml:PlakotoStandardValue" \
+            "fevga:config-fevga.yml:FevgaValue" \
+            "portes:config-portes.yml:PortesValue"; do
+  IFS=: read -r VARIANT CFG NAME <<< "$spec"
+  OUT="$HERE/TavliApp/Resources/$NAME.mlpackage"
+  if [ "$FORCE_MODEL" != true ] && [ -f "$OUT/Manifest.json" ]; then
+    echo "→ $NAME.mlpackage present."
+    continue
+  fi
+  GOLD="$(sed -n 's/^gold_model_path:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$ROOT/config/$CFG")"
+  CKPT=""
+  for base in "$ROOT" "$MAIN_ROOT"; do
+    [ -n "$GOLD" ] && [ -f "$base/$GOLD" ] && { CKPT="$base/$GOLD"; break; }
+  done
+  if [ -n "$CKPT" ]; then
+    echo "→ Generating $NAME.mlpackage from $GOLD…"
+    ( cd "$ROOT" && PYTHONPATH=. "$PY" ios/scripts/convert_to_coreml.py \
+        --variant "$VARIANT" --checkpoint "$CKPT" --out "$OUT" )
+  else
+    echo "→ $NAME.mlpackage skipped (no trained checkpoint yet) — $VARIANT vs-AI shows \"AI not available yet\"."
+  fi
+done
 
 # ── 3. xcodegen ──────────────────────────────────────────────────────────────
 echo "→ Checking xcodegen…"

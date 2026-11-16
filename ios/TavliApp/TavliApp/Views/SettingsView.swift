@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
     @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
+    @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
 
     var body: some View {
         ZStack {
@@ -28,6 +29,15 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     header
+
+                    // Variant (#143): the rules new games use. A game in progress
+                    // keeps its own rules; the choice applies from the next new game.
+                    section("Game") {
+                        VariantPickerView(selection: $variant)
+                        Text("Applies to the next new game; a game in progress keeps its rules.")
+                            .font(ChromeType.caption)
+                            .foregroundStyle(ChromeKit.inkSecondary)
+                    }
 
                     section("Gameplay") {
                         sliderRow("TavTav's strength",

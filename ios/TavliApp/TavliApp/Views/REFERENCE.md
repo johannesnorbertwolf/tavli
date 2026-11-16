@@ -212,6 +212,20 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   `BoardGeometry` from the same square fit, so they register exactly; the
   gesture geometry is built from the same `GeometryReader` size. The container
   is `.aspectRatio(1, .fit)`.
+- **Display slots (#143)** — every layer works on `BoardLayout.displayStacks` of the live
+  board (28 slots: engine 0…25 with trays = borne-off only, plus White/Black bar slots 26/27,
+  which `BoardGeometry` places on the centre bar — `lowerBarSlot`/`upperBarSlot`). Sources are
+  mapped with `displaySlot(forSource:)` for hit-testing/rings/drag, and back with
+  `sourcePosition(forDisplaySlot:)` (trays → never a source) before calling `selectPoint` /
+  `commitHalfMove`; targets are identical in both spaces. So a Portes bar checker is tapped /
+  dragged from the bar, and AI bar entries lift off the bar. **Hit animation:** `.onChange` of
+  the display stacks runs `BoardLayout.hits(from:to:)`; each hit spawns an `ArcFlightView`
+  from the hit point to the bar slot (duration = `aiMoveAnimationDuration`, skipped when 0),
+  with that bar shown one short until it lands — for AI and human moves alike.
+  `ArcFlightView` (`CheckersView.swift`) bows a row-changing flight (Plakoto 12→13, Fevga
+  Black's 24→1 wrap) outward toward the nearer side edge instead of over the top frame.
+  `CheckersView`/`MoveHighlightView` accept engine stacks + `variant:` (split internally) or
+  display stacks; `MoveHighlightView` rings a bar-entry source on the bar.
 - **AI flight (#93)** — while `session.aiHopInFlight` is non-nil,
   `displayStacks` drops the top checker at `hop.from` (same trick as the drag
   source) and `AIFlightCheckerView` renders it arcing to `hop.to`, fed the
@@ -299,6 +313,18 @@ into a responsive layout. Pure presentation: every sub-view binds to a `GameSess
 published read-state and calls its intents — no game logic lives here. (T9 first wired
 this against the static `BoardView`; T10 swapped in `PlayableBoardView` so the assembled
 screen is fully playable, and added the Back button + hosted debug toggle.)
+
+**Variants (#143).** The turn-status block opens with the variant's name (uppercase caption,
+`accessibilityIdentifier("variantName")`). `BorneOffView` counts via
+`BoardLayout.borneOffCount` (never the raw end stack). The win overlay shows for
+`.gameOver(winner: nil)` too: title "Draw" + `ResultCopy.drawSubtitle`; a win in a 2-point
+variant gets a "Double game · 2 points" / "Single game · 1 point" subtitle and the turn label
+"… wins a double game!". The vs-AI record card is hidden for two-player games
+(`WinOverlayView.showsStats`). `GameView.Match.lastGameResult: MatchGameResult?` replaces
+`lastGameWinner` (offline falls back to `session.record.result`); `MatchScoreboardView` /
+`MatchOverlayView` show `score(for:)` (points) and a draw title/subtitle. `WinProbabilityBar`,
+the resign warning and `DebugOverlay` go through `EvalScale` ("Equity +0.52" for 2-point
+variants). Review falls back to `makeAgent(config:)` for a two-player game.
 
 - **`GameView`** (`@ObservedObject session`, plus `stats: HumanGameStats = .empty` (#64) — the
   human's record shown in the win overlay, `onBack: () -> Void = {}` — returns to the mode
@@ -546,6 +572,19 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
 
 The app's top-level view: switches between the caramel **mode picker**, the opening roll,
 and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
+
+**Variants (#143).** The picker (scrollable) opens with a `VariantPickerView` card bound to
+`settings.variant`. When the selected variant's model is missing (`AppSettings.aiAvailable`)
+the play card is replaced by a "TavTav is still learning …" note and the match-length toggle is
+dimmed; "Two players on this iPad" (`beginTwoPlayer`) is always offered — White-facing board,
+starter from `variant.startingPlayer(default: .white)`, no match, no W/L record, review via the
+variant's model if bundled. `makeSession(humanColor:startingPlayer:variant:vsAI:)` builds the
+session with `GameConfig(variant:)` + `makeAgent(config:)`. Play Again / Next game / Rematch
+keep the on-screen game's variant and mode. Resume (picker + cold launch) loads the agent for
+the **save's** variant and refuses a vs-AI save whose model is missing (`SavedGameRow` shows it
+disabled with the badge; subtitles name the variant / "two players"). The finish hook is
+`onGameFinished(winner?, points)`: W/L only for decided vs-AI games, every game logged (draws
+too), and `match.recordGame(winner:points:)`.
 
 - **`RootView`** — `@StateObject statsStore: HumanStatsStore` (the human W/L history, #64) plus
   `@State` vars: `session: GameSession?`, `humanColor: EngineColor`,

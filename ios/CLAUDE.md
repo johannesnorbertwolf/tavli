@@ -1,7 +1,7 @@
 # ios/ — native iPad app (Swift)
 
-A native, **offline** iPad app for the Plakoto AI (engine also ports standard Plakoto, Fevga
-and Portes; their UI is #143). The value network runs on-device via
+A native, **offline** iPad app for the Plakoto AI, also playing standard Plakoto, Fevga and
+Portes (variant selector + per-variant board UI, #143). The value network runs on-device via
 Core ML; the game engine and board encoder are re-implemented in Swift. Background:
 `docs/ios_port_plan.md` (status + how to run), `docs/decisions.md`, `docs/history.md`.
 
@@ -34,7 +34,9 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `GameLogStore.swift` (#104) | Append-only log of **every** finished game (one JSON file per `gameId` under `Documents/GameLog`), written from `GameSession.onGameOver` regardless of outcome/manual save. Reuses `GameSave` as the wire format; `attachAnalysis` patches a game's analysis back in after review so a later review/drill loads it via `GameReview.cachedResult` instead of recomputing. #146: the game-over write already carries `session.inPlayAnalysis`, so even the **first** review of a game played with analysis on loads cached and only refines. |
 | `HumanGameStats.swift` | iPad analogue of the CLI human-record summary + its file-backed log/store (`HumanStatsStore`). |
 | `OnlineMatch.swift` (#134, #145) | `OnlineMatchPayload` — the Codable blob stored in a Game Center turn-based match's `matchData`. **Schema v2** (#145): `targetWins` + `games: [GameLog]` (each game's ply log + winner) + a per-`gamePlayerID` colour map; a single game is just `targetWins == 1` with one `GameLog`, and a v1 flat-`plies` payload still decodes. Encode/decode (+ version gating), `matchState`/`completedGameWinners` views, `pendingPlies(...)` game-aware diff, per-game `gameSave(forGameIndex:)`. The whole online match state is this payload, so sync/resume/reconnect stay "decode + replay". |
-| `MatchState.swift` (#145) | Pure `Codable` best-of-N score shared by the offline (vs-AI) and online surfaces: `targetWins` + `baseStartingPlayer` + `gameWinners`, with derived win counts, `matchWinner`/`isComplete` (2–0 short-circuits game 3), `currentGameNumber`/`maxGames`, and `currentStartingPlayer` (alternates from the base, so games 2+ skip the opening roll). `recordGame(winner:)` advances it. |
+| `MatchState.swift` (#145, #143) | Pure `Codable` best-of-N score shared by the offline (vs-AI) and online surfaces: `targetWins` + `baseStartingPlayer` + `results: [MatchGameResult]` (winner + points; `.draw`). Scores **points** (`score(for:)` — a double game counts 2, a draw 0 and extends `maxGames`), `matchWinner`/`isComplete`, `currentGameNumber`, and `currentStartingPlayer` (alternates from the base). `recordGame(winner:points:)` advances it; `GameRecord.result` builds the result. |
+| `BoardLayout.swift` (#143) | Engine → display slots for the board views, driven only by the variant hooks: trays show borne-off checkers only, bar checkers (Portes) move to slots 26/27; source↔slot mapping, borne-off/bar counts, hit detection for the bar animation; `reportsEquity`/`equity(fromValue:)` for 2-point variants. |
+| `ModelCatalog.swift` (#143) | Per-variant Core ML model lookup + `isAvailable` (the vs-AI gate; missing model = "AI not available yet", never random moves) + `makeAgent`; `VariantPreference` persists the chosen variant id. |
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
 
@@ -59,7 +61,10 @@ open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
 `setup.sh` generates `PlakotoValue.mlpackage` only when absent (shells out to `convert_to_coreml.py`
 via the repo `.venv`); pass `--force-model` to regenerate after changing `gold_model_path` or the
 encoder. A `preBuildScript` guard in `project.yml` fails the build if the model is missing, so the
-app can never silently ship the random-move fallback. `SWIFT_VERSION` is pinned to 5.9 (Swift-6
+app can never silently ship the random-move fallback. The other variants' models
+(`PlakotoStandardValue`/`FevgaValue`/`PortesValue`) are optional: `setup.sh` converts each once
+its config's gold checkpoint exists, or drop the `.mlpackage` into `TavliApp/Resources/` and
+re-run `setup.sh`; without one that variant is two-player only ("AI not available yet"). `SWIFT_VERSION` is pinned to 5.9 (Swift-6
 strict concurrency errors on `MLModel` + the non-`Sendable` engine classes). Display fonts (Cormorant
 Garamond + Inter) are committed TTFs registered via `Info.plist` `UIAppFonts`; the Core ML model is a
 generated, gitignored artifact.

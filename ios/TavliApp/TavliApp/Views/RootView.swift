@@ -27,6 +27,8 @@ struct RootView: View {
     @State private var match: MatchState?
     /// Non-nil while the opening roll screen is showing (between mode picker and game).
     @State private var pendingHumanColor: EngineColor?
+    /// The variant the pending (opening-roll) game will be played under (#143).
+    @State private var pendingVariant: GameVariantSetting = .plakoto
     /// The current game's display name — a timestamped default ("Game · <date>",
     /// the same convention as a manual save) for a fresh game, or the resumed
     /// game's own name. Written into the auto-save slot on every move (#61).
@@ -74,10 +76,17 @@ struct RootView: View {
                         self.match = nil
                     },
                     onNewGame: {
-                        // "Play Again" keeps the same color and re-runs the starting-player
-                        // flow: the opening-roll ceremony, or a forced starter per Settings (#77).
+                        // "Play Again" keeps the same color, mode and variant, and re-runs
+                        // the starting-player flow: the opening-roll ceremony, or a forced
+                        // starter per Settings (#77).
+                        let variant = GameVariantSetting(variant: session.game.variant)
+                        let vsAI = session.aiColor != nil
                         self.session = nil
-                        self.beginGame(humanColor: self.humanColor)
+                        if vsAI {
+                            self.beginGame(humanColor: self.humanColor, variant: variant)
+                        } else {
+                            self.beginTwoPlayer(variant: variant)
+                        }
                     },
                     onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
                     onAutosave: persistAutosave,
@@ -89,7 +98,7 @@ struct RootView: View {
                             state: ms,
                             localColor: humanColor,
                             opponentName: String(localized: "TavTav"),
-                            lastGameWinner: nil,
+                            lastGameResult: nil,
                             showResultOverlay: false,
                             onNextGame: startNextMatchGame,
                             onRematch: startRematch,
@@ -107,14 +116,16 @@ struct RootView: View {
                     pendingHumanColor = nil
                     autosaveName = Self.newAutosaveName()
                     match = Self.newMatch(baseStartingPlayer: startingPlayer)
-                    session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer)
+                    session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer,
+                                               variant: pendingVariant)
                 } onBack: {
                     pendingHumanColor = nil
                 }
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
-                               onSelect: beginGame,
+                               onSelect: { beginGame(humanColor: $0, variant: AppSettings.variant) },
+                               onTwoPlayer: { beginTwoPlayer(variant: AppSettings.variant) },
                                onResume: resume,
                                onPlayOnline: { showOnline = true })
             }
@@ -131,8 +142,13 @@ struct RootView: View {
         .task(id: session.map(ObjectIdentifier.init)) {
             guard let session,
                   !ProcessInfo.processInfo.arguments.contains("-uiTestGame") else { return }
-            session.onGameOver = { [statsStore, humanColor, gameLog, autosaveName] winner in
-                statsStore.record(humanWon: winner == humanColor)
+            // `onGameFinished` (#143) fires for every end — wins of 1 or 2 points and
+            // draws. The vs-AI W/L record only takes decided vs-AI games (a draw is
+            // neither; a two-player game isn't the human's record).
+            session.onGameFinished = { [statsStore, humanColor, gameLog, autosaveName] winner, points in
+                if let winner, session.aiColor != nil {
+                    statsStore.record(humanWon: winner == humanColor)
+                }
                 // Persist EVERY finished game to the append-only log (#104), regardless
                 // of outcome or whether it was ever manually saved. `record.outcome` is
                 // already set by the time this hook fires. Synchronous, like the autosave.
@@ -145,7 +161,8 @@ struct RootView: View {
                 try? gameLog.append(save)
                 // Advance the best-of-three score (#145), if a match is in progress, so
                 // the match scoreboard + transition overlay reflect this game's result.
-                self.match?.recordGame(winner: winner)
+                // Points count (a double game scores 2); a draw scores nothing.
+                self.match?.recordGame(winner: winner, points: points)
             }
         }
     }
@@ -167,19 +184,36 @@ struct RootView: View {
         }
     }
 
-    /// Start a new game (or match) as `color`. The starting-player setting decides
-    /// whether to run the opening-roll ceremony (#33) or seed the starter directly
-    /// (#77). When best-of-three is selected (#145), a `MatchState` is created at the
-    /// point the game-1 starter becomes known (here, or in the opening-roll completion).
-    private func beginGame(humanColor color: EngineColor) {
+    /// Start a new vs-AI game (or match) as `color` under `variant` (#143). The
+    /// starting-player setting decides whether to run the opening-roll ceremony (#33)
+    /// or seed the starter directly (#77). When best-of-three is selected (#145), a
+    /// `MatchState` is created at the point the game-1 starter becomes known (here, or
+    /// in the opening-roll completion). A variant without a bundled model never gets
+    /// here (the start screen disables vs-AI play for it).
+    private func beginGame(humanColor color: EngineColor, variant: GameVariantSetting) {
+        guard AppSettings.aiAvailable(variant) else { return }
         if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
             humanColor = color
             autosaveName = Self.newAutosaveName()
             match = Self.newMatch(baseStartingPlayer: starter)
-            session = Self.makeSession(humanColor: color, startingPlayer: starter)
+            session = Self.makeSession(humanColor: color, startingPlayer: starter, variant: variant)
         } else {
+            pendingVariant = variant
             pendingHumanColor = color   // run the opening-roll ceremony
         }
+    }
+
+    /// Start a two-player (pass-and-play) game under `variant` (#143) — available for
+    /// every variant, model or not. The board faces White; the variant picks the
+    /// starter (`startingPlayer(default:)`: random for the bkgm-rules variants, White
+    /// for house Plakoto). A single game: no match, no vs-AI record.
+    private func beginTwoPlayer(variant: GameVariantSetting) {
+        humanColor = .white
+        autosaveName = Self.newAutosaveName()
+        match = nil
+        session = Self.makeSession(humanColor: .white,
+                                   startingPlayer: variant.variant.startingPlayer(default: .white),
+                                   variant: variant, vsAI: false)
     }
 
     /// A fresh best-of-three `MatchState` when match mode is selected (#145), else
@@ -191,31 +225,51 @@ struct RootView: View {
             : nil
     }
 
+    /// The variant of the game on screen (the match's variant), else the setting.
+    private var currentVariant: GameVariantSetting {
+        session.map { GameVariantSetting(variant: $0.game.variant) } ?? AppSettings.variant
+    }
+
     /// Start the next game of the current match (#145), without an opening-roll
     /// ceremony — the starter alternates deterministically from the match's base.
     private func startNextMatchGame() {
         guard let match else { return }
         autosaveName = Self.newAutosaveName()
         session = Self.makeSession(humanColor: humanColor,
-                                   startingPlayer: match.currentStartingPlayer)
+                                   startingPlayer: match.currentStartingPlayer,
+                                   variant: currentVariant)
     }
 
     /// Start a brand-new match after one has finished (#145, the win overlay's
-    /// "Rematch"): same colour, re-resolving the starter per Settings.
+    /// "Rematch"): same colour and variant, re-resolving the starter per Settings.
     private func startRematch() {
+        let variant = currentVariant
         session = nil
         match = nil
-        beginGame(humanColor: humanColor)
+        beginGame(humanColor: humanColor, variant: variant)
+    }
+
+    /// The agent for resuming `save` (its own variant's model), or `.unavailable` when
+    /// the save is vs-AI but that model isn't bundled — resuming it would silently play
+    /// random moves (#143), so the picker disables such saves.
+    private enum ResumeAgent { case agent(Agent?), unavailable }
+
+    private static func resumeAgent(for save: GameSave) -> ResumeAgent {
+        guard save.aiColor != nil else { return .agent(nil) }   // two-player save
+        let config = GameConfig(variantID: save.variant)
+        guard ModelCatalog.main.isAvailable(config.variant) else { return .unavailable }
+        return .agent(GameSession.makeAgent(config: config))
     }
 
     /// Load a saved game (from the picker list) and switch into it, carrying its
     /// name forward so the auto-save keeps the same identity.
     private func resume(_ meta: SaveMetadata) {
-        guard let save = try? store.load(filename: meta.filename) else { return }
+        guard let save = try? store.load(filename: meta.filename),
+              case .agent(let agent) = Self.resumeAgent(for: save) else { return }
         humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
         autosaveName = save.name
         match = nil   // a resumed game is a standalone single game (#145)
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+        let s = GameSession.resume(from: save, agent: agent,
                                    searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
@@ -226,11 +280,13 @@ struct RootView: View {
     }
 
     /// The auto-save game to resume on launch, if one exists and is still in
-    /// progress. A finished auto-save is discarded so launch lands on the picker.
+    /// progress. A finished auto-save is discarded so launch lands on the picker; a
+    /// vs-AI save whose variant model is missing stays on disk but isn't resumed.
     private static func autoResume() -> (session: GameSession, humanColor: EngineColor, name: String)? {
         let store = SaveStore.default()
-        guard let save = store.loadAutosave() else { return nil }
-        let s = GameSession.resume(from: save, agent: GameSession.makeAgent(),
+        guard let save = store.loadAutosave(),
+              case .agent(let agent) = resumeAgent(for: save) else { return nil }
+        let s = GameSession.resume(from: save, agent: agent,
                                    searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
                                    manualDiceEntry: AppSettings.diceMode == .manual,
@@ -259,17 +315,23 @@ struct RootView: View {
         return f
     }()
 
+    /// A new session under `variant` (#143): vs-AI with that variant's model, or a
+    /// two-player game (`vsAI: false`, no agent).
     @MainActor
-    private static func makeSession(humanColor: EngineColor, startingPlayer: EngineColor) -> GameSession {
+    private static func makeSession(humanColor: EngineColor, startingPlayer: EngineColor,
+                                    variant: GameVariantSetting = .plakoto,
+                                    vsAI: Bool = true) -> GameSession {
+        let config = variant.config
         let session = GameSession(
             startingPlayer: startingPlayer,
-            agent: GameSession.makeAgent(),
-            aiColor: humanColor.opponent,
+            config: config,
+            agent: vsAI ? GameSession.makeAgent(config: config) : nil,
+            aiColor: vsAI ? humanColor.opponent : nil,
             searchConfig: AppSettings.searchConfig,
             animationTimings: AppSettings.animationTimings,
             manualDiceEntry: AppSettings.diceMode == .manual,
             autoRoll: AppSettings.autoRoll,
-            inPlayAnalysis: AppSettings.inPlayAnalysisEnabled
+            inPlayAnalysis: vsAI && AppSettings.inPlayAnalysisEnabled
         )
         session.start()
         return session
@@ -284,6 +346,8 @@ private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
     let onSelect: (EngineColor) -> Void
+    /// Start a two-player (pass-and-play) game of the selected variant (#143).
+    let onTwoPlayer: () -> Void
     let onResume: (SaveMetadata) -> Void
     /// Enter the online multiplayer lobby (#134).
     let onPlayOnline: () -> Void
@@ -297,28 +361,40 @@ private struct ModePickerView: View {
     @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
     /// Single game vs best-of-three match (#145). Defaults to best-of-three.
     @AppStorage(SettingsKey.matchLength) private var matchLength: MatchLengthSetting = .bestOfThree
+    /// The variant new games use (#143), shared with the Settings sheet.
+    @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
+
+    /// Whether the selected variant's model is bundled (vs-AI play possible).
+    private var aiAvailable: Bool { AppSettings.aiAvailable(variant) }
 
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            VStack(spacing: 28) {
-                Text("Tavli")
-                    .font(ChromeType.wordmark)
-                    .foregroundStyle(CaramelPalette.frameText)
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("Tavli")
+                        .font(ChromeType.wordmark)
+                        .foregroundStyle(CaramelPalette.frameText)
 
-                playCard
-                matchLengthPicker
-                onlineButton
-                recordRow
+                    variantCard
+                    playCard
+                    matchLengthPicker
+                        .disabled(!aiAvailable)
+                        .opacity(aiAvailable ? 1 : 0.4)
+                    twoPlayerButton
+                    onlineButton
+                    recordRow
 
-                if !saves.isEmpty {
-                    SavedGamesList(saves: saves,
-                                   onResume: onResume,
-                                   onDelete: delete)
-                        .frame(maxWidth: 440)
+                    if !saves.isEmpty {
+                        SavedGamesList(saves: saves,
+                                       onResume: onResume,
+                                       onDelete: delete)
+                            .frame(maxWidth: 440)
+                    }
                 }
+                .padding(40)
+                .frame(maxWidth: .infinity)
             }
-            .padding(40)
 
             // Settings gear in the top-trailing corner (#77).
             Button { showSettings = true } label: {
@@ -342,9 +418,46 @@ private struct ModePickerView: View {
     /// it's a single flat "Play vs AI" button (the action is the focus; the color is
     /// just a small swatch). Otherwise it's the color-choice card — pick White/Red,
     /// which carry the checker disc they map to on the board (engine black = Red).
+    /// Which game to play (#143): the variant picker with its rules summary, flagged
+    /// when its AI isn't bundled yet.
+    private var variantCard: some View {
+        VariantPickerView(selection: $variant)
+            .frame(maxWidth: 392)
+            .chromeCard(padding: 20)
+    }
+
+    /// Two players on this iPad (#143) — works for every variant, model or not.
+    private var twoPlayerButton: some View {
+        Button(action: onTwoPlayer) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.2")
+                Text("Two players on this iPad")
+                Spacer(minLength: 24)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            }
+        }
+        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
+        .frame(maxWidth: 440)
+    }
+
+    /// The vs-AI play card, or — when the selected variant's model isn't bundled —
+    /// an explanation in its place (#143), never a silently random opponent.
     @ViewBuilder
     private var playCard: some View {
-        if let fixed = preferredColor.engineColor {
+        if !aiAvailable {
+            VStack(spacing: 10) {
+                Text("Play vs AI")
+                    .font(ChromeType.title2.bold())
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Text("TavTav is still learning \(variant.name). Play it with two players for now.")
+                    .font(ChromeType.callout)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: 392)
+            .chromeCard(padding: 24)
+        } else if let fixed = preferredColor.engineColor {
             Button { onSelect(fixed) } label: {
                 HStack(spacing: 10) {
                     Text("Play vs AI")
@@ -548,6 +661,11 @@ private struct SavedGameRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // A vs-AI save of a variant whose model isn't bundled can't be resumed
+            // without a silently random opponent (#143).
+            .disabled(!resumable)
+            .opacity(resumable ? 1 : 0.5)
+            if !resumable { AIUnavailableBadge() }
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
@@ -564,10 +682,16 @@ private struct SavedGameRow: View {
         .shadow(color: ChromeKit.cardShadow, radius: 5, x: 0, y: 2)
     }
 
+    private var variant: GameVariantSetting { GameVariantSetting(variantID: meta.variantID) }
+
+    private var resumable: Bool { !meta.isVsAI || AppSettings.aiAvailable(variant) }
+
     private var subtitle: String {
         let when = SavedGameRow.dateFormatter.string(from: meta.savedAt)
         let moves = meta.plyCount == 1 ? "1 move" : "\(meta.plyCount) moves"
-        return "\(when) · \(moves)"
+        let mode = meta.isVsAI ? variant.name
+                               : String(localized: "\(variant.name) · two players")
+        return "\(mode) · \(when) · \(moves)"
     }
 
     private static let dateFormatter: DateFormatter = {

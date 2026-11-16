@@ -20,11 +20,17 @@ struct CheckersView: View {
     /// repainting the Canvas (the board freezes while the model advances). Passing
     /// a `[[Color]]` snapshot makes the input change by value, so every committed
     /// move reliably repaints.
+    ///
+    /// Either the engine's stacks (0…25) — split here into trays + bar via
+    /// `BoardLayout.displayStacks` for `variant` (#143) — or already-split display
+    /// stacks (`BoardLayout.slotCount` entries, slots 26/27 = White/Black bar).
     let stacks: [[TavliEngine.Color]]
     var flipped: Bool = false
 
-    init(stacks: [[TavliEngine.Color]], flipped: Bool = false) {
-        self.stacks = stacks
+    init(stacks: [[TavliEngine.Color]], flipped: Bool = false,
+         variant: any GameVariant = GameVariants.plakoto) {
+        self.stacks = stacks.count == BoardLayout.slotCount
+            ? stacks : BoardLayout.displayStacks(stacks, variant: variant)
         self.flipped = flipped
     }
 
@@ -39,7 +45,9 @@ struct CheckersView: View {
     private func draw(in context: inout GraphicsContext, geo: BoardGeometry) {
         // Slots 0/25 are the bear-off trays: borne-off checkers stack there
         // (White at 25, Black at 0) via the same stacking path as playable points.
-        for n in 0...25 {
+        // Slots 26/27 are the bar (Portes' hit checkers, #143), stacked from the
+        // frame along the centre bar.
+        for n in stacks.indices {
             let pieces = stacks[n]
             guard !pieces.isEmpty else { continue }
             drawStack(in: &context, geo: geo, point: n, pieces: pieces)
@@ -172,38 +180,66 @@ struct DraggedCheckerView: View {
 /// engine's job — it applies the half-move (and clears the hop) when the
 /// flight time elapses, so this view never touches game state.
 struct AIFlightCheckerView: View {
-    let hop: AIAnimatedHop
+    /// Display slots (see `BoardLayout`): a bar entry flies from the bar slot.
+    let from: Int
+    let to: Int
+    let color: TavliEngine.Color
+    let duration: TimeInterval
     let geo: BoardGeometry
-    /// Pre-hop stacks (the flying checker is still counted at `hop.from`),
+    /// Pre-hop display stacks (the flying checker is still counted at `from`),
     /// used to derive the lift-off and landing slots.
     let stacks: [[TavliEngine.Color]]
-
-    @State private var progress: CGFloat = 0
 
     var body: some View {
         // Lift off from the top visible checker of the source stack; land on
         // the next visible slot of the destination (capped at the 5-stack).
-        let start = geo.checkerCenter(point: hop.from,
-                                      slot: max(0, min(stacks[hop.from].count, 5) - 1))
-        let end = geo.checkerCenter(point: hop.to,
-                                    slot: min(stacks[hop.to].count, 4))
-        // Control point above both endpoints ("up" in screen space, whatever
-        // the board orientation): a slight arc for short hops, capped so a
-        // cross-board move doesn't balloon.
+        let start = geo.checkerCenter(point: from,
+                                      slot: max(0, min(stacks[from].count, 5) - 1))
+        let end = geo.checkerCenter(point: to,
+                                    slot: min(stacks[to].count, 4))
+        ArcFlightView(geo: geo, color: color, start: start, end: end, duration: duration)
+    }
+}
+
+/// One checker arcing from `start` to `end` over `duration` (#93, #143). Shared by
+/// the AI's hops and the hit animation (a Portes blot flying to the bar).
+///
+/// The arc bows "up" for a hop within a row; a hop that changes row (Plakoto's
+/// 12→13 corner, Fevga Black's 24→1 wrap) bows **outward** toward the nearer side
+/// edge instead, so the checker visibly travels round the board's corner along its
+/// path rather than looping over the top frame.
+struct ArcFlightView: View {
+    let geo: BoardGeometry
+    let color: TavliEngine.Color
+    let start: CGPoint
+    let end: CGPoint
+    let duration: TimeInterval
+
+    @State private var progress: CGFloat = 0
+
+    var body: some View {
         let s = geo.scale
         let span = hypot(end.x - start.x, end.y - start.y)
         let lift = min(24 * s + 0.22 * span, 130 * s)
-        let control = CGPoint(x: (start.x + end.x) / 2,
-                              y: min(start.y, end.y) - lift)
+        let control: CGPoint = {
+            let dx = abs(end.x - start.x), dy = abs(end.y - start.y)
+            let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+            if dy > geo.boardRect.height * 0.4 && dy > dx {
+                // Row change: bow toward the nearer side edge.
+                let outward: CGFloat = mid.x >= geo.boardCenter.x ? 1 : -1
+                return CGPoint(x: mid.x + outward * lift, y: mid.y)
+            }
+            return CGPoint(x: mid.x, y: min(start.y, end.y) - lift)
+        }()
 
-        FlightDisc(geo: geo, color: hop.color)
+        FlightDisc(geo: geo, color: color)
             .modifier(ArcFlightEffect(progress: progress,
                                       start: start, control: control, end: end))
             .position(x: 0, y: 0)   // anchor at the board origin; the effect translates
             .allowsHitTesting(false)
             .onAppear {
-                guard hop.duration > 0 else { progress = 1; return }
-                withAnimation(.easeInOut(duration: hop.duration)) { progress = 1 }
+                guard duration > 0 else { progress = 1; return }
+                withAnimation(.easeInOut(duration: duration)) { progress = 1 }
             }
     }
 }

@@ -24,6 +24,13 @@ targets:
             echo "error:   PYTHONPATH=. .venv/bin/python ios/scripts/convert_to_coreml.py && bash ios/TavliApp/setup.sh"
             exit 1
           fi
+          # The other variants' models are optional (#143): without one the app
+          # shows that variant as "AI not available yet" (two-player only).
+          for NAME in PlakotoStandardValue FevgaValue PortesValue; do
+            if [ ! -f "$SRCROOT/TavliApp/Resources/$NAME.mlpackage/Manifest.json" ]; then
+              echo "warning: $NAME.mlpackage not bundled — that variant has no AI yet (drop it into TavliApp/Resources and re-run setup.sh)."
+            fi
+          done
     sources:
       - path: TavliApp
         excludes:
