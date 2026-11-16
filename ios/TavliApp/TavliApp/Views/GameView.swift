@@ -91,6 +91,25 @@ struct GameView: View {
     }
     var match: Match? = nil
 
+    /// Full Tavli context (#144). Non-nil adds the session scoreboard (running score +
+    /// "Game 2 of 3 · Fevga") during play and swaps the win overlay for the leg overlay,
+    /// whose "Continue" leads to the between-legs / final screen. Mutually exclusive with
+    /// `match` (best-of-three).
+    struct FullTavli {
+        /// The session, including the leg on the board once it has finished.
+        var state: FullTavliSession
+        /// Go to the between-legs screen (or the final result after leg 3).
+        var onContinue: () -> Void
+        /// Leave the session for the menu (it stays resumable from the autosave).
+        var onExit: () -> Void
+    }
+    var fullTavli: FullTavli? = nil
+
+    /// The leg on the board (0-based), by its variant.
+    private var fullTavliLegIndex: Int {
+        fullTavli?.state.legIndex(ofVariantID: session.game.variant.id) ?? 0
+    }
+
     @State private var showingSaveDialog = false
     @State private var saveName = ""
 
@@ -232,6 +251,10 @@ struct GameView: View {
                                                     localColor: match.localColor,
                                                     opponentName: match.opponentName)
                             }
+                            if let fullTavli {
+                                FullTavliScoreboardView(state: fullTavli.state,
+                                                        legIndex: fullTavliLegIndex)
+                            }
                             if online == nil && showWinProbability && !session.isTerminal {
                                 WinProbabilityBar(session: session)
                             }
@@ -276,7 +299,22 @@ struct GameView: View {
                         .allowsHitTesting(false)
                 }
 
-                if let match, showMatchOverlay {
+                if let fullTavli, case .gameOver = session.phase {
+                    // Full Tavli (#144): the leg's result + running score, then
+                    // "Continue" to the between-legs screen / the final result. Review
+                    // only when the leg's model is bundled (it needs the agent).
+                    SColor.black.opacity(0.65).ignoresSafeArea()
+                    FullTavliLegOverlayView(
+                        state: fullTavli.state,
+                        legIndex: fullTavliLegIndex,
+                        result: session.record.result,
+                        variant: session.game.variant,
+                        onContinue: fullTavli.onContinue,
+                        onExit: fullTavli.onExit,
+                        onReview: ModelCatalog.main.isAvailable(session.game.variant)
+                            ? { showReview = true } : nil,
+                        onHistory: { showHistory = true })
+                } else if let match, showMatchOverlay {
                     // Match mode (#145): the game-over overlay becomes a match
                     // transition (score + "Next game") or the match verdict once decided.
                     SColor.black.opacity(0.65).ignoresSafeArea()
@@ -497,6 +535,9 @@ struct GameView: View {
                 MatchScoreboardView(state: match.state,
                                     localColor: match.localColor,
                                     opponentName: match.opponentName)
+            }
+            if let fullTavli {
+                FullTavliScoreboardView(state: fullTavli.state, legIndex: fullTavliLegIndex)
             }
             if online == nil && showWinProbability && !session.isTerminal {
                 WinProbabilityBar(session: session)

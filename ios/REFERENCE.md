@@ -378,6 +378,21 @@ by generated parity fixtures.
   `GameLog` gains optional `drawn`/`points` keys (omitted for Plakoto, so its payloads are
   unchanged); `OnlineMatchPayload.matchState` is built from `completedGameResults`.
   `reportsEquity`/`equity(fromValue:)` convert a `maxPoints > 1` value to expected points.
+- **Full Tavli (#144, `FullTavliSession.swift`).** Pure `Codable` session: the fixed legs
+  `portes`, `fevga`, `plakotoVariantID` (`plakotoLegVariantID(preferredID:)` — `plakoto_standard`
+  only when that is the saved preference, else house `plakoto`; fixed at creation), `aiColor`
+  (`nil` = two-player) and `results: [MatchGameResult]`. `record`/`recordGame(winner:points:)`
+  appends the current leg (points clamped to the leg's `maxPoints`, so house Plakoto = 1; a
+  draw = 0 and still advances; no-op once complete). `score(for:)` sums points; after three legs
+  `winner` is the higher total, equal totals `isDrawn` (no tiebreak). `currentLegIndex`/
+  `currentVariant` (nil when complete), `legIndex(ofVariantID:)`. AI gate:
+  `isAIAvailable(in: ModelCatalog)` needs **every** leg's model (`unavailableLegVariantIDs`).
+  Persistence: `GameSave.fullTavli` (optional key, written only when present — schema version
+  unchanged, older files decode as `nil`; `SaveMetadata.fullTavli` for the picker);
+  `GameSession.snapshot(name:fullTavli:)`. `resume(savedGame:)` → `.inLeg(index)` /
+  `.betweenLegs(nextIndex)` / `.complete`, judging "finished" by the saved record's
+  outcome/draw (a surrendered game replays non-terminal) and recording a finished leg the
+  session had not counted yet (never twice). Covered by `FullTavliSessionTests`.
 - **Parity tests** (`VariantParityTests.swift`, fixtures from `generate_test_fixtures.py
   --variant <id>`, gitignored like Plakoto's): metadata, encodings (≤1e-6), exact ordered
   legal-move lists for all 21 rolls per sampled position plus apply → Python afterstate and undo
@@ -698,7 +713,7 @@ ios/
 │   ├── Sources/TavliEngine/     Color, GameConfig, GameVariant, Point, HalfMove, Move, Dice,
 │   │                            GameBoard, PossibleMoves, BoardEncoder, Agent,
 │   │                            SearchConfig, MoveBuilder, GameSession,
-│   │                            GameSave, SaveStore
+│   │                            GameSave, SaveStore, MatchState, FullTavliSession, …
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
 │                                FixtureSupport, MoveBuilderTests, GameSessionTests,
 │                                GameSessionAITests, GameSessionAnimationTests,

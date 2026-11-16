@@ -85,8 +85,13 @@ enum DiceModeSetting: String, CaseIterable, Identifiable {
 /// How many games a session plays (#145). `.single` is one game; `.bestOfThree` is a
 /// best-of-three match (first to two games). Defaults to `.bestOfThree` — the most
 /// common social format — on both the offline (vs-AI) start screen and the online lobby.
+/// `.fullTavli` (#144, offline only) is the traditional Portes → Fevga → Plakoto
+/// session with a running score; it replaces the single-variant choice for that session.
 enum MatchLengthSetting: String, CaseIterable, Identifiable {
-    case single, bestOfThree
+    case single, bestOfThree, fullTavli
+
+    /// The lengths the online lobby offers (Full Tavli is offline only, #144).
+    static let onlineCases: [MatchLengthSetting] = [.single, .bestOfThree]
 
     var id: String { rawValue }
 
@@ -94,14 +99,17 @@ enum MatchLengthSetting: String, CaseIterable, Identifiable {
         switch self {
         case .single:      return String(localized: "Single game")
         case .bestOfThree: return String(localized: "Best of 3")
+        case .fullTavli:   return String(localized: "Full Tavli")
         }
     }
 
-    /// Games a side must win to take the match (single → 1, best-of-three → 2).
+    /// Games a side must win to take the match (single → 1, best-of-three → 2). Full
+    /// Tavli is not a first-to-N match (it always plays three legs); it maps to 1 so a
+    /// stray read can never start a longer online match.
     var targetWins: Int {
         switch self {
-        case .single:      return 1
-        case .bestOfThree: return 2
+        case .single, .fullTavli: return 1
+        case .bestOfThree:        return 2
         }
     }
 }
@@ -149,6 +157,20 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
         case .plakotoStandard: return String(localized: "Plakoto (standard rules)")
         case .portes:          return String(localized: "Portes")
         case .fevga:           return String(localized: "Fevga")
+        }
+    }
+
+    /// One-line rules reminder, shown between the legs of a Full Tavli session (#144).
+    var rulesReminder: String {
+        switch self {
+        case .plakoto:
+            return String(localized: "Land on a lone opposing checker to pin it until you leave. Every win counts one point.")
+        case .plakotoStandard:
+            return String(localized: "Land on a lone opposing checker to pin it; pinning the mother checker can win two points.")
+        case .portes:
+            return String(localized: "Hit lone checkers to the bar; they must re-enter before anything else moves.")
+        case .fevga:
+            return String(localized: "Both sides race the same way round; one checker holds a point and nothing is hit.")
         }
     }
 
@@ -268,6 +290,17 @@ enum AppSettings {
     /// the AI (#143). Without it the variant stays playable two-player only.
     static func aiAvailable(_ variant: GameVariantSetting) -> Bool {
         ModelCatalog.main.isAvailable(variant.variant)
+    }
+
+    /// Whether a vs-AI Full Tavli session can be played (#144): every leg's model must
+    /// be bundled — the Plakoto leg's per the current variant preference.
+    static var fullTavliAIAvailable: Bool {
+        newFullTavli(aiColor: .black).isAIAvailable()
+    }
+
+    /// A fresh Full Tavli session whose Plakoto leg follows the variant preference.
+    static func newFullTavli(aiColor: TavliEngine.Color?) -> FullTavliSession {
+        FullTavliSession(preferredVariantID: VariantPreference.load().id, aiColor: aiColor)
     }
 
     /// The animation timings a new or resumed session should use, honouring the

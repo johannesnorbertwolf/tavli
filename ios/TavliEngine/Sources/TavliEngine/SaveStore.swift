@@ -15,6 +15,8 @@ public struct SaveMetadata: Equatable, Identifiable {
     public var variantID: String = GameVariants.defaultID
     /// Whether the save has an AI side (`false` = two-player).
     public var isVsAI: Bool = true
+    /// The Full Tavli session (#144) the save belongs to, or `nil` for a single game.
+    public var fullTavli: FullTavliSession? = nil
 }
 
 public enum SaveStoreError: Error {
@@ -63,7 +65,8 @@ public final class SaveStore {
                     plyCount: save.history.count,
                     isAutosave: url.lastPathComponent == Self.autosaveFilename,
                     variantID: save.variant,
-                    isVsAI: save.aiColor != nil
+                    isVsAI: save.aiColor != nil,
+                    fullTavli: save.fullTavli
                 )
             }
             .sorted { $0.savedAt > $1.savedAt }

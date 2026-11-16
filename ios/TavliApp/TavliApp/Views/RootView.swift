@@ -25,6 +25,13 @@ struct RootView: View {
     /// progress. In-memory only — a match isn't resumed across app launches (out of
     /// scope per #145); a cold-launch autosave resumes as a standalone single game.
     @State private var match: MatchState?
+    /// The running Full Tavli session (#144), non-nil from its first leg until the
+    /// player leaves it. Unlike `match` it is persisted: every autosave of one of its
+    /// legs carries it (`GameSave.fullTavli`), so a relaunch resumes mid-leg or on the
+    /// between-legs screen.
+    @State private var fullTavli: FullTavliSession?
+    /// Which Full Tavli screen shows while no leg is on the board.
+    @State private var fullTavliScreen: FullTavliScreen?
     /// Non-nil while the opening roll screen is showing (between mode picker and game).
     @State private var pendingHumanColor: EngineColor?
     /// The variant the pending (opening-roll) game will be played under (#143).
@@ -49,10 +56,13 @@ struct RootView: View {
             _humanColor = State(initialValue: .black)
             _autosaveName = State(initialValue: RootView.newAutosaveName())
         } else if let resumed = RootView.autoResume() {
-            // Resume exactly where the last session left off (#61, criterion 1).
+            // Resume exactly where the last session left off (#61, criterion 1) —
+            // including a Full Tavli session mid-leg or between legs (#144).
             _session = State(initialValue: resumed.session)
             _humanColor = State(initialValue: resumed.humanColor)
             _autosaveName = State(initialValue: resumed.name)
+            _fullTavli = State(initialValue: resumed.fullTavli)
+            _fullTavliScreen = State(initialValue: resumed.screen)
         } else {
             _session = State(initialValue: nil)
         }
@@ -74,6 +84,7 @@ struct RootView: View {
                         persistAutosave()        // never lose progress on the way out
                         self.session = nil
                         self.match = nil
+                        self.leaveFullTavli()
                     },
                     onNewGame: {
                         // "Play Again" keeps the same color, mode and variant, and re-runs
@@ -88,7 +99,9 @@ struct RootView: View {
                             self.beginTwoPlayer(variant: variant)
                         }
                     },
-                    onSave: { name in try? store.writeManual(session.snapshot(name: name)) },
+                    onSave: { name in
+                        _ = try? store.writeManual(session.snapshot(name: name, fullTavli: fullTavli))
+                    },
                     onAutosave: persistAutosave,
                     match: match.map { ms in
                         // Best-of-three chrome (#145): scoreboard during play + a match
@@ -108,24 +121,76 @@ struct RootView: View {
                                 self.match = nil
                             }
                         )
+                    },
+                    fullTavli: fullTavli.map { ft in
+                        GameView.FullTavli(
+                            state: ft,
+                            onContinue: {
+                                // The between-legs state is already in the autosave
+                                // (written when the leg ended), so just switch screens.
+                                self.session = nil
+                                self.fullTavliScreen = ft.isComplete ? .result : .transition
+                            },
+                            onExit: {
+                                persistAutosave()
+                                self.session = nil
+                                self.leaveFullTavli()
+                            })
                     }
                 )
             } else if let pending = pendingHumanColor {
                 OpeningRollView(humanColor: pending) { startingPlayer in
                     humanColor = pending
                     pendingHumanColor = nil
-                    autosaveName = Self.newAutosaveName()
-                    match = Self.newMatch(baseStartingPlayer: startingPlayer)
+                    if fullTavli != nil {
+                        // A Full Tavli leg (#144): the session keeps its own name/score.
+                        match = nil
+                        fullTavliScreen = nil
+                    } else {
+                        autosaveName = Self.newAutosaveName()
+                        match = Self.newMatch(baseStartingPlayer: startingPlayer)
+                    }
                     session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer,
                                                variant: pendingVariant)
                 } onBack: {
                     pendingHumanColor = nil
+                    // Backing out of the first leg's roll cancels the (unplayed) Full
+                    // Tavli session; later legs return to the between-legs screen.
+                    if let ft = fullTavli {
+                        if ft.completedLegs == 0 { leaveFullTavli() } else { fullTavliScreen = .transition }
+                    }
+                }
+            } else if let ft = fullTavli, let screen = fullTavliScreen {
+                switch screen {
+                case .transition:
+                    FullTavliTransitionView(state: ft,
+                                            onStartNext: startFullTavliLeg,
+                                            onExit: leaveFullTavli)
+                case .result:
+                    FullTavliResultView(state: ft,
+                                        onPlayAgain: {
+                                            leaveFullTavli()
+                                            beginFullTavli(humanColor: ft.aiColor?.opponent)
+                                        },
+                                        onExit: leaveFullTavli)
                 }
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
-                               onSelect: { beginGame(humanColor: $0, variant: AppSettings.variant) },
-                               onTwoPlayer: { beginTwoPlayer(variant: AppSettings.variant) },
+                               onSelect: { color in
+                                   if AppSettings.matchLength == .fullTavli {
+                                       beginFullTavli(humanColor: color)
+                                   } else {
+                                       beginGame(humanColor: color, variant: AppSettings.variant)
+                                   }
+                               },
+                               onTwoPlayer: {
+                                   if AppSettings.matchLength == .fullTavli {
+                                       beginFullTavli(humanColor: nil)
+                                   } else {
+                                       beginTwoPlayer(variant: AppSettings.variant)
+                                   }
+                               },
                                onResume: resume,
                                onPlayOnline: { showOnline = true })
             }
@@ -145,7 +210,7 @@ struct RootView: View {
             // `onGameFinished` (#143) fires for every end — wins of 1 or 2 points and
             // draws. The vs-AI W/L record only takes decided vs-AI games (a draw is
             // neither; a two-player game isn't the human's record).
-            session.onGameFinished = { [statsStore, humanColor, gameLog, autosaveName] winner, points in
+            session.onGameFinished = { [statsStore, humanColor, gameLog, autosaveName, store] winner, points in
                 if let winner, session.aiColor != nil {
                     statsStore.record(humanWon: winner == humanColor)
                 }
@@ -163,6 +228,14 @@ struct RootView: View {
                 // the match scoreboard + transition overlay reflect this game's result.
                 // Points count (a double game scores 2); a draw scores nothing.
                 self.match?.recordGame(winner: winner, points: points)
+                // Advance the Full Tavli session (#144) and persist the between-legs
+                // state right away (finished leg + updated score), so quitting on the
+                // leg overlay or the transition screen resumes exactly there.
+                if var ft = self.fullTavli {
+                    ft.recordGame(winner: winner, points: points)
+                    self.fullTavli = ft
+                    Self.persist(session: session, fullTavli: ft, name: name, store: store)
+                }
             }
         }
     }
@@ -176,12 +249,73 @@ struct RootView: View {
     /// auto-save is left intact.
     private func persistAutosave() {
         guard let session else { return }
-        if session.isTerminal {
+        let name = autosaveName.isEmpty ? Self.newAutosaveName() : autosaveName
+        Self.persist(session: session, fullTavli: fullTavli, name: name, store: store)
+    }
+
+    /// The autosave write itself. A finished game is cleared — except a finished leg of
+    /// an unfinished Full Tavli session (#144), which is kept together with the session
+    /// so a relaunch lands on the between-legs screen. A completed session is cleared.
+    @MainActor
+    private static func persist(session: GameSession, fullTavli: FullTavliSession?,
+                                name: String, store: SaveStore) {
+        if session.isTerminal && (fullTavli?.isComplete ?? true) {
             store.clearAutosave()
         } else {
-            let name = autosaveName.isEmpty ? Self.newAutosaveName() : autosaveName
-            try? store.writeAutosave(session.snapshot(name: name))
+            try? store.writeAutosave(session.snapshot(name: name, fullTavli: fullTavli))
         }
+    }
+
+    // ── Full Tavli (#144) ────────────────────────────────────────────────────
+
+    /// Start a Full Tavli session: vs the AI as `humanColor`, or two players (`nil`).
+    /// Its Plakoto leg follows the variant preference. vs-AI needs every leg's model
+    /// (the start screen shows "AI not available yet" otherwise).
+    private func beginFullTavli(humanColor color: EngineColor?) {
+        let ft = AppSettings.newFullTavli(aiColor: color?.opponent)
+        if color != nil && !ft.isAIAvailable() { return }
+        match = nil
+        fullTavli = ft
+        autosaveName = Self.newFullTavliName()
+        startFullTavliLeg(ft)
+    }
+
+    /// Start the session's current leg (from the transition screen).
+    private func startFullTavliLeg() {
+        guard let ft = fullTavli else { return }
+        startFullTavliLeg(ft)
+    }
+
+    /// Start `ft`'s current leg with that leg's variant (and its own model vs the AI).
+    /// The starter follows the same rules as a single game: vs the AI the
+    /// starting-player setting (fixed starter or the opening-roll ceremony); two
+    /// players `variant.startingPlayer(default: .white)`.
+    private func startFullTavliLeg(_ ft: FullTavliSession) {
+        guard let variant = ft.currentVariant else { return }
+        let setting = GameVariantSetting(variant: variant)
+        let human = ft.aiColor?.opponent ?? .white
+        humanColor = human
+        if ft.aiColor != nil {
+            if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: human) {
+                fullTavliScreen = nil
+                session = Self.makeSession(humanColor: human, startingPlayer: starter, variant: setting)
+            } else {
+                pendingVariant = setting
+                pendingHumanColor = human   // the opening-roll ceremony, as for a single game
+            }
+        } else {
+            fullTavliScreen = nil
+            session = Self.makeSession(humanColor: .white,
+                                       startingPlayer: variant.startingPlayer(default: .white),
+                                       variant: setting, vsAI: false)
+        }
+    }
+
+    /// Leave the Full Tavli screens/state for the menu. The autosave is untouched, so
+    /// an unfinished session stays resumable from "Continue last game".
+    private func leaveFullTavli() {
+        fullTavli = nil
+        fullTavliScreen = nil
     }
 
     /// Start a new vs-AI game (or match) as `color` under `variant` (#143). The
@@ -192,6 +326,7 @@ struct RootView: View {
     /// here (the start screen disables vs-AI play for it).
     private func beginGame(humanColor color: EngineColor, variant: GameVariantSetting) {
         guard AppSettings.aiAvailable(variant) else { return }
+        leaveFullTavli()
         if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
             humanColor = color
             autosaveName = Self.newAutosaveName()
@@ -211,6 +346,7 @@ struct RootView: View {
         humanColor = .white
         autosaveName = Self.newAutosaveName()
         match = nil
+        leaveFullTavli()
         session = Self.makeSession(humanColor: .white,
                                    startingPlayer: variant.variant.startingPlayer(default: .white),
                                    variant: variant, vsAI: false)
@@ -258,47 +394,85 @@ struct RootView: View {
         guard save.aiColor != nil else { return .agent(nil) }   // two-player save
         let config = GameConfig(variantID: save.variant)
         guard ModelCatalog.main.isAvailable(config.variant) else { return .unavailable }
+        // A vs-AI Full Tavli session (#144) needs every leg's model, not just this one.
+        if let ft = save.fullTavli, ft.aiColor != nil, !ft.isAIAvailable() { return .unavailable }
         return .agent(GameSession.makeAgent(config: config))
+    }
+
+    /// What a save resumes into: a live game (`session`), or — for a Full Tavli save
+    /// whose leg is already over (#144) — the between-legs / final screen.
+    private struct Resumed {
+        var session: GameSession?
+        var humanColor: EngineColor
+        var name: String
+        var fullTavli: FullTavliSession?
+        var screen: FullTavliScreen?
+    }
+
+    /// Rebuild what `save` resumes into, or `nil` when it can't be (vs-AI model missing).
+    @MainActor
+    private static func prepareResume(_ save: GameSave) -> Resumed? {
+        guard case .agent(let agent) = resumeAgent(for: save) else { return nil }
+        let human = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
+        var fullTavli = save.fullTavli
+        if var ft = fullTavli {
+            // Reconcile the session with its saved leg (#144): between legs / complete
+            // show the session screens; mid-leg resumes the game below.
+            let point = ft.resume(savedGame: save.record)
+            fullTavli = ft
+            switch point {
+            case .betweenLegs:
+                return Resumed(session: nil, humanColor: human, name: save.name,
+                               fullTavli: ft, screen: .transition)
+            case .complete:
+                return Resumed(session: nil, humanColor: human, name: save.name,
+                               fullTavli: ft, screen: .result)
+            case .inLeg:
+                break
+            }
+        }
+        let s = GameSession.resume(from: save, agent: agent,
+                                   searchConfig: AppSettings.searchConfig,
+                                   animationTimings: AppSettings.animationTimings,
+                                   manualDiceEntry: AppSettings.diceMode == .manual,
+                                   autoRoll: AppSettings.autoRoll,
+                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
+        return Resumed(session: s, humanColor: human, name: save.name,
+                       fullTavli: fullTavli, screen: nil)
     }
 
     /// Load a saved game (from the picker list) and switch into it, carrying its
     /// name forward so the auto-save keeps the same identity.
     private func resume(_ meta: SaveMetadata) {
         guard let save = try? store.load(filename: meta.filename),
-              case .agent(let agent) = Self.resumeAgent(for: save) else { return }
-        humanColor = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
-        autosaveName = save.name
-        match = nil   // a resumed game is a standalone single game (#145)
-        let s = GameSession.resume(from: save, agent: agent,
-                                   searchConfig: AppSettings.searchConfig,
-                                   animationTimings: AppSettings.animationTimings,
-                                   manualDiceEntry: AppSettings.diceMode == .manual,
-                                   autoRoll: AppSettings.autoRoll,
-                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
-        s.start()
-        session = s
+              let resumed = Self.prepareResume(save) else { return }
+        humanColor = resumed.humanColor
+        autosaveName = resumed.name
+        match = nil   // a resumed single game is standalone (#145); Full Tavli resumes (#144)
+        fullTavli = resumed.fullTavli
+        fullTavliScreen = resumed.screen
+        resumed.session?.start()
+        session = resumed.session
     }
 
     /// The auto-save game to resume on launch, if one exists and is still in
-    /// progress. A finished auto-save is discarded so launch lands on the picker; a
-    /// vs-AI save whose variant model is missing stays on disk but isn't resumed.
-    private static func autoResume() -> (session: GameSession, humanColor: EngineColor, name: String)? {
+    /// progress. A finished auto-save is discarded so launch lands on the picker —
+    /// unless it is a finished leg of a Full Tavli session (#144), which resumes on the
+    /// between-legs screen. A vs-AI save whose model is missing stays on disk but isn't
+    /// resumed.
+    @MainActor
+    private static func autoResume() -> Resumed? {
         let store = SaveStore.default()
-        guard let save = store.loadAutosave(),
-              case .agent(let agent) = resumeAgent(for: save) else { return nil }
-        let s = GameSession.resume(from: save, agent: agent,
-                                   searchConfig: AppSettings.searchConfig,
-                                   animationTimings: AppSettings.animationTimings,
-                                   manualDiceEntry: AppSettings.diceMode == .manual,
-                                   autoRoll: AppSettings.autoRoll,
-                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
-        guard !s.isTerminal else {
-            store.clearAutosave()
-            return nil
+        guard let save = store.loadAutosave(), let resumed = prepareResume(save) else { return nil }
+        if resumed.screen == .result { store.clearAutosave() }   // shown once, then gone
+        if let s = resumed.session {
+            guard !s.isTerminal else {
+                store.clearAutosave()
+                return nil
+            }
+            s.start()
         }
-        s.start()
-        let human = save.aiColor.flatMap { EngineColor(rawValue: $0) }?.opponent ?? .white
-        return (s, human, save.name)
+        return resumed
     }
 
     /// A timestamped game name ("Game · <date>"), the same convention the manual
@@ -306,6 +480,11 @@ struct RootView: View {
     /// game's per-move auto-saves.
     private static func newAutosaveName() -> String {
         String(localized: "Game · ") + autosaveNameFormatter.string(from: Date())
+    }
+
+    /// The name every leg of a Full Tavli session is saved/logged under (#144).
+    private static func newFullTavliName() -> String {
+        String(localized: "Full Tavli · ") + autosaveNameFormatter.string(from: Date())
     }
 
     private static let autosaveNameFormatter: DateFormatter = {
@@ -338,6 +517,11 @@ struct RootView: View {
     }
 }
 
+/// Which Full Tavli screen shows between legs (#144).
+private enum FullTavliScreen: Equatable {
+    case transition, result
+}
+
 /// Caramel start screen (#101): "Tavli" wordmark, one primary "Play vs AI" card
 /// holding the color choice (tapping a color starts the opening roll), a quiet
 /// "My Record" row, and (since #61) a list of saved games to resume or delete.
@@ -364,8 +548,20 @@ private struct ModePickerView: View {
     /// The variant new games use (#143), shared with the Settings sheet.
     @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
 
-    /// Whether the selected variant's model is bundled (vs-AI play possible).
-    private var aiAvailable: Bool { AppSettings.aiAvailable(variant) }
+    /// Full Tavli mode (#144): the fixed Portes → Fevga → Plakoto session.
+    private var isFullTavli: Bool { matchLength == .fullTavli }
+
+    /// The Full Tavli session the start buttons would create — its Plakoto leg follows
+    /// the variant preference, so read it off the live `variant` binding.
+    private var fullTavliPreview: FullTavliSession {
+        FullTavliSession(preferredVariantID: variant.rawValue, aiColor: .black)
+    }
+
+    /// Whether vs-AI play is possible: the selected variant's model is bundled, or in
+    /// Full Tavli mode every leg's model (#144).
+    private var aiAvailable: Bool {
+        isFullTavli ? fullTavliPreview.isAIAvailable() : AppSettings.aiAvailable(variant)
+    }
 
     var body: some View {
         ZStack {
@@ -378,9 +574,9 @@ private struct ModePickerView: View {
 
                     variantCard
                     playCard
+                    // Always enabled since #144: Full Tavli is also a two-player mode,
+                    // so the choice matters even when vs-AI play isn't available.
                     matchLengthPicker
-                        .disabled(!aiAvailable)
-                        .opacity(aiAvailable ? 1 : 0.4)
                     twoPlayerButton
                     onlineButton
                     recordRow
@@ -420,10 +616,18 @@ private struct ModePickerView: View {
     /// which carry the checker disc they map to on the board (engine black = Red).
     /// Which game to play (#143): the variant picker with its rules summary, flagged
     /// when its AI isn't bundled yet.
+    /// In Full Tavli mode (#144) the sequence card replaces the variant picker.
+    @ViewBuilder
     private var variantCard: some View {
-        VariantPickerView(selection: $variant)
-            .frame(maxWidth: 392)
-            .chromeCard(padding: 20)
+        if isFullTavli {
+            FullTavliInfoCard(preview: fullTavliPreview)
+                .frame(maxWidth: 392, alignment: .leading)
+                .chromeCard(padding: 20)
+        } else {
+            VariantPickerView(selection: $variant)
+                .frame(maxWidth: 392)
+                .chromeCard(padding: 20)
+        }
     }
 
     /// Two players on this iPad (#143) — works for every variant, model or not.
@@ -450,7 +654,9 @@ private struct ModePickerView: View {
                 Text("Play vs AI")
                     .font(ChromeType.title2.bold())
                     .foregroundStyle(ChromeKit.inkSecondary)
-                Text("TavTav is still learning \(variant.name). Play it with two players for now.")
+                Text(isFullTavli
+                     ? String(localized: "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now.")
+                     : String(localized: "TavTav is still learning \(variant.name). Play it with two players for now."))
                     .font(ChromeType.callout)
                     .foregroundStyle(ChromeKit.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -684,13 +890,21 @@ private struct SavedGameRow: View {
 
     private var variant: GameVariantSetting { GameVariantSetting(variantID: meta.variantID) }
 
-    private var resumable: Bool { !meta.isVsAI || AppSettings.aiAvailable(variant) }
+    /// A vs-AI Full Tavli save (#144) needs every leg's model, not just this leg's.
+    private var resumable: Bool {
+        guard meta.isVsAI else { return true }
+        if let ft = meta.fullTavli { return ft.isAIAvailable() }
+        return AppSettings.aiAvailable(variant)
+    }
 
     private var subtitle: String {
         let when = SavedGameRow.dateFormatter.string(from: meta.savedAt)
         let moves = meta.plyCount == 1 ? "1 move" : "\(meta.plyCount) moves"
-        let mode = meta.isVsAI ? variant.name
+        var mode = meta.isVsAI ? variant.name
                                : String(localized: "\(variant.name) · two players")
+        if meta.fullTavli != nil {
+            mode = String(localized: "Full Tavli · \(mode)")
+        }
         return "\(mode) · \(when) · \(moves)"
     }
 
