@@ -233,6 +233,12 @@ enum CaramelPalette {
     // both the ivory triangles and the mahogany frame.
     static let hlBest = Color(hex: 0x2f7fd1)   // blue: the best move
     static let hlBoth = Color(hex: 0x3fa64a)   // green: you played the best here
+
+    // Route choice (#169): the candidate intermediate points of an ambiguous Portes
+    // two-dice move. Live play never shows the review colours, so it reuses the review
+    // blue — already chosen to read on both the ivory triangles and the mahogany frame —
+    // which stands apart from the amber destination frame.
+    static let hlRoute = hlBest
 }
 
 extension Color {

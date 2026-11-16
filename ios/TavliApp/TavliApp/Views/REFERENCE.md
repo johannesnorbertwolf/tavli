@@ -271,8 +271,15 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   dice of a non-Pasch roll), `validTargets` may include endpoints several hops away: a tap on a
   far endpoint commits multiple half-moves and a tap on an intermediate stop lets the same checker
   continue. Both are resolved entirely in `GameSession.commitHalfMove(from:to:)` (via
-  `MoveBuilder.path`), so the view still just renders `validTargets` and routes one
-  `commitHalfMove` per tap.
+  `MoveBuilder.routeOptions`), so the view still just renders `validTargets` and routes one
+  `commitHalfMove` per tap or drop.
+- **Route choice (#169, Portes).** When a far drop/tap has routes ending in different positions
+  (hit vs no hit, different blots), the session sets `routeChoice` and plays nothing: the board
+  rings the source, frames the destination amber and the candidate intermediate points in
+  `CaramelPalette.hlRoute` (the review blue, via `TargetHighlightView(tint:)`), and the turn
+  indicator / drill feedback line read "Choose where to land in between" (EN/DE/NL). While it is
+  pending no drag starts; the next touch goes to `handleTap` → `session.chooseRoute(via:)` — a
+  candidate plays that route as one gesture, anything else cancels with nothing played.
 - **Test hook** — the ZStack carries `accessibilityIdentifier("board")` plus an
   `accessibilityValue` of comma-joined per-slot checker counts (`boardSignature`),
   so `TavliAppUITests` can locate the board's frame (to map `BoardGeometry`

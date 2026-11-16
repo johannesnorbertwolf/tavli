@@ -40,11 +40,28 @@ import Foundation
 /// board position is identical to applying the merged half-move. With this the
 /// non-Pasch case is handled by the same bag/chaining machinery as Pasch; the
 /// dice are needed only to know `d1`/`d2` for the split.
+///
+/// **Routes (#169).** Portes never merges: a checker using both dice is two
+/// single-die halves, and the two routes `src→a→dst` / `src→b→dst` can end in
+/// different positions (a blot hit at `a` but not at `b`, or different blots hit).
+/// `routeOptions(from:to:)` enumerates the shortest hop chains to a far destination
+/// that are prefixes of a surviving move, applies each on a scratch copy of the
+/// board, and keeps one representative per distinct resulting position. One option
+/// → the session plays it in one gesture; several → the player must pick the
+/// intermediate point (never auto-resolved). For Plakoto/Fevga the unmerged routes
+/// always end in the same position, so they keep playing directly.
+///
+/// **Gestures.** `commit(halfMoves:)` records the hops of one player gesture (a
+/// single step, a Pasch multi-hop or a two-dice route) so `undoGesture()` can peel
+/// the whole gesture at once.
 public final class MoveBuilder {
     /// Legal full moves still consistent with the half-moves built so far.
     public private(set) var activeMoves: [Move]
     /// Half-moves committed so far, in the order the player chose.
     public private(set) var built: [HalfMove] = []
+
+    /// Index into `built` where each committed gesture starts (ascending).
+    private var gestureStarts: [Int] = []
 
     /// The full (unmerged) legal-move set, used to rebuild `activeMoves` on undo.
     private let allMoves: [Move]
@@ -87,6 +104,71 @@ public final class MoveBuilder {
         reachable(from: fromPosition)[toPosition] ?? []
     }
 
+    /// Every distinct way to move the checker on `fromPosition` to `toPosition` in one
+    /// gesture, as ordered single-die hop chains: only the **shortest** chains that are
+    /// a prefix of some surviving move (given what was already built), deduplicated by
+    /// the **resulting position** (first chain in search order kept). Empty if
+    /// `toPosition` is unreachable; one element = unambiguous; more = the routes lead
+    /// to different positions and the player must choose (#169).
+    public func routeOptions(from fromPosition: Int, to toPosition: Int) -> [[HalfMove]] {
+        var all: [[HalfMove]] = []
+        collectChains(from: fromPosition, to: toPosition, hops: [], into: &all)
+        guard let shortest = all.map(\.count).min() else { return [] }
+        let chains = all.filter { $0.count == shortest }
+        guard chains.count > 1 else { return chains }
+
+        // Group by resulting position on a scratch copy (the live board is never touched).
+        let variant = board.variant
+        let scratch = GameBoard(config: board.config)
+        let start = board.captureStacks()
+        var seen: [[[Color]]] = []
+        var options: [[HalfMove]] = []
+        for chain in chains {
+            scratch.restoreStacks(start)
+            scratch.undoLog.removeAll()
+            for hop in chain {
+                variant.applyHalfMove(HalfMove(from: scratch.points[hop.from.position],
+                                               to: scratch.points[hop.to.position],
+                                               color: hop.color), on: scratch)
+            }
+            let result = scratch.captureStacks()
+            guard !seen.contains(result) else { continue }
+            seen.append(result)
+            options.append(chain)
+        }
+        return options
+    }
+
+    /// The half-moves of the most recent gesture (see `commit(halfMoves:)`), in the
+    /// order they were played. Empty when nothing has been built.
+    public var lastGesture: [HalfMove] {
+        guard let start = gestureStarts.last else { return [] }
+        return Array(built[start...])
+    }
+
+    /// Commits the hops of one player gesture (applied to the board by the owner, in
+    /// order) so `undoGesture()` can take them back together. Returns whether the move
+    /// is now complete, like `commit(halfMove:)`.
+    @discardableResult
+    public func commit(halfMoves hops: [HalfMove]) -> Bool {
+        guard !hops.isEmpty else { return false }
+        let start = built.count
+        var complete = false
+        for hm in hops { complete = commit(halfMove: hm) }
+        // `commit(halfMove:)` marked each hop as its own gesture; merge them.
+        gestureStarts.removeAll { $0 > start }
+        return complete
+    }
+
+    /// Undo the whole most recent gesture (the owner reverses `lastGesture` on the
+    /// board first, last hop first).
+    public func undoGesture() {
+        guard let start = gestureStarts.last else { return }
+        built.removeLast(built.count - start)
+        gestureStarts.removeLast()
+        activeMoves = allMoves.filter { remaining(of: $0) != nil }
+    }
+
     /// Commits a half-move and narrows `activeMoves` to the moves whose remaining
     /// bag still contains `hm`. Returns whether the move is now complete (no
     /// surviving move has further half-moves to play). The half-move's board
@@ -97,6 +179,7 @@ public final class MoveBuilder {
             guard let rem = remaining(of: m) else { return false }
             return rem.contains { $0 == hm }
         }
+        gestureStarts.append(built.count)
         built.append(hm)
         let maxRemaining = activeMoves.compactMap { remaining(of: $0)?.count }.max() ?? 0
         return maxRemaining == 0
@@ -113,6 +196,7 @@ public final class MoveBuilder {
     public func undo() {
         guard !built.isEmpty else { return }
         built.removeLast()
+        if let last = gestureStarts.last, last >= built.count { gestureStarts.removeLast() }
         activeMoves = allMoves.filter { remaining(of: $0) != nil }
     }
 
@@ -195,6 +279,20 @@ public final class MoveBuilder {
             let chain = hops + [hm]
             if paths[endpoint] == nil { paths[endpoint] = chain }
             extend(from: endpoint, hops: chain, into: &paths)
+        }
+    }
+
+    /// Every hop chain of a single checker from `point` that ends exactly on `target`
+    /// (DFS in the same order as `extend`, so the first chain matches `path`).
+    private func collectChains(from point: Int, to target: Int, hops: [HalfMove],
+                               into out: inout [[HalfMove]]) {
+        for hm in nextHops(from: point, taken: hops) {
+            let chain = hops + [hm]
+            if hm.to.position == target {
+                out.append(chain)
+            } else {
+                collectChains(from: hm.to.position, to: target, hops: chain, into: &out)
+            }
         }
     }
 
