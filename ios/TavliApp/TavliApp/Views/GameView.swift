@@ -615,7 +615,7 @@ struct GameView: View {
     }
 
     /// Portrait: one icon bar on top (Back · Settings · ⋯ menu, borne-off counts
-    /// trailing), the TavTav logo filling whatever height is left, the turn status +
+    /// trailing), free space (no mascot on iPhone), the turn status +
     /// contextual controls just above the board, and the board on the safe bottom.
     /// The controls sit above the board (never under the home indicator), with a gap
     /// so a near-miss lands on chrome padding, not a point.
@@ -625,11 +625,9 @@ struct GameView: View {
                 compactNavBar
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
-                // Shrinks to nothing first when the status stack needs the room.
-                TavTavLogo()
-                    .frame(maxWidth: 200, maxHeight: .infinity)
-                    .padding(.vertical, 6)
-                    .allowsHitTesting(false)
+                // No mascot on iPhone (owner's call, #109): the slack pools here so
+                // the status + controls stay right above the board.
+                Spacer(minLength: 8)
                 FitOrScroll {
                     compactStatusStack
                         .padding(.horizontal, 12)
@@ -1140,8 +1138,8 @@ private struct WinOverlayView: View {
 
     private var content: some View {
         VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, chromeMode != .compactLandscape {
-                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
+            if let mascot, !chromeMode.isCompact {
+                TavTavAvatar(persona: mascot, size: 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)
@@ -1340,8 +1338,8 @@ private struct MatchOverlayView: View {
 
     private var content: some View {
         VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, chromeMode != .compactLandscape {
-                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
+            if let mascot, !chromeMode.isCompact {
+                TavTavAvatar(persona: mascot, size: 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)

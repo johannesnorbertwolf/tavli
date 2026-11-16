@@ -42,7 +42,7 @@ show their variant and are disabled when their vs-AI model is missing. Board vie
 `layout.mode`: compact portrait = board full safe width at the safe bottom, chrome above
 (icon bar + "⋯" menu for Save/Resign/Leave/history/debug); compact landscape = board full
 safe height, chrome in a rail. `ChromeType` sizes scale by 0.86 on a phone (set once in
-`App.init`). Per-screen detail in `REFERENCE.md` ("Compact (iPhone) layout").
+`App.init`). **No TavTav mascot (logo tile / avatar) on compact layouts** — iPad only. Per-screen detail in `REFERENCE.md` ("Compact (iPhone) layout").
 
 ## Conventions / gotchas
 

@@ -89,7 +89,7 @@ struct OpeningRollView: View {
 
     // iPhone (#109): the same pieces as `GameView`'s compact layouts — the board
     // edge-to-edge (full safe width in portrait, full safe height in landscape) and
-    // the chrome above it / in a rail beside it, the logo filling the leftover space.
+    // the chrome above it / in a rail beside it. No mascot on iPhone (owner's call).
     private func compactPortraitLayout(_ layout: ChromeLayout) -> some View {
         VStack(spacing: 12) {
             HStack {
@@ -98,8 +98,8 @@ struct OpeningRollView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 4)
-            TavTavLogo()
-                .frame(maxWidth: 200, maxHeight: .infinity)
+            // No mascot on iPhone (#109): the slack pools above the status.
+            Spacer(minLength: 0)
             statusBlock
                 .padding(.horizontal, 12)
             manualRow
@@ -124,8 +124,6 @@ struct OpeningRollView: View {
                     .frame(maxWidth: .infinity)
                     .chromeCard(padding: 10)
                 manualRow
-                TavTavLogo()
-                    .frame(maxWidth: 200, maxHeight: .infinity)
             }
             .padding(.vertical, 8)
             .frame(width: layout.panelRect.width)

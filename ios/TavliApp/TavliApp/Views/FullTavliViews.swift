@@ -180,8 +180,8 @@ struct FullTavliLegOverlayView: View {
 
     private var content: some View {
         VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, chromeMode != .compactLandscape {
-                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
+            if let mascot, !chromeMode.isCompact {
+                TavTavAvatar(persona: mascot, size: 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)
@@ -388,8 +388,8 @@ struct FullTavliResultView: View {
             SColor(hex: 0xece6dc).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 24) {
-                    if let mascot {
-                        TavTavAvatar(persona: mascot, size: ChromeType.isCompact ? 72 : 108)
+                    if let mascot, !ChromeType.isCompact {   // no mascot on iPhone (#109)
+                        TavTavAvatar(persona: mascot, size: 108)
                     }
                     Text(title)
                         .font(ChromeType.winTitle)

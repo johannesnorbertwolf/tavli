@@ -512,15 +512,19 @@ App-side helpers in `ChromeKit.swift`:
   instead of clipping DE/NL), `.chromeSecondaryButtonSurface()` (a `Menu` label that looks
   like a secondary button).
 
+**No TavTav mascot on compact layouts** (owner's call — it goes in a future rebrand and
+only costs space on a phone): no logo tile in the game / opening-roll chrome, no avatar
+in the win / match / Full Tavli overlays or the Full Tavli result screen. iPad unchanged.
+
 Per screen (compact only):
 - **GameView** — portrait: icon nav bar (Back · Settings · ⋯ menu with Save/Resign or
-  Leave, Move history, debug pane; compact borne-off chips trailing), the TavTav logo
-  filling leftover height, turn status + one-line scoreboard + win bar + manual dice
-  (32 pt faces) + Undo/Done above the board, all in `FitOrScroll`. Landscape: the same
-  pieces in the rail beside a full-height board. The debug pane floats over the board
-  (by design); its ladybug closes it. Win / match / Full Tavli leg overlays: spacing 14,
-  72 pt mascot (none in landscape), secondary buttons via `AdaptiveRow`, `FitOrScroll`.
-- **OpeningRollView** — same arrangement (Back, logo, status, manual choice, board).
+  Leave, Move history, debug pane; compact borne-off chips trailing), free space, then
+  turn status + one-line scoreboard + win bar + manual dice (32 pt faces) + Undo/Done
+  right above the board, all in `FitOrScroll`. Landscape: the same pieces in the rail
+  beside a full-height board. The debug pane floats over the board (by design); its
+  ladybug closes it. Win / match / Full Tavli leg overlays: spacing 14, secondary buttons
+  via `AdaptiveRow`, `FitOrScroll`.
+- **OpeningRollView** — same arrangement (Back, status, manual choice, board).
 - **GameReviewView** — portrait: Close + "Drill blunders" bar, edge-to-edge board,
   Prev/Next pinned under it, move detail + chart in a scrollable card; landscape: board
   + rail (bar, scrolling detail, Prev/Next). The panel is split into `panelInfo` /
