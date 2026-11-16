@@ -212,6 +212,14 @@ elif [ "$1" == "rollout-lab" ]; then
     else
         $RUNNER nix-shell --run "python3 main.py rollout-lab $*"
     fi
+elif [ "$1" == "handicap-sweep" ]; then
+    # Handicap self-play exploration (#148): handicap-sweep [--games N] [--workers K] [--only kind,...]
+    shift
+    if [ "$PY_RUNNER" = ".venv/bin/python" ] || [ "$PY_RUNNER" = "python3" ]; then
+        $PY_RUNNER main.py handicap-sweep "$@"
+    else
+        nix-shell --run "python3 main.py handicap-sweep $*"
+    fi
 elif [ "$1" == "plateau" ] || [ "$1" == "plateau-status" ]; then
     # Unattended train-until-plateau driver (resumable; state in plateau_state_<variant>.json).
     RUNNER=""

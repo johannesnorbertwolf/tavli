@@ -1141,6 +1141,27 @@ def main():
                 print("Invalid x. Please provide a positive integer.")
                 return
         generate_human_progress_graph(last_x=last_x)
+    elif mode == 'handicap-sweep':
+        # handicap-sweep [--games N] [--workers K] [--only kind,...] [--combos a:x+b:y,...]
+        #                [--no-combos] [--seed S] [--model PATH] [--out PATH.json]  (#148)
+        from ai.handicap_sweep import run_sweep
+        args = sys.argv[2:]
+
+        def opt(name, default=None):
+            return args[args.index(name) + 1] if name in args else default
+
+        only = opt("--only")
+        combos = opt("--combos")
+        run_sweep(
+            config,
+            model_path=opt("--model", config.get_gold_model_path()),
+            games=int(opt("--games", 500)),
+            workers=int(opt("--workers", 2)),
+            only=[k.strip() for k in only.split(",")] if only else None,
+            combos=[] if "--no-combos" in args else ([c.strip() for c in combos.split(",")] if combos else None),
+            base_seed=int(opt("--seed", 0)),
+            out_json=opt("--out", "training_runs/handicap_sweep.json"),
+        )
     elif mode == 'plateau':  # unattended train-until-plateau driver (ai/plateau_driver.py)
         from ai.plateau_driver import run_driver
         sys.exit(run_driver(config.config_file))
