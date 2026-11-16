@@ -1,6 +1,7 @@
 # ios/ — native iPad app (Swift)
 
-A native, **offline** iPad app for the Plakoto AI. The value network runs on-device via
+A native, **offline** iPad app for the Plakoto AI (engine also ports standard Plakoto, Fevga
+and Portes; their UI is #143). The value network runs on-device via
 Core ML; the game engine and board encoder are re-implemented in Swift. Background:
 `docs/ios_port_plan.md` (status + how to run), `docs/decisions.md`, `docs/history.md`.
 
@@ -23,8 +24,8 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 
 | Type | What it is |
 |---|---|
-| `GameVariant` / `PlakotoVariant` (#136) | The rules seam: protocol (id, model name, initial position, legal moves, apply/undo, `hasWon`, `isOpen`, `resultPoints`, encoder) carried in `GameConfig.variant` (default Plakoto). Shared code calls rules **only** through it; `PlakotoVariant` wraps the unchanged port. Saves / online payloads carry the variant id (absent ⇒ `"plakoto"`). See `REFERENCE.md`. |
-| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); **animated AI turn** (#93: `AnimationTimings`, published `aiDiceRolling`/`aiHopInFlight`, hops land one at a time; `.off` = synchronous); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook; **attempt mode** (`onMoveAttempt`) + `drill(...)` seeder for the post-game drill (#63); **in-play analysis** (#146: `inPlayAnalysisEnabled` → `inPlayAnalysis` — **both** sides ranked at full-strength 2-ply in the background and graded honestly played-vs-best, #108, epoch-cancelled); **online (#134)**: `applyRemoteMove` applies a networked opponent's ply through the same animated path, validating it by resulting-board outcome. |
+| `GameVariant` + `PlakotoVariant` / `StandardPlakotoVariant` / `FevgaVariant` / `PortesVariant` (#136-#139) | The rules seam: protocol (id, model name, initial position, legal moves, apply/undo, `hasWon`, `isOpen`, encoder, **outcome seam** `maxPoints`/`isOver`/`outcome` (draw = nil winner)/`terminalValue`/`randomStartingPlayer`, **geometry hooks** `pathIndex`/`point(atPath:)`/`bearOffPoint`/`movableCount`/`intermediatePoints`) carried in `GameConfig.variant` (default Plakoto). Shared code calls rules **only** through it. Registry ids `plakoto`, `plakoto_standard`, `fevga`, `portes`; each new variant reproduces its Python generator's move list *in order* and its encoder (494 / 406 / 414 floats). Portes keeps bar + borne-off in the end stacks (see `REFERENCE.md`). |
+| `GameSession` (`@MainActor`, `ObservableObject`) | Owns `Game`, drives the turn state machine (`awaitingRoll/picking/moving/aiThinking/animating/gameOver`); publishes the view contract; optional Core ML AI side (multi-ply expectimax search off the main actor); **animated AI turn** (#93: `AnimationTimings`, published `aiDiceRolling`/`aiHopInFlight`, hops land one at a time; `.off` = synchronous); two-surface undo; human resign (`surrender`, #74); `onGameOver` hook (wins) + `onGameFinished(winner?, points)` (every end incl. draws; `.gameOver(winner: nil)` = draw, `record.isDraw`/`record.points`); **attempt mode** (`onMoveAttempt`) + `drill(...)` seeder for the post-game drill (#63); **in-play analysis** (#146: `inPlayAnalysisEnabled` → `inPlayAnalysis` — **both** sides ranked at full-strength 2-ply in the background and graded honestly played-vs-best, #108, epoch-cancelled); **online (#134)**: `applyRemoteMove` applies a networked opponent's ply through the same animated path, validating it by resulting-board outcome. |
 | `MoveBuilder` | Incrementally composes a `Move` from half-moves against the live board; order-independent "bag" model; Pasch multi-hop + non-Pasch unmerge. |
 | `SearchConfig` / `Agent` search (#58, #108) | On-device multi-ply expectimax: 2-ply baseline + anytime deepening on an isolated board copy. Leaf scoring mirrors the CLI; root strategy is iOS-specific. **AI-strength dial (#108):** `selectionNoise` (σ) + `maxDepth` are mapped from the settings slider — full strength is 2-ply argmax, weaker is 1-ply with Gaussian selection noise (only in `getBestMove`'s final pick; analysis stays noise-free). See `REFERENCE.md`. |
 | `GameRecord` / `GameSave.swift` | Canonical per-game value type (+ stable `gameId`, #104) + Codable wire format. Replay-based saves: store move history only, never board state (model-independent). Schema **v2** (#104) adds an optional `analysis` array (`AnalysisEntry` per ply: played/best moves + scores + `depth`); a save without analysis stays a v1 file, so v1 readers load it unchanged. |
@@ -68,6 +69,9 @@ generated, gitignored artifact.
 ```bash
 PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/generate_test_fixtures.py
 PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/convert_to_coreml.py
+for v in plakoto_standard fevga portes; do   # fixtures + random-init net + .mlpackage each
+  PYTHONPATH=. /Users/j.wolf/tavli/.venv/bin/python ios/scripts/generate_test_fixtures.py --variant $v
+done
 cd ios/TavliEngine && swift test
 ```
 
@@ -80,6 +84,11 @@ cd ios/TavliEngine && swift test
 - **Encoder must match exactly.** `BoardEncoder` reproduces `ai/board_encoder.py`'s `unary_v3` path
   bit-for-bit (486 floats). Any change to the Python encoder must be mirrored here, then fixtures
   regenerated.
+- **Never assume `dst = src + color*die`** in shared code (Fevga Black wraps 24→1; Portes enters
+  from the bar at index 0/25): go through the variant's geometry hooks. Variants address the board
+  by **position** (`board.points[hm.from.position]`), not via the half-move's `Point` refs.
+- **Wrap move-applying code that may exit early in `captureSnapshot()`/`restore(_:)`**, not
+  `captureStacks`: the snapshot also rewinds `GameBoard.undoLog` (Portes hit bookkeeping).
 - **Fixtures + model are generated, not hand-written.** Re-run both scripts after changing the Python
   engine/encoder or the `gold_model_path`. The `.mlpackage` lives in the test Fixtures dir so
   `swift test` can load it.

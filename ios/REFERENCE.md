@@ -277,44 +277,94 @@ so the game flow is validated without a simulator.
   and drives the UI's double-confirm threshold; the engine owns the perspective flip, the view owns
   the 10% policy.
 
-## Game variants (#136)
+## Game variants (#136; ports #137 Portes, #138 Fevga, #139 standard Plakoto)
 
-The rules seam — `GameVariant.swift` — so Portes / Fevga / a second Plakoto ruleset can
-be added without touching shared code. Mirrors the Python `RuleSet` ABC.
+The rules seam — `GameVariant.swift` — mirrors the Python `RuleSet` ABC
+(`domain/ruleset.py`). Each concrete variant ports its Python module and is pinned to it
+by generated parity fixtures.
 
-- **`protocol GameVariant: Sendable`**: `id` (stable persisted string, `"plakoto"`),
-  `modelResourceName` (bundled Core ML model base name, `"PlakotoValue"`),
-  `setUpInitialPosition(on:)`, `legalMoves(on:color:dice:) -> [Move]` (deterministic; empty =
-  forced pass), `applyHalfMove`/`undoHalfMove(_:on:)`, `apply`/`undo(_ move:on:)` (default:
-  the half-moves in order / reverse), `hasWon(_:on:)`, `isOpen(_ point:for:on:)`,
-  `resultPoints(winner:on:)` (1 single / 2 double), `makeEncoder(config:) -> any
-  BoardEncoding`. Extension helper `winner(on:)` (WHITE checked first).
-- **`protocol BoardEncoding: Sendable`** — `inputSize` + `encode(_:isWhitesTurn:)`;
-  `BoardEncoder` (`unary_v3`) conforms.
-- **`PlakotoVariant`** is a pure adapter over the unchanged parity-validated port
-  (`GameBoard.initializeBoard`/`apply`/`undo`/`hasWon`, `PossibleMoves`, `Point.isOpen`,
-  `BoardEncoder`); `resultPoints` is always 1 (the app counts games won).
-- **`GameVariants`** registry: `plakoto`, `all`, `defaultID = "plakoto"`,
-  `variant(forID:)`.
-- **Threading.** `GameConfig.variant` (default Plakoto; `==`/hash by `variant.id`;
-  `GameConfig(variantID:)` resolves a persisted id, unknown → Plakoto) is the single source.
-  `GameBoard.variant` / `Game.variant` read it. `Game` (initial position, winner),
-  `GameSession` (legal moves, apply/undo, replay, new game), `MoveBuilder` (open-point checks),
-  `Agent` (stores `variant` + `any BoardEncoding`; `Agent(model:config:)`;
-  `GameSession.makeAgent(config:)` loads `variant.modelResourceName`) and `GameReview` all call
-  rules only through the variant. `GameReview.analyze`/`analyzeProgressive`/`cachedResult` and
-  `GameSession.resume` take `config: GameConfig? = nil` and default to the record's / save's
-  variant; `GameSession.drill` and `Agent.scoreCandidate` default to the agent's variant.
-- **Persistence.** `GameRecord.variantID`, `GameSave.variant` and `OnlineMatchPayload.variant`
-  are always written; absent ⇒ `"plakoto"` on decode, so pre-#136 saves / payloads load
-  unchanged (no schema-version bump — the key is additive and old readers ignore it).
-  `GameKitCoordinator` carries the match's variant into every payload it writes.
-- **Board state.** `GameBoard` (stack of colours per point, `0`/`boardSize+1` = bear-off) is
-  the shared container; a pin is just stack order. Variant-specific extra state (Portes' bar)
-  is to be added to `GameBoard` by that variant's ticket and handled in its own apply/undo.
-- **Hot path.** Calls go through `any GameVariant` (one witness-table hop each) — negligible
-  next to move-generation allocations and the per-leaf Core ML prediction; `Agent` is not
-  generic.
+- **`protocol GameVariant: Sendable`** — rules: `id` (stable persisted string),
+  `modelResourceName`, `setUpInitialPosition(on:)` (must `board.clear()` first — the board is
+  reused by `newGame`), `legalMoves(on:color:dice:) -> [Move]` (deterministic; empty = forced
+  pass), `applyHalfMove`/`undoHalfMove(_:on:)` (strict inverses), `apply`/`undo(_ move:on:)`
+  (default: halves in order / reverse), `hasWon`, `isOpen(_:for:on:)`, `resultPoints`,
+  `makeEncoder(config:) -> any BoardEncoding`.
+- **Outcome seam** (protocol requirements with Plakoto defaults, mirroring `RuleSet`):
+  `maxPoints` (1), `randomStartingPlayer` (false), `isOver(on:)` (either side `hasWon`),
+  `outcome(on:) -> (winner: Color?, points: Int)` (`nil` winner = draw, 0 points; WHITE
+  checked first), `terminalValue(on:perspective:) = 0.5 + signed/(2·maxPoints)` (1/0 for
+  Plakoto, 0.5 draw, 0.75/0.25 for a 2-point variant's single win), and
+  `endsOnlyByMoverWin` (true unless the variant overrides `isOver` — Python's
+  `_mover_win_only`). Extension helpers: `winner(on:)` (nil while running **or drawn**),
+  `startingPlayer(default:)` (coin flip when `randomStartingPlayer`).
+- **Geometry hooks** (shared code must not assume `dst = src + color*die`):
+  `pathIndex(of:for:boardSize:)` / `point(atPath:for:boardSize:)` (default: White = point,
+  Black = `boardSize+1-point`; off = `boardSize+1`; Portes bar = path 0), `bearOffPoint`,
+  `movableCount(at:for:on:)` (default `Point.movablePieces`; Portes counts bar checkers), and
+  `intermediatePoints(of:die1:die2:on:)` — the midpoints through which a **merged** single-half
+  two-dice move can legally be split. `MoveBuilder.unmerge` and its playability check use only
+  these hooks. The default is Plakoto's (exact distance `d1+d2` along the path, landable
+  midpoint); standard Plakoto / Fevga check each hop with their own rules (incl. larger-die
+  bear-off and Fevga's first-checker rule, so an "open but illegal" midpoint is never offered);
+  Portes returns `[]` (it never merges).
+- **`BoardEncoding`** — `inputSize` + `encode(_:isWhitesTurn:)`. `BoardEncoder` (`unary_v3`,
+  486), `PlakotoStdEncoder` (`plakoto_std_v1` = unary_v3 + 8 mother/borne-off features, 494),
+  `FevgaEncoder` (`fevga_v1`, 406, mover's path order = rotation by 12 for Black),
+  `PortesEncoder` (`portes_v1`, 414). Ratios are computed in `Double` then narrowed, like numpy.
+- **Variants.**
+  - `PlakotoVariant` — adapter over the unchanged port (`GameBoard`, `PossibleMoves`,
+    `BoardEncoder`); `resultPoints` 1. Only change: `setUpInitialPosition` clears the board
+    first (a reused board used to keep its trays).
+  - `StandardPlakotoVariant` (`plakoto_standard`) — Plakoto stack mechanics; port of
+    `domain/plakoto_standard_moves.py` (max-dice, larger-die rule, larger-die bear-off from the
+    highest point; merged single half for one checker on both dice); mother rule (draw when both
+    mothers pinned, 2 points for a mother win, 2 when the loser bore off none);
+    `endsOnlyByMoverWin == false`.
+  - `FevgaVariant` (`fevga`) — single-colour stacks, trays hold borne-off; Black's path wraps
+    (13…24, 1…12, off at 0) via `FevgaGeometry`; port of `fevga_legal_moves` (DFS over sequences
+    and prefixes, dedup by an additive position hash, R1/R2 end-of-move filter, dice obligation),
+    one `Move` per resulting position in Python's insertion order; mars = 2.
+  - `PortesVariant` (`portes`) — port of `domain/portes_move_generation.py` (bar entry first,
+    hits, larger-die rules; never merged halves); gammon = 2, no triple.
+  All three have `maxPoints == 2` and `randomStartingPlayer == true`.
+- **Board state.** `GameBoard` (stack of colours per point, `0`/`boardSize+1` = the ends) is the
+  shared container; a pin is just stack order. **Portes' bar** uses the same indices as Python
+  (White bar = 0, Black bar = 25, so `[0, d]` is a White entry and `[s, 25]` a White bear-off).
+  Each end stack holds one colour's borne-off checkers *below* the other colour's bar checkers —
+  `points[0] = [Black off…, White bar…]`, `points[25] = [White off…, Black bar…]` — so the
+  position lives entirely in the stacks: `captureStacks`, replay, review/drill boards
+  (`boardStacks`), saves and online payloads (which store only move pairs) need no new fields
+  and stay backward-compatible. A hit can't be recovered from the after-position, so Portes
+  pushes one flag per applied half on `GameBoard.undoLog` (LIFO, popped by undo).
+  `captureSnapshot()`/`restore(_:)` capture stacks **and** the log depth; use them (not
+  `captureStacks`) around code that might abandon an apply (Agent 1-ply scoring, session
+  replay validation). `PortesVariant.setPosition`/`signedSlots`/`barCount`/`borneOffCount`
+  convert to/from the Python layout.
+- **Game end through the variant.** `Game.isOver()`/`getWinner()`/`outcome()` call the variant.
+  `GameSession` ends a turn when `isOver`: `.gameOver(winner: Color?)` (`nil` = draw),
+  `record.outcome`/`isDraw`/`points` (points only when `maxPoints > 1`, so Plakoto records are
+  unchanged), `onGameOver(winner)` for wins only (as before) and `onGameFinished(winner, points)`
+  for every end. `GameSave` writes `outcome: "draw"` for a draw (not a `Color` raw value, so
+  older readers see "no winner") and an optional `points` key (absent for Plakoto). Replay and
+  `GameReview` stop on `isOver`.
+- **Agent.** Leaves mirror `ai/agent.py`: after a candidate, `endsOnlyByMoverWin ?
+  hasWon(mover) : isOver` decides terminal, scored `terminalValue(perspective: mover)` (exactly
+  1.0 for Plakoto). `GameReview.matchRecorded(_:_:on:mover:)` disambiguates moves with the same
+  net delta (Portes: `10→14→15` hitting on 14 vs `10→11→15`) by resulting position.
+- **Persistence ids.** `GameRecord.variantID`, `GameSave.variant`, `OnlineMatchPayload.variant`
+  are always written; absent ⇒ `"plakoto"`. `GameConfig(variantID:)` resolves unknown ids to
+  Plakoto. `GameSession.makeAgent` loads `variant.modelResourceName` — no trained model is
+  bundled for the new variants yet, so they fall back to random play in the app.
+- **Parity tests** (`VariantParityTests.swift`, fixtures from `generate_test_fixtures.py
+  --variant <id>`, gitignored like Plakoto's): metadata, encodings (≤1e-6), exact ordered
+  legal-move lists for all 21 rolls per sampled position plus apply → Python afterstate and undo
+  → original for every move, outcomes (draws, 2-point wins, terminal values), and agent 1-ply /
+  2-ply scores against Python with a seeded random-init net exported to Core ML by the same
+  script (`convert_to_coreml.py --variant/--checkpoint/--out`). `VariantPlayTests.swift` covers
+  MoveBuilder composition, full sessions + save replay, the draw path and timings.
+- **Hot path.** Calls go through `any GameVariant` (one witness-table hop each). Release-build
+  `legalMoves` per call over mid-game samples: Plakoto ≈36 µs, standard Plakoto ≈19 µs, Fevga
+  ≈35 µs, Portes ≈37 µs (`VariantPlayTests.testLegalMoveTiming`).
 
 ## Save & load (#61, replay-based)
 

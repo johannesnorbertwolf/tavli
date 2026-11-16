@@ -76,7 +76,12 @@ struct VariantFixtures: Decodable {
 /// Board for a fixture position under `variant`.
 func makeVariantBoard(_ pos: VariantFixtures.Position, variant: any GameVariant) -> GameBoard {
     let board = GameBoard(config: GameConfig(variant: variant))
-    if let points = pos.points {
+    if let p = pos.p, let off = pos.off {
+        var white: [Int: Int] = [:], black: [Int: Int] = [:]
+        for i in 1...24 { if p[i] > 0 { white[i] = p[i] } else if p[i] < 0 { black[i] = -p[i] } }
+        PortesVariant.setPosition(on: board, white: white, black: black,
+                                  whiteBar: p[0], blackBar: -p[25], whiteOff: off[0], blackOff: off[1])
+    } else if let points = pos.points {
         board.clear()
         for (i, stack) in points.enumerated() { board.setPoint(i, pieces: stack.map(parseColor)) }
     }
@@ -85,6 +90,10 @@ func makeVariantBoard(_ pos: VariantFixtures.Position, variant: any GameVariant)
 
 /// The canonical position key the generator writes (`_stack_key` / `_portes_key`).
 func variantKey(_ board: GameBoard) -> String {
+    if board.variant.id == "portes" {
+        let (p, w, b) = PortesVariant.signedSlots(board)
+        return p.map(String.init).joined(separator: ",") + "|\(w),\(b)"
+    }
     return board.points.map { pt -> String in
         guard let top = pt.topColor else { return "" }
         return "\(top.rawValue)\(pt.activeCount)\(pt.isCaptured ? "p" : "")"

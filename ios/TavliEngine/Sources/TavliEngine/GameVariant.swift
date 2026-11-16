@@ -230,8 +230,9 @@ public enum GameVariants {
 
     public static let plakotoStandard = StandardPlakotoVariant()
     public static let fevga = FevgaVariant()
+    public static let portes = PortesVariant()
 
-    public static let all: [any GameVariant] = [plakoto, plakotoStandard, fevga]
+    public static let all: [any GameVariant] = [plakoto, plakotoStandard, fevga, portes]
 
     /// The variant for a persisted id, or `nil` if this build doesn't know it.
     public static func variant(forID id: String) -> (any GameVariant)? {

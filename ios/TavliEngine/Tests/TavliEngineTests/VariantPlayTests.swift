@@ -8,14 +8,14 @@ import XCTest
 /// variant (2-point wins, draws), saves replay to the identical position, and the
 /// board's undo bookkeeping stays balanced. No fixtures or model needed.
 final class VariantPlayTests: XCTestCase {
-    private let newVariants: [any GameVariant] = [GameVariants.plakotoStandard, GameVariants.fevga]
+    private let newVariants: [any GameVariant] = [GameVariants.plakotoStandard, GameVariants.fevga, GameVariants.portes]
 
     private func checkerCount(_ board: GameBoard, _ c: Color) -> Int {
         board.points.reduce(0) { $0 + $1.countForColor(c) }
     }
 
     func testRegistryAndInitialPositions() {
-        XCTAssertEqual(GameVariants.all.map(\.id), ["plakoto", "plakoto_standard", "fevga"])
+        XCTAssertEqual(GameVariants.all.map(\.id), ["plakoto", "plakoto_standard", "fevga", "portes"])
         for v in newVariants {
             XCTAssertEqual(GameConfig(variantID: v.id).variant.id, v.id)
             let board = GameBoard(config: GameConfig(variant: v))
@@ -30,7 +30,7 @@ final class VariantPlayTests: XCTestCase {
         XCTAssertEqual(GameVariants.plakoto.maxPoints, 1)
         XCTAssertFalse(GameVariants.plakoto.randomStartingPlayer)
         XCTAssertFalse(GameVariants.plakotoStandard.endsOnlyByMoverWin)
-        XCTAssertTrue(GameVariants.fevga.endsOnlyByMoverWin)
+        XCTAssertTrue(GameVariants.portes.endsOnlyByMoverWin)
     }
 
     /// Random games where every turn is composed through `MoveBuilder` one half at a
@@ -91,6 +91,28 @@ final class VariantPlayTests: XCTestCase {
         let builder = MoveBuilder(legalMoves: legal, board: board, die1: 5, die2: 3)
         XCTAssertEqual(builder.validDestinations(for: 22), [3, 6])   // via slot 3 only (slot 1 is White's)
         XCTAssertEqual(builder.path(from: 22, to: 6).map(\.to.position), [3, 6])
+    }
+
+    /// Portes: a bar checker is picked up from its bar index and a hit sends the blot to
+    /// the opponent's bar; undo restores both.
+    func testPortesBarEntryHitAndUndo() {
+        let v = GameVariants.portes
+        let board = GameBoard(config: GameConfig(variant: v))
+        PortesVariant.setPosition(on: board, white: [24: 14], black: [3: 14, 2: 1], whiteBar: 1, blackOff: 0)
+        let dice = Dice()
+        dice.set(2, 6)
+        let legal = v.legalMoves(on: board, color: .white, dice: dice)
+        XCTAssertFalse(legal.isEmpty)
+        XCTAssertTrue(legal.allSatisfy { $0.halfMoves[0].from.position == 0 }, "bar entry first")
+        XCTAssertEqual(v.movableCount(at: 0, for: .white, on: board), 1)
+        let before = board.captureStacks()
+        let hit = legal.first { $0.halfMoves[0].to.position == 2 }!
+        v.apply(hit, on: board)
+        XCTAssertEqual(PortesVariant.barCount(.black, on: board), 1)
+        XCTAssertEqual(PortesVariant.barCount(.white, on: board), 0)
+        v.undo(hit, on: board)
+        XCTAssertEqual(board.captureStacks(), before)
+        XCTAssertTrue(board.undoLog.isEmpty)
     }
 
     @MainActor private func playOut(_ s: GameSession, seed: UInt64) {
@@ -179,6 +201,22 @@ final class VariantPlayTests: XCTestCase {
         let save = s.snapshot(name: "d")
         XCTAssertEqual(save.outcome, GameSave.drawOutcome)
         XCTAssertTrue(save.record.isDraw)
+    }
+
+    /// Agent terminal leaves use `terminalValue`: a gammon-winning bear-off scores 1.0,
+    /// a single win 0.75 (max_points 2), with no model call needed.
+    func testTerminalValueNormalizesPoints() {
+        let v = GameVariants.portes
+        let board = GameBoard(config: GameConfig(variant: v))
+        PortesVariant.setPosition(on: board, white: [:], black: [3: 15], whiteOff: 15)
+        XCTAssertEqual(v.terminalValue(on: board, perspective: .white), 1.0)
+        XCTAssertEqual(v.terminalValue(on: board, perspective: .black), 0.0)
+        PortesVariant.setPosition(on: board, white: [:], black: [3: 14], whiteOff: 15, blackOff: 1)
+        XCTAssertEqual(v.terminalValue(on: board, perspective: .white), 0.75)
+        XCTAssertEqual(v.terminalValue(on: board, perspective: .black), 0.25)
+        XCTAssertEqual(GameVariants.plakoto.terminalValue(on: { () -> GameBoard in
+            let b = GameBoard(); b.setPoint(25, pieces: Array(repeating: .white, count: 15)); return b }(),
+            perspective: .white), 1.0)
     }
 
     /// Legal-move generation time per call over a fixed sample of mid-game positions,
