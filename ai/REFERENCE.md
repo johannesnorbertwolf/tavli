@@ -351,3 +351,14 @@ Unattended "train until plateau" driver for training a variant from scratch with
 **Robustness.** A non-zero train/eval subprocess is retried `max_retries` (1) times, then `status: failed` with the error and exit 1 (never loops forever). Rerunning after FAILED resets the retry budget and resumes; rerunning after FINISHED prints the verdict and exits.
 
 **Fragile bits.** Pooling assumes `paired_eval.summarize`'s scale (`d_k ∈ {−1,0,1}`, `rate = 0.5 + mean_d/2`); if summaries move to points/draws, update `pool_results`. The random-opponent eval calls `paired_eval.run_pairs` with a duck-typed `get_best_move` mover. Promotion compares `model_save_path` (raw weights, not the EMA shadow).
+
+## handicap_sweep.py
+
+Phase-1 exploration harness for the handicap system (#148). `python main.py handicap-sweep [--games N] [--workers K] [--only kind,...] [--combos a:x+b:y,...] [--no-combos] [--seed S] [--model PATH] [--out PATH.json]` (default model = `gold_model_path`, 500 games/cell, 2 workers, out `training_runs/handicap_sweep.json` + `.md`).
+
+**Cells.** A cell is a tuple of `(kind, intensity)` (`()` = baseline); `default_cells(only)` = baseline + every kind at its `KINDS[k].intensities`, plus `DEFAULT_COMBOS` (or `--combos`). `rules_for(cell, side)` builds the `domain.handicap` rules with `side` disadvantaged.
+
+**Pairing.** `play_pair(agent, config, cell, seed)` plays game A (handicapped = White) and game B (handicapped = Black) on the same seed; White starts both unless `first_mover`. `play_game` draws two uniforms per turn from `random.Random(seed)` (consumed even on a skipped turn) and two per turn from a salted second stream for probabilistic kinds; dice = `rules.roll(...)` (plain: `plain_roll`). The handicapped side therefore gets the opposite half of the same stream in A and B, cancelling dice luck and the first-move edge. 1-ply `get_best_move`; `MAX_PLIES` cap = draw (half credit). With no handicap A and B are the same game, so the baseline is exactly 50% (asserted) and every pair is `h = 1`.
+
+**Stats.** `summarize_cell`: `h_k ∈ {0,1,2}`, rate = mean(h)/2, 95% CI from the per-pair SE (Wilson over games when degenerate), `first_mover_win` (game A White wins), `mean_plies`, `pin_win_frac`, `on_distribution` (all kinds dice/tempo). `to_markdown` sorts by shift vs the baseline. Workers: spawn `Pool`, model loaded once per worker; `agent.bearoff` is the config DB except for geometry cells (`cell_uses_bearoff_db`: its race values assume 6-point homes), where it is None. `DEFAULT_COMBOS` = the house-size × headstart × first-mover combos from phase 1; explicit `--combos` always run (even with `--only`).
+

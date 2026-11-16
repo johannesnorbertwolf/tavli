@@ -22,6 +22,7 @@ or modifying anything here.
 | `evaluator.py` | Older vs-random eval helper (`AIEvaluator`); likely vestigial. |
 | `lookahead_eval.py` | Parallel harness: flexible search vs fixed 2-ply (gold self-play) to validate deeper search. |
 | `paired_eval.py` | Variance-reduced head-to-head (`main.py eval-paired A B [pairs]`): plays each trial twice on the SAME seeded dice (A-White-vs-B and B-White-vs-A), cancelling dice luck + first-mover edge. Paired one-sided z-test on `d_k∈{-1,0,+1}`; far more power per game for near-identical models. Self-comparison ⇒ all `d_k=0`. |
+| `handicap_sweep.py` | Handicap exploration harness (#148, `main.py handicap-sweep`): gold-vs-gold 1-ply pairs on duplicate uniform dice under `domain/handicap.py` rules (handicapped side White then Black), per-pair CI, JSON + markdown table. Bear-off DB off only for geometry cells. Results: `docs/handicap-phase1.md`. |
 | `plateau_driver.py` | Unattended train-until-plateau driver (`main.py plateau` / `plateau-status`): rounds of train subprocess + paired eval vs a self-built ladder `models/<variant>_gold_vK.pth` (bootstraps v1 vs random), promotes on z≥2 & ≥52% (normalized **points** for `max_points > 1` variants, wins otherwise), stops when the pooled non-promotion streak's edge UCB < +1.5pp; staged config overrides; resumable JSON state. |
 
 ## Conventions / gotchas

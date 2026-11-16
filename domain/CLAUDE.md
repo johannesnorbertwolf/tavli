@@ -73,6 +73,20 @@ recommended). Config: `config/config-plakoto-standard.yml`. Encoder `plakoto_std
   `supports_bearoff_db = False`, encoder `fevga_v1`. Tests: `tests/domain/test_fevga.py` (spec
   examples F1–F10 + a slow spec-literal reference generator cross-check).
 
+## handicap.py — handicap layer over house Plakoto (#148 phase 1)
+
+`HandicapSpec(kind, intensity, side)`: `side` is the *disadvantaged* colour; bonus kinds
+(`KINDS[k].bonus`: `dice_floor`, `pre_borne`, `pip_headstart`, `larger_house`) modify the opponent
+(`spec.target`). `make_handicapped_rules(specs)` returns the plain `plakoto` singleton when empty
+(bit-identical, zero overhead), else `HandicappedPlakotoRules(PlakotoRules)` (unregistered, name
+stays `plakoto`) adding `roll(color, u1, u2, q1, q2) -> Dice` (uniform → face on lo..hi, so a
+handicapped die maps the same uniform as the fair one; q's drive forced-low / no-doubles),
+`first_mover(default)`, `skips_turn(color, own_turn_no)` (`pass_schedule`: evenly spaced over 40 own
+turns), and an `initial_board` with pre-borne / advanced checkers. Demoted doubles use a `Dice` subclass
+with `is_pasch() == False` so the plain generator plays them as two dice (deduplicated). Per-side home
+size = `HandicapBoard(Board)` overriding `is_home`/`clone` — the generator only sees home size through
+`is_home`; `board.py`/`move_generation.py` are untouched. Results / rationale: `docs/handicap-phase1.md`.
+
 ---
 
 ## constants.py

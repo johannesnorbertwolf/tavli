@@ -28,6 +28,7 @@ A TD(λ) self-play training system for **Plakoto** (a Greek backgammon variant).
 ./run.sh eval-lookahead [total_games] [--workers N]  # Validate flexible search vs fixed 2-ply (gold self-play, parallel; default 1000)
 ./run.sh play                          # Human vs AI interactive game
 ./run.sh rollout-lab [--apply ...]     # Disagreement mining + rollout-labeled fine-tune with gated promotion (ai/REFERENCE.md)
+./run.sh handicap-sweep [--games N] [--workers K] [--only kind,...]  # Handicap self-play exploration (#148; docs/handicap-phase1.md)
 ./run.sh tournament [num_runs] [seed]  # Run round-robin tournaments (see tournaments/)
 ./run.sh --config CFG plateau           # Unattended train-until-plateau: self-built gold ladder, resumable (ai/REFERENCE.md); `plateau-status` = compact summary
 ./run.sh --config config/config-X.yml <cmd>  # Any command under another config (also `main.py --config`, $TAVLI_CONFIG)
