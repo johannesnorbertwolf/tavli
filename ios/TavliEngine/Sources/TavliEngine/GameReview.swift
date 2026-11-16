@@ -155,7 +155,7 @@ public enum GameReview {
                        deadline: nil
                    ),
                    let bestIdx = argmax(scores),
-                   let playedIdx = matchRecorded(ply.halfMoves, legal) {
+                   let playedIdx = matchRecorded(ply.halfMoves, legal, on: board, mover: mover) {
                     let evaluation = PlyEvaluation(
                         plyNumber: index + 1,
                         die1: ply.die1,
@@ -185,7 +185,7 @@ public enum GameReview {
                     on: board)
             }
 
-            if variant.hasWon(mover, on: board) { break }
+            if variant.isOver(on: board) { break }
             mover = mover.opponent
         }
 
@@ -330,7 +330,7 @@ public enum GameReview {
                     HalfMove(from: board.points[from], to: board.points[to], color: mover),
                     on: board)
             }
-            if variant.hasWon(mover, on: board) { break }
+            if variant.isOver(on: board) { break }
             mover = mover.opponent
         }
         return contexts
@@ -355,7 +355,7 @@ public enum GameReview {
                   relativeCutoff: searchConfig.relativeCutoff,
                   maxBranch: searchConfig.maxBranch, deadline: nil),
               let bestIdx = argmax(scores),
-              let playedIdx = matchRecorded(ctx.playedPairs, legal) else { return nil }
+              let playedIdx = matchRecorded(ctx.playedPairs, legal, on: board, mover: ctx.mover) else { return nil }
         return PlyEvaluation(
             plyNumber: ctx.plyNumber, die1: ctx.die1, die2: ctx.die2,
             boardStacks: ctx.boardStacks, mover: ctx.mover,
@@ -488,6 +488,40 @@ public enum GameReview {
             return i
         }
         return nil
+    }
+
+    /// `matchRecorded` made exact when the net delta is ambiguous: in Portes two legal
+    /// moves can share a delta yet differ in the result (`10→14→15` hits a blot on 14,
+    /// `10→11→15` does not). With a single delta match (always, in Plakoto) this is
+    /// the plain delta match; with several, the one whose resulting position equals
+    /// the recorded move's wins (first on ties). `board` is left untouched.
+    static func matchRecorded(_ recorded: [[Int]], _ moves: [Move], on board: GameBoard, mover: Color) -> Int? {
+        let target = netDelta(recorded)
+        let hits = moves.indices.filter { netDelta(pairs(of: moves[$0])) == target }
+        guard hits.count > 1 else { return hits.first }
+        let variant = board.variant
+        let before = board.captureSnapshot()
+        defer { board.restore(before) }
+        let played = Move(recorded.compactMap { p -> HalfMove? in
+            guard p.count == 2 else { return nil }
+            return HalfMove(from: board.points[p[0]], to: board.points[p[1]], color: mover)
+        })
+        variant.apply(played, on: board)
+        let want = board.captureStacks()
+        variant.undo(played, on: board)
+        for i in hits {
+            variant.apply(moves[i], on: board)
+            let got = board.captureStacks()
+            variant.undo(moves[i], on: board)
+            if got == want { return i }
+        }
+        return hits.first
+    }
+
+    /// How many of `moves` share `recorded`'s net delta (> 1 only when ambiguous).
+    static func deltaMatchCount(_ recorded: [[Int]], _ moves: [Move]) -> Int {
+        let target = netDelta(recorded)
+        return moves.reduce(0) { $0 + (netDelta(pairs(of: $1)) == target ? 1 : 0) }
     }
 
     /// Net change a move makes to the board: `point → checker delta` (each `from`

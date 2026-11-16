@@ -11,7 +11,7 @@ final class GameVariantTests: XCTestCase {
         XCTAssertEqual(GameConfig(variantID: "plakoto"), .standard)
         XCTAssertEqual(GameConfig(variantID: "unknown-future-variant"), .standard)
         XCTAssertNotNil(GameVariants.variant(forID: "plakoto"))
-        XCTAssertNil(GameVariants.variant(forID: "portes"))
+        XCTAssertNil(GameVariants.variant(forID: "unknown-future-variant"))
     }
 
     func testPlakotoVariantMatchesUnderlyingPort() {

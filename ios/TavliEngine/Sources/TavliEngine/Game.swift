@@ -26,12 +26,20 @@ public final class Game {
         player = color
     }
 
+    /// The game has ended — a win, or (standard Plakoto) a draw. Via the variant.
     public func isOver() -> Bool {
-        getWinner() != nil
+        variant.isOver(on: board)
     }
 
+    /// The winner once the game is over; `nil` while running **or for a draw**.
     public func getWinner() -> Color? {
         variant.winner(on: board)
+    }
+
+    /// `(winner, points)` of the finished game (`winner == nil`: draw). Only
+    /// meaningful when `isOver()`.
+    public func outcome() -> (winner: Color?, points: Int) {
+        variant.outcome(on: board)
     }
 
     public func checkWinner(_ color: Color) -> Bool {

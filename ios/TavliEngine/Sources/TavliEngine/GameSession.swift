@@ -14,7 +14,9 @@ public enum TurnPhase: Equatable {
     case moving                  // a source is selected, destinations highlighted
     case aiThinking
     case animating
-    case gameOver(winner: Color)
+    /// The game has ended. `winner == nil` is a **draw** (standard Plakoto, both
+    /// mothers pinned); see `GameSession.record` for the points scored.
+    case gameOver(winner: Color?)
 }
 
 /// Presentation timings for the AI's turn (#93). Purely visual — they never
@@ -195,6 +197,11 @@ public final class GameSession: ObservableObject {
     /// winning color. The app layer uses this to record the human's win/loss
     /// (issue #64); the engine itself stays unaware of stats persistence.
     public var onGameOver: (@MainActor (Color) -> Void)?
+
+    /// Fired exactly once whenever the game ends — wins **and draws** (which do not
+    /// fire `onGameOver`) — with the winner (`nil` = draw) and the points the result
+    /// is worth under the variant (1, or 2 for a gammon/mars/mother win).
+    public var onGameFinished: (@MainActor (_ winner: Color?, _ points: Int) -> Void)?
 
     /// Drill attempt hook (#63). When set, the session runs in **attempt mode**: a
     /// completed move is reported here and then rolled back to the pre-move position
@@ -509,8 +516,10 @@ public final class GameSession: ObservableObject {
         selectableSources = []
         legalMoves = []
         record.outcome = aiColor
+        if game.variant.maxPoints > 1 { record.points = 1 }
         phase = .gameOver(winner: aiColor)
         onGameOver?(aiColor)
+        onGameFinished?(aiColor, 1)
     }
 
     /// Reset to a fresh game, current player rolling first. Interrupts any
@@ -608,10 +617,11 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
 
-        if game.isOver(), let winner = game.getWinner() {
-            record.outcome = winner
+        if game.isOver() {
+            let (winner, points) = recordOutcome()
             phase = .gameOver(winner: winner)
-            onGameOver?(winner)
+            if let winner { onGameOver?(winner) }
+            onGameFinished?(winner, points)
             return
         }
 
@@ -619,6 +629,17 @@ public final class GameSession: ObservableObject {
         phase = .awaitingRoll
         maybeStartAITurn()
         maybeAutoRoll()
+    }
+
+    /// Write the finished game's result into `record` (winner, draw flag, and —
+    /// for variants with 2-point wins — the points) and return it.
+    @discardableResult
+    private func recordOutcome() -> (winner: Color?, points: Int) {
+        let result = game.outcome()
+        record.outcome = result.winner
+        record.isDraw = result.winner == nil
+        if game.variant.maxPoints > 1 { record.points = result.points }
+        return result
     }
 
     // ── Decision-point undo ──────────────────────────────────────────────────
@@ -1028,15 +1049,15 @@ public final class GameSession: ObservableObject {
     /// dice. Board mutations are bracketed by capture/restore so the live board is
     /// left exactly as found regardless of which branch matches.
     private func isLegalOutcome(_ move: Move, among legal: [Move]) -> Bool {
-        let before = game.board.captureStacks()
+        let before = game.board.captureSnapshot()
         game.variant.apply(move, on: game.board)
         let target = game.board.captureStacks()
-        game.board.restoreStacks(before)
+        game.board.restore(before)
 
         for candidate in legal {
             game.variant.apply(candidate, on: game.board)
             let outcome = game.board.captureStacks()
-            game.board.restoreStacks(before)
+            game.board.restore(before)
             if outcome == target { return true }
         }
         return false
@@ -1131,7 +1152,14 @@ public final class GameSession: ObservableObject {
         guard inPlayAnalysisEnabled,
               let scores = humanAnalysisScores, scores.count == legalMoves.count,
               let bestIdx = GameReview.argmax(scores),
-              let playedIdx = GameReview.matchRecorded(pairs(of: move), legalMoves) else { return }
+              var playedIdx = GameReview.matchRecorded(pairs(of: move), legalMoves) else { return }
+        if GameReview.deltaMatchCount(pairs(of: move), legalMoves) > 1, let mover = move.halfMoves.first?.color {
+            // Ambiguous by net delta (Portes hits): match by resulting position on the
+            // pre-move board, then put the played move back.
+            game.variant.undo(move, on: game.board)
+            playedIdx = GameReview.matchRecorded(pairs(of: move), legalMoves, on: game.board, mover: mover) ?? playedIdx
+            game.variant.apply(move, on: game.board)
+        }
         let plyNumber = record.plies.count
         analysisByPly[plyNumber] = AnalysisEntry(
             plyNumber: plyNumber,
@@ -1267,9 +1295,8 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
 
-        if game.isOver(), let winner = game.getWinner() {
-            record.outcome = winner
-            phase = .gameOver(winner: winner)
+        if game.isOver() {
+            phase = .gameOver(winner: recordOutcome().winner)
         } else {
             phase = .awaitingRoll
             refreshEvaluation()

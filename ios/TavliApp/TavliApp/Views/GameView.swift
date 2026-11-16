@@ -279,7 +279,7 @@ struct GameView: View {
                                      aiColor: session.aiColor,
                                      onReview: session.aiColor != nil ? { showReview = true } : nil,
                                      onHistory: { showHistory = true })
-                } else if case .gameOver(let winner) = session.phase {
+                } else if case .gameOver(let winner?) = session.phase {
                     // The scrim is a direct ZStack child (like the page background)
                     // so it provably spans the whole screen in both orientations —
                     // hosted inside the overlay it sized itself to the board column
@@ -686,7 +686,8 @@ private struct TurnIndicatorView: View {
         case .moving:            return String(localized: "Choose destination")
         case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
-        case .gameOver(let w):   return String(localized: "\(ChromeTheme.displayName(w)) wins!")
+        case .gameOver(let w?):  return String(localized: "\(ChromeTheme.displayName(w)) wins!")
+        case .gameOver(nil):     return String(localized: "Draw")
         }
     }
 
