@@ -18,8 +18,14 @@ public struct GameRecord: Equatable, Sendable {
     public var startingPlayer: Color
     public var aiColor: Color?
     public var plies: [PlyRecord]
-    /// The winner once the game is over, else `nil` while it is in progress.
+    /// The winner once the game is over, else `nil` while it is in progress **or
+    /// drawn** (`isDraw`).
     public var outcome: Color?
+    /// The game ended in a draw (standard Plakoto: both mothers pinned).
+    public var isDraw: Bool
+    /// Points the result was worth (1 single / 2 double), recorded only for variants
+    /// with `maxPoints > 1`; `nil` for Plakoto and while the game is running.
+    public var points: Int?
     /// `GameVariant.id` of the rules the game was played under (#136). Replays and
     /// reviews resolve the variant from it via `GameConfig(variantID:)`.
     public var variantID: String
@@ -29,8 +35,12 @@ public struct GameRecord: Equatable, Sendable {
                 plies: [PlyRecord] = [],
                 outcome: Color? = nil,
                 gameId: UUID = UUID(),
-                variantID: String = GameVariants.defaultID) {
+                variantID: String = GameVariants.defaultID,
+                isDraw: Bool = false,
+                points: Int? = nil) {
         self.gameId = gameId
+        self.isDraw = isDraw
+        self.points = points
         self.variantID = variantID
         self.startingPlayer = startingPlayer
         self.aiColor = aiColor
@@ -113,7 +123,12 @@ public struct GameSave: Codable, Equatable {
     /// The winner's raw `Color` value once the game is over, else `nil`. Persisted
     /// for the game log (#104) — resume saves left this `nil` (only in-progress games
     /// were saved), and a v1 file without it reads back as `nil`.
+    /// `"draw"` for a drawn game (standard Plakoto) — not a `Color` raw value, so an
+    /// older reader sees "no winner".
     public var outcome: String?
+    /// Points the result was worth, written only for variants with 2-point wins
+    /// (absent for Plakoto, so its files are unchanged; older readers ignore it).
+    public var points: Int?
     public var history: [PlyRecord]
     /// `GameVariant.id` of the game's rules (#136). Absent in pre-variant files, which
     /// decode as `"plakoto"`; always written (older readers ignore the extra key).
@@ -132,8 +147,10 @@ public struct GameSave: Codable, Equatable {
                 outcome: String? = nil,
                 history: [PlyRecord],
                 analysis: [AnalysisEntry]? = nil,
-                variant: String = GameVariants.defaultID) {
+                variant: String = GameVariants.defaultID,
+                points: Int? = nil) {
         self.schemaVersion = schemaVersion
+        self.points = points
         self.gameId = gameId
         self.name = name
         self.savedAt = savedAt
@@ -147,7 +164,11 @@ public struct GameSave: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis, variant
+        case points
     }
+
+    /// The `outcome` string a drawn game is saved with.
+    public static let drawOutcome = "draw"
 
     /// Decode tolerantly: a v1 file has no `gameId`/`outcome`/`analysis`, so those are
     /// optional; a pre-#136 file has no `variant` (→ Plakoto). Everything else is required exactly as before.
@@ -163,6 +184,7 @@ public struct GameSave: Codable, Equatable {
         history = try c.decode([PlyRecord].self, forKey: .history)
         analysis = try c.decodeIfPresent([AnalysisEntry].self, forKey: .analysis)
         variant = try c.decodeIfPresent(String.self, forKey: .variant) ?? GameVariants.defaultID
+        points = try c.decodeIfPresent(Int.self, forKey: .points)
     }
 
     /// Encode the version the on-disk shape actually warrants: `2` only when an
@@ -181,6 +203,7 @@ public struct GameSave: Codable, Equatable {
         try c.encode(history, forKey: .history)
         try c.encodeIfPresent(analysis, forKey: .analysis)
         try c.encode(variant, forKey: .variant)
+        try c.encodeIfPresent(points, forKey: .points)
     }
 }
 
@@ -196,10 +219,11 @@ public extension GameSave {
                   savedAt: savedAt,
                   startingPlayer: record.startingPlayer.rawValue,
                   aiColor: record.aiColor?.rawValue,
-                  outcome: record.outcome?.rawValue,
+                  outcome: record.isDraw ? GameSave.drawOutcome : record.outcome?.rawValue,
                   history: record.plies,
                   analysis: analysis,
-                  variant: record.variantID)
+                  variant: record.variantID,
+                  points: record.points)
     }
 
     /// The save reinterpreted as a `GameRecord`, restoring its `gameId` (a fresh one
@@ -211,7 +235,9 @@ public extension GameSave {
             plies: history,
             outcome: outcome.flatMap { Color(rawValue: $0) },
             gameId: gameId ?? UUID(),
-            variantID: variant
+            variantID: variant,
+            isDraw: outcome == GameSave.drawOutcome,
+            points: points
         )
     }
 }

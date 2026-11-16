@@ -38,7 +38,8 @@ struct SplitMix64: RandomNumberGenerator {
 }
 
 /// Core ML-backed move selector. Mirrors `ai/agent.py`:
-/// - 1-ply (`evaluateMoves`): apply each candidate; an immediate win scores 1.0,
+/// - 1-ply (`evaluateMoves`): apply each candidate; a game-ending move scores the
+///   variant's `terminalValue` (1.0 for a Plakoto win),
 ///   otherwise score the afterstate from the opponent's perspective as `1 - opponentValue`.
 /// - multi-ply (`getBestMove` with a `timeBudget`): iterative-deepening beam
 ///   expectimax over the 21 dice outcomes, with relative-cutoff + max-branch pruning.
@@ -92,6 +93,15 @@ public final class Agent: @unchecked Sendable {
         try value(encoder.encode(board, isWhitesTurn: color.isWhite))
     }
 
+    /// Whether the game ended with `mover`'s just-applied move. Mirrors `ai/agent.py`:
+    /// variants whose games end only by the mover's win (`endsOnlyByMoverWin`, the
+    /// default `isOver`) test the cheap `hasWon(mover)`; the others (draws, standard
+    /// Plakoto's mother rule) use the full `isOver`. A terminal leaf then scores
+    /// `terminalValue` — 1.0 for a Plakoto win, normalized points for 2-point variants.
+    @inline(__always) func isTerminal(_ board: GameBoard, mover: Color) -> Bool {
+        variant.endsOnlyByMoverWin ? variant.hasWon(mover, on: board) : variant.isOver(on: board)
+    }
+
     /// 1-ply score per candidate move, aligned to `moves`.
     ///
     /// Scoring apply/undoes each candidate on the shared live board. The outer
@@ -100,13 +110,13 @@ public final class Agent: @unchecked Sendable {
     /// undo — so analysis can never leave the game position corrupted.
     public func evaluateMoves(_ board: GameBoard, _ moves: [Move], color: Color) throws -> [Float] {
         let opponentToMoveIsWhite = !color.isWhite
-        let saved = board.captureStacks()
-        defer { board.restoreStacks(saved) }
+        let saved = board.captureSnapshot()
+        defer { board.restore(saved) }
         var scores = [Float](repeating: 0, count: moves.count)
         for (idx, move) in moves.enumerated() {
             variant.apply(move, on: board)
-            if variant.hasWon(color, on: board) {
-                scores[idx] = 1.0
+            if isTerminal(board, mover: color) {
+                scores[idx] = variant.terminalValue(on: board, perspective: color)
             } else {
                 let enc = encoder.encode(board, isWhitesTurn: opponentToMoveIsWhite)
                 scores[idx] = 1.0 - (try value(enc))
@@ -217,8 +227,8 @@ public final class Agent: @unchecked Sendable {
             variant.apply(candidate, on: board)
             defer { variant.undo(candidate, on: board) }
 
-            if variant.hasWon(color, on: board) {
-                scores.append(1.0)
+            if isTerminal(board, mover: color) {
+                scores.append(variant.terminalValue(on: board, perspective: color))
                 continue
             }
 

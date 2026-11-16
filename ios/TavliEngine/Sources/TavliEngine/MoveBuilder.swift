@@ -129,28 +129,22 @@ public final class MoveBuilder {
     /// (`d1 == d2`) or with no dice, nothing is split.
     private static func unmerge(_ moves: [Move], board: GameBoard, die1: Int, die2: Int) -> [Move] {
         guard die1 > 0, die2 > 0, die1 != die2 else { return moves }
-        let sum = die1 + die2
+        let variant = board.variant
         var result: [Move] = []
         for m in moves {
             guard m.halfMoves.count == 1 else { result.append(m); continue }
             let h = m.halfMoves[0]
-            let from = h.from.position
-            let to = h.to.position
-            guard abs(to - from) == sum else { result.append(m); continue }
-
-            let dir = to > from ? 1 : -1
-            var expanded: [Move] = []
-            var seen: Set<Int> = []
-            for step in [die1, die2] {
-                let mid = from + dir * step
-                guard seen.insert(mid).inserted else { continue }
-                guard board.variant.isOpen(mid, for: h.color, on: board) else { continue }
-                expanded.append(Move([
-                    HalfMove(from: board.points[from], to: board.points[mid], color: h.color),
-                    HalfMove(from: board.points[mid], to: board.points[to], color: h.color),
+            // The variant decides whether this is a merged two-dice half and through
+            // which midpoints it can legally be split (#137-#139: path geometry, e.g.
+            // Fevga Black's wrap, and larger-die bear-off rules live there).
+            let mids = variant.intermediatePoints(of: h, die1: die1, die2: die2, on: board)
+            guard !mids.isEmpty else { result.append(m); continue }
+            for mid in mids {
+                result.append(Move([
+                    HalfMove(from: board.points[h.from.position], to: board.points[mid], color: h.color),
+                    HalfMove(from: board.points[mid], to: board.points[h.to.position], color: h.color),
                 ]))
             }
-            result.append(contentsOf: expanded.isEmpty ? [m] : expanded)
         }
         return result
     }
@@ -180,7 +174,7 @@ public final class MoveBuilder {
     /// a continuation hop whose predecessor isn't applied to the board yet) and its
     /// `to` must be open.
     private func isPlayable(_ hm: HalfMove, arrivedAt: Int?) -> Bool {
-        let hasChecker = board.points[hm.from.position].movablePieces(for: hm.color) > 0
+        let hasChecker = board.variant.movableCount(at: hm.from.position, for: hm.color, on: board) > 0
             || arrivedAt == hm.from.position
         return hasChecker && board.variant.isOpen(hm.to.position, for: hm.color, on: board)
     }

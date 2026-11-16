@@ -48,6 +48,35 @@ public final class GameBoard: CustomStringConvertible {
         for i in points.indices { points[i].pieces = stacks[i] }
     }
 
+    /// Empty every point (bear-off trays / bars included) and drop any variant undo
+    /// bookkeeping. Variants call this before laying out their starting position.
+    public func clear() {
+        for p in points { p.pieces.removeAll(keepingCapacity: true) }
+        undoLog.removeAll()
+    }
+
+    /// Per-board undo bookkeeping a variant needs beyond the stacks (Portes: whether
+    /// each applied half-move hit a blot). Strictly LIFO: a variant's `applyHalfMove`
+    /// pushes, its `undoHalfMove` pops. Never part of the *position* — two boards with
+    /// equal stacks are the same position whatever their logs hold.
+    var undoLog: [Bool] = []
+
+    /// The full mutable state: the stacks plus the undo-log depth. Pair
+    /// `captureSnapshot()` with `restore(_:)` around code that applies moves and
+    /// might exit before undoing them (a thrown Core ML error, an early return), so
+    /// both the position *and* the undo bookkeeping come back exactly.
+    public struct Snapshot: Equatable {
+        public let stacks: [[Color]]
+        let undoDepth: Int
+    }
+
+    public func captureSnapshot() -> Snapshot { Snapshot(stacks: captureStacks(), undoDepth: undoLog.count) }
+
+    public func restore(_ snapshot: Snapshot) {
+        restoreStacks(snapshot.stacks)
+        if undoLog.count > snapshot.undoDepth { undoLog.removeLast(undoLog.count - snapshot.undoDepth) }
+    }
+
     public func apply(_ move: Move) {
         for hm in move.halfMoves { applyHalfMove(hm) }
     }

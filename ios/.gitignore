@@ -12,6 +12,10 @@ DerivedData/
 # Generated parity artifacts — recreate via ios/scripts/{generate_test_fixtures,convert_to_coreml}.py
 TavliEngine/Tests/TavliEngineTests/Fixtures/fixtures.json
 TavliEngine/Tests/TavliEngineTests/Fixtures/PlakotoValue.mlpackage
+# … and per variant (#137-#139): generate_test_fixtures.py --variant <id> writes both
+TavliEngine/Tests/TavliEngineTests/Fixtures/fixtures_*.json
+TavliEngine/Tests/TavliEngineTests/Fixtures/*Value.mlpackage
 
 # Generated app model copy — recreate via ios/scripts/convert_to_coreml.py
 TavliApp/TavliApp/Resources/PlakotoValue.mlpackage
+TavliApp/TavliApp/Resources/*Value.mlpackage

@@ -56,6 +56,107 @@ public protocol GameVariant: Sendable {
 
     /// The value-network input encoding for this variant, for boards of `config`.
     func makeEncoder(config: GameConfig) -> any BoardEncoding
+
+    // ── Outcome seam (mirrors `RuleSet.max_points` / `is_over` / `outcome` /
+    //    `terminal_value` / `random_starting_player`; defaults reproduce Plakoto) ──
+
+    /// Largest result a game can have (1 = win/loss only, 2 = gammons count double).
+    var maxPoints: Int { get }
+    /// `true`: the starter is picked uniformly at random (distributionally the
+    /// opening roll). `false`: the caller's fixed starter (Plakoto).
+    var randomStartingPlayer: Bool { get }
+    /// `true` iff the game can only end by a win of the side that just moved (the
+    /// default `isOver`), so a search leaf may test `hasWon(mover)` only — the cheap
+    /// path. Variants overriding `isOver` (draws, standard Plakoto's mother rule)
+    /// return `false` and get the full `isOver` at every leaf, as `ai/agent.py` does.
+    var endsOnlyByMoverWin: Bool { get }
+    /// The game has ended (a win for either side, or a draw).
+    func isOver(on board: GameBoard) -> Bool
+    /// `(winner, points)` of a finished game; `winner == nil` is a draw (0 points).
+    /// Only meaningful when `isOver(on:)`.
+    func outcome(on board: GameBoard) -> (winner: Color?, points: Int)
+    /// Value in [0, 1] of the finished game for `perspective`:
+    /// `0.5 + signedPoints / (2 * maxPoints)` (1/0 for Plakoto, 0.5 for a draw).
+    func terminalValue(on board: GameBoard, perspective: Color) -> Float
+
+    // ── Geometry hooks (shared helpers must not assume `dst = src + color*die`) ──
+
+    /// `color`'s path index of board point `point`: pips travelled from its start
+    /// side, `1...boardSize` on the board, `0` = its entry bar (Portes), and
+    /// `boardSize + 1` = borne off. Default: White `point`, Black `boardSize+1-point`.
+    func pathIndex(of point: Int, for color: Color, boardSize: Int) -> Int
+    /// Inverse of `pathIndex`: the board point at path index `path` for `color`.
+    func point(atPath path: Int, for color: Color, boardSize: Int) -> Int
+    /// Board index a `color` checker is borne off to (default White `boardSize+1`, Black 0).
+    func bearOffPoint(for color: Color, boardSize: Int) -> Int
+    /// Checkers of `color` that can be picked up from board index `point` right now
+    /// (default: `Point.movablePieces`, i.e. the owner stack minus a pinned checker).
+    func movableCount(at point: Int, for color: Color, on board: GameBoard) -> Int
+    /// For a single-half `Move` that one checker plays with *both* (distinct) dice in
+    /// the merged notation: the intermediate points through which it can be legally
+    /// played as two single-die hops, in `die1`, `die2` order (deduplicated). Empty =
+    /// not a merged two-dice move (`MoveBuilder` then leaves it whole). Default: the
+    /// Plakoto rule — exact distance `die1 + die2` along the path, landable midpoint.
+    func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int]
+}
+
+public extension GameVariant {
+    var maxPoints: Int { 1 }
+    var randomStartingPlayer: Bool { false }
+    var endsOnlyByMoverWin: Bool { true }
+
+    func isOver(on board: GameBoard) -> Bool {
+        hasWon(.white, on: board) || hasWon(.black, on: board)
+    }
+
+    func outcome(on board: GameBoard) -> (winner: Color?, points: Int) {
+        if hasWon(.white, on: board) { return (.white, resultPoints(winner: .white, on: board)) }
+        if hasWon(.black, on: board) { return (.black, resultPoints(winner: .black, on: board)) }
+        return (nil, 0)
+    }
+
+    func terminalValue(on board: GameBoard, perspective: Color) -> Float {
+        let (winner, points) = outcome(on: board)
+        guard let winner else { return 0.5 }
+        let signed = Double(winner == perspective ? points : -points)
+        return Float(0.5 + signed / (2.0 * Double(maxPoints)))
+    }
+
+    /// Who moves first: `fallback` unless `randomStartingPlayer` (then a fair coin).
+    func startingPlayer(default fallback: Color) -> Color {
+        guard randomStartingPlayer else { return fallback }
+        return Bool.random() ? .white : .black
+    }
+
+    func pathIndex(of point: Int, for color: Color, boardSize: Int) -> Int {
+        color.isWhite ? point : boardSize + 1 - point
+    }
+
+    func point(atPath path: Int, for color: Color, boardSize: Int) -> Int {
+        color.isWhite ? path : boardSize + 1 - path
+    }
+
+    func bearOffPoint(for color: Color, boardSize: Int) -> Int {
+        color.isWhite ? boardSize + 1 : 0
+    }
+
+    func movableCount(at point: Int, for color: Color, on board: GameBoard) -> Int {
+        board.points[point].movablePieces(for: color)
+    }
+
+    func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] {
+        let n = board.boardSize
+        let from = pathIndex(of: half.from.position, for: half.color, boardSize: n)
+        let to = pathIndex(of: half.to.position, for: half.color, boardSize: n)
+        guard to - from == die1 + die2 else { return [] }
+        var mids: [Int] = []
+        for step in [die1, die2] {
+            let mid = point(atPath: from + step, for: half.color, boardSize: n)
+            guard !mids.contains(mid), isOpen(mid, for: half.color, on: board) else { continue }
+            mids.append(mid)
+        }
+        return mids
+    }
 }
 
 public extension GameVariant {
@@ -68,10 +169,9 @@ public extension GameVariant {
     }
 
     /// The winner at this position, if any (WHITE checked first, as `Game` always has).
+    /// `nil` both while the game is running and for a draw — see `isOver`/`outcome`.
     func winner(on board: GameBoard) -> Color? {
-        if hasWon(.white, on: board) { return .white }
-        if hasWon(.black, on: board) { return .black }
-        return nil
+        isOver(on: board) ? outcome(on: board).winner : nil
     }
 }
 
@@ -95,7 +195,10 @@ public struct PlakotoVariant: GameVariant {
     public var id: String { "plakoto" }
     public var modelResourceName: String { "PlakotoValue" }
 
-    public func setUpInitialPosition(on board: GameBoard) { board.initializeBoard() }
+    public func setUpInitialPosition(on board: GameBoard) {
+        board.clear()
+        board.initializeBoard()
+    }
 
     public func legalMoves(on board: GameBoard, color: Color, dice: Dice) -> [Move] {
         PossibleMoves(board: board, color: color, dice: dice).findMoves()
@@ -125,7 +228,9 @@ public enum GameVariants {
     /// The id written by builds that predate the variant field (and the default).
     public static let defaultID = "plakoto"
 
-    public static let all: [any GameVariant] = [plakoto]
+    public static let plakotoStandard = StandardPlakotoVariant()
+
+    public static let all: [any GameVariant] = [plakoto, plakotoStandard]
 
     /// The variant for a persisted id, or `nil` if this build doesn't know it.
     public static func variant(forID id: String) -> (any GameVariant)? {
