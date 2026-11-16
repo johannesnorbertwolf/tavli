@@ -19,10 +19,23 @@ symmetric `V(opp) = 1 − V`), `random_starting_player` + `starting_player(defau
 avg points/game when `max_points > 1`).
 Variants register by name (`register_ruleset`, `get_ruleset(name)`); `variant:` in the config
 selects one (`ConfigLoader.get_variant()` defaults to `plakoto`, `get_ruleset()` returns the instance).
-Implementations: `PlakotoRules` (`domain/plakoto_rules.py`), a thin wrapper over
-`Board` + `move_generation.legal_moves` — Plakoto behaviour is bit-identical; `PortesRules`
-(`domain/portes_rules.py`, #137: `PortesBoard` signed slot array with bars at 0/25, gammon = 2,
-random starter, encoder `portes_v1` = 414 floats; config `config/config-portes.yml`).
+
+| Variant (`variant:`) | Rules / board | Encoder (inputs) | Result | Starter | Config |
+|---|---|---|---|---|---|
+| `plakoto` (house rules) | `PlakotoRules` → `Board` + `move_generation` | `unary_v3` (486) | 1 point; start-pin wins | fixed (self-play Black, eval White) | `config/config.yml` |
+| `plakoto_standard` (#139) | `StandardPlakotoRules` → `StandardPlakotoBoard(Board)` + `plakoto_standard_moves` | `plakoto_std_v1` (494) | 1 / 2 (bear-off gammon, mother win); **draw** when both mothers pinned | random | `config/config-plakoto-standard.yml` |
+| `portes` (#137) | `PortesRules` → `PortesBoard` (signed slots, bars 0/25) + `portes_move_generation` | `portes_v1` (414) | 1 / 2 (gammon) | random | `config/config-portes.yml` |
+| `fevga` (#138) | `FevgaRules` → `FevgaBoard` (both colours run the same way; Black off = slot 0) | `fevga_v1` (406) | 1 / 2 (mars) | random | `config/config-fevga.yml` |
+
+Only `plakoto` has `max_points == 1`, the bear-off DB, seed pool, aux heads and the gold ladder
+`models/gold_vN.pth`; it stays bit-identical (`tests/ai/test_determinism_gold.py`). The three new
+variants train from scratch with the plateau driver (`plateau:` block in each config; the driver
+owns evaluation, so in-trainer gold/random eval is off there).
+
+**Game end is draw-safe.** Shared code decides game end only through `ruleset.is_over(board)` /
+`outcome(board)` — never `board.has_won(mover)` alone — since standard Plakoto can end in a draw
+or with either result after any complete move. `Agent` keeps the `board.has_won(mover)` fast path
+only for rule sets that do not override `is_over` (their games can only end on the mover's win).
 
 Each variant owns its board class; shared code relies only on the duck-typed contract
 `apply(move, color) -> token`, `undo(token)`, `clone()`, `has_won(color)`. `HalfMove`/`Move` are shared.
@@ -33,11 +46,8 @@ it. `ruleset.legal_moves` is bound as a `staticmethod` to the generator, so the 
 an attribute lookup. Bear-off DB code runs only when `supports_bearoff_db` (else `bearoff=None`).
 Seed-pool and race-calibration are Plakoto-only and refuse other variants.
 
-**Fevga** (#138, spec `docs/variants/fevga.md`): `FevgaRules` (`domain/fevga_rules.py`, `"fevga"`)
-over `FevgaBoard` (`domain/fevga_board.py`). Physical slots, both colours run the same way round
-(Black path = slots 13…24,1…12, bears off to slot 0), so `dst = src + color*die` does not hold for
-Black. Encoder `fevga_v1` (`ai/fevga_encoder.py`, 406 inputs, mover's path coordinates). No bear-off
-DB; mars = 2 points; random starter. Config `config/config-fevga.yml`.
+Fevga note: both colours run the same way round (Black path = slots 13…24,1…12), so
+`dst = src + color*die` does not hold for Black there. Specs: `docs/variants/*.md`.
 
 **Per-run config.** `main.py --config PATH` (anywhere on the command line), `$TAVLI_CONFIG`, or
 `./run.sh --config PATH <cmd>` pick the config file (default `config/config.yml`). Each config

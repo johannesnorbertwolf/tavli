@@ -95,6 +95,7 @@ play:
 #   round_games: 20000            # self-play games per round (one `train` subprocess)
 #   eval_pairs: 2000              # paired duplicate-dice trials (2 games each) vs ladder top per round
 #   patience: 4                   # non-promoting rounds before a plateau can be declared
+#   (max_points > 1 variants: "win rate" below = normalized points equity 0.5 + E[pts]/(2*max_points))
 #   min_edge: 0.015               # plateau iff pooled one-sided UCB on (win rate - 0.5) < +1.5pp
 #   plateau_ucb_z: 1.645          # UCB = pooled edge + this * SE (95% one-sided)
 #   promote_z: 2.0                # paired one-sided z needed to promote a new rung ...
