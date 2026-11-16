@@ -80,25 +80,28 @@ class TournamentEngine:
         for game_num in range(num_games):
             # Alternate starting colors
             color_a = WHITE if game_num % 2 == 0 else BLACK
-            winner = self._play_single_game(
+            winner, points = self._play_single_game(
                 agent_a, agent_b, color_a,
                 seed if seed is None else seed + game_num
             )
             match["games"].append({
                 "game_num": game_num + 1,
                 "a_color": "WHITE" if color_a == WHITE else "BLACK",
-                "winner": name_a if winner == color_a else name_b
+                "winner": "draw" if winner is None else (name_a if winner == color_a else name_b),
+                "points": int(points),  # 1 unless the variant scores gammons (max_points > 1)
             })
 
         return match
 
-    def _play_single_game(self, agent_a, agent_b, color_a: int, seed: int = None) -> int:
-        """Play one game between two agents. Returns winner color (WHITE or BLACK)."""
+    def _play_single_game(self, agent_a, agent_b, color_a: int, seed: int = None):
+        """Play one game between two agents. Returns the outcome (winner color or None
+        for a draw, points)."""
         if seed is not None:
             random.seed(seed)
             np.random.seed(seed)
 
         game = Game(self.config, starting_player=WHITE)
+        game.player = game.ruleset.starting_player(WHITE)
 
         while not game.is_over():
             current_player = game.current_player
@@ -123,4 +126,4 @@ class TournamentEngine:
             game.board.apply(move, current_player)
             game.switch_turn()
 
-        return game.get_winner()
+        return game.outcome()

@@ -9,12 +9,33 @@ checkpoints, eval, or the tournament system.
 
 Everything variant-specific sits behind a `RuleSet` (ABC, stateless singleton per variant):
 `name`, `initial_board(config)`, `legal_moves(board, color, dice)`, `has_won`, `is_open_for`,
-`result_points(board, winner)` (1 single / 2 double; currently ignored by training),
+`result_points(board, winner)` (1 single / 2 double),
 `make_encoder(config, version=None)` + `default_encoder_version`, and `supports_bearoff_db`.
+**Outcome seam** (non-abstract defaults = Plakoto): `max_points`, `is_over`, `outcome -> (winner|None,
+points)`, `terminal_value(board, persp) = 0.5 + signed_points/(2·max_points)` (the TD terminal target
+and winning-leaf search value — a 2-point variant's net learns normalized expected points, still
+symmetric `V(opp) = 1 − V`), `random_starting_player` + `starting_player(default, rng)`;
+`score_for(outcome, color)` gives eval its win credit (draw = ½) and signed points (eval reports
+avg points/game when `max_points > 1`).
 Variants register by name (`register_ruleset`, `get_ruleset(name)`); `variant:` in the config
 selects one (`ConfigLoader.get_variant()` defaults to `plakoto`, `get_ruleset()` returns the instance).
-The only implementation today is `PlakotoRules` (`domain/plakoto_rules.py`), a thin wrapper over
-`Board` + `move_generation.legal_moves` — Plakoto behaviour is bit-identical.
+
+| Variant (`variant:`) | Rules / board | Encoder (inputs) | Result | Starter | Config |
+|---|---|---|---|---|---|
+| `plakoto` (house rules) | `PlakotoRules` → `Board` + `move_generation` | `unary_v3` (486) | 1 point; start-pin wins | fixed (self-play Black, eval White) | `config/config.yml` |
+| `plakoto_standard` (#139) | `StandardPlakotoRules` → `StandardPlakotoBoard(Board)` + `plakoto_standard_moves` | `plakoto_std_v1` (494) | 1 / 2 (bear-off gammon, mother win); **draw** when both mothers pinned | random | `config/config-plakoto-standard.yml` |
+| `portes` (#137) | `PortesRules` → `PortesBoard` (signed slots, bars 0/25) + `portes_move_generation` | `portes_v1` (414) | 1 / 2 (gammon) | random | `config/config-portes.yml` |
+| `fevga` (#138) | `FevgaRules` → `FevgaBoard` (both colours run the same way; Black off = slot 0) | `fevga_v1` (406) | 1 / 2 (mars) | random | `config/config-fevga.yml` |
+
+Only `plakoto` has `max_points == 1`, the bear-off DB, seed pool, aux heads and the gold ladder
+`models/gold_vN.pth`; it stays bit-identical (`tests/ai/test_determinism_gold.py`). The three new
+variants train from scratch with the plateau driver (`plateau:` block in each config; the driver
+owns evaluation, so in-trainer gold/random eval is off there).
+
+**Game end is draw-safe.** Shared code decides game end only through `ruleset.is_over(board)` /
+`outcome(board)` — never `board.has_won(mover)` alone — since standard Plakoto can end in a draw
+or with either result after any complete move. `Agent` keeps the `board.has_won(mover)` fast path
+only for rule sets that do not override `is_over` (their games can only end on the mover's win).
 
 Each variant owns its board class; shared code relies only on the duck-typed contract
 `apply(move, color) -> token`, `undo(token)`, `clone()`, `has_won(color)`. `HalfMove`/`Move` are shared.
@@ -25,11 +46,8 @@ it. `ruleset.legal_moves` is bound as a `staticmethod` to the generator, so the 
 an attribute lookup. Bear-off DB code runs only when `supports_bearoff_db` (else `bearoff=None`).
 Seed-pool and race-calibration are Plakoto-only and refuse other variants.
 
-**Fevga** (#138, spec `docs/variants/fevga.md`): `FevgaRules` (`domain/fevga_rules.py`, `"fevga"`)
-over `FevgaBoard` (`domain/fevga_board.py`). Physical slots, both colours run the same way round
-(Black path = slots 13…24,1…12, bears off to slot 0), so `dst = src + color*die` does not hold for
-Black. Encoder `fevga_v1` (`ai/fevga_encoder.py`, 406 inputs, mover's path coordinates). No bear-off
-DB; mars = 2 points; random starter. Config `config/config-fevga.yml`.
+Fevga note: both colours run the same way round (Black path = slots 13…24,1…12), so
+`dst = src + color*die` does not hold for Black there. Specs: `docs/variants/*.md`.
 
 **Per-run config.** `main.py --config PATH` (anywhere on the command line), `$TAVLI_CONFIG`, or
 `./run.sh --config PATH <cmd>` pick the config file (default `config/config.yml`). Each config
@@ -41,14 +59,14 @@ trainings can run side by side without clobbering each other. Subprocess workers
 ## Training loop (`ai/td_lambda_training.py`)
 
 Forward-view TD(λ) with a replay buffer and Adam. Per completed game (parallel worker or local):
-1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white}`. Weights do not change mid-game. `exact_values` holds the exact bear-off DB equity for pure-race states (NaN elsewhere; see `ai/bearoff.py` and the `use_bearoff_db` knob).
-2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, overwrites `V[j]` with the exact equity wherever `exact_values[j]` is non-NaN (λ-returns then bootstrap on ground truth), then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`) and pins exact-race states' targets to their exact values. The post-terminal state's target is 0 (mover_T is the loser).
+1. Worker (or `_play_one_game_local`) plays one full game greedy-with-ε exploration and emits a trajectory dict: `{states[T+1], movers[T], exact_values[T+1], terminal_winner_white, terminal_value_white}`. Weights do not change mid-game. `exact_values` holds the exact bear-off DB equity for pure-race states (NaN elsewhere; see `ai/bearoff.py` and the `use_bearoff_db` knob).
+2. `_ingest_trajectory` forward-passes all `T+1` states once to get bootstrap values `V[0..T]`, overwrites `V[j]` with the exact equity wherever `exact_values[j]` is non-NaN (λ-returns then bootstrap on ground truth), then computes offline λ-returns from each mover's perspective (`compute_lambda_returns`) and pins exact-race states' targets to their exact values. The post-terminal state's target is the loser's terminal value (0 when `max_points == 1`).
 3. All `T+1` `(encoded_state, target)` pairs are pushed into a `ReplayBuffer` (capacity ~50k, ring buffer, uniform sampling).
 4. `_train_minibatches` runs `updates_per_game` Adam steps of `binary_cross_entropy_with_logits(forward_logits, target)`. Optional linear LR warmup `0.1·lr → lr` over `lr_warmup_steps` optimizer steps. `max_grad_norm` clips the gradient L2 norm pre-Adam (not the eligibility trace as the old code did).
 
 Perspective helper: from mover_i's view, `U(j, i) = V[j]` if `mover_j == mover_i` else `1 - V[j]`. λ-return at state i with `N = T - i`:
 `G^λ_i = (1-λ) · Σ_{n=1..N-1} λ^{n-1}·G^{(n)}_i + λ^{N-1}·G^{(N)}_i`
-with `G^{(n)}_i = U(i+n, i)` if `i+n < T`, else `1` if mover_i won else `0`.
+with `G^{(n)}_i = U(i+n, i)` if `i+n < T`, else the terminal value from mover_i's view (`1`/`0` for a plain win/loss).
 
 The replay buffer is not persisted across restarts (refills naturally). Adam optimizer state IS persisted inside `trained_model.pth` alongside `state_dict` (format_version=2; old checkpoints without optimizer state load fine and Adam starts fresh).
 

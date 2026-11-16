@@ -613,6 +613,24 @@ def play_against_ai(config, model_load_path=None, load_name=None):
             _print_human_record()
 
 
+def _eval_color_series(play_game, color, games):
+    """Play `games` games as `color`; returns (win credits — a draw is half, signed points)."""
+    from domain.ruleset import score_for
+    wins, points = 0.0, 0
+    for _ in range(games):
+        credit, pts = score_for(play_game(color), color)
+        wins += credit
+        points += pts
+    return (int(wins) if wins == int(wins) else wins), points
+
+
+def _points_suffix(config, points, games):
+    """Average points/game note for variants whose games can be worth more than 1 point."""
+    if config.get_ruleset().max_points <= 1:
+        return ""
+    return f", avg points/game {points / games:+.3f}"
+
+
 def evaluate_against_random(config, model_load_path=None, games_per_color=100):
     if model_load_path is None:
         model_load_path = config.get_model_save_path()
@@ -632,6 +650,7 @@ def evaluate_against_random(config, model_load_path=None, games_per_color=100):
 
     def play_game(ai_color: int):
         game = Game(config, starting_player=WHITE)
+        game.player = game.ruleset.starting_player(WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
@@ -645,21 +664,16 @@ def evaluate_against_random(config, model_load_path=None, games_per_color=100):
                 move = random_agent.get_move(possible_moves)
             game.board.apply(move, current_player)
             game.switch_turn()
-        return game.get_winner()
+        return game.outcome()
 
     try:
         for ai_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
-            wins = 0
-            losses = 0
-            for _ in range(games_per_color):
-                winner = play_game(ai_color)
-                if winner == ai_color:
-                    wins += 1
-                else:
-                    losses += 1
-            print(f"AI as {ai_color}: {wins}-{losses} over {games_per_color} games (seed={eval_seed})")
+            wins, points = _eval_color_series(play_game, ai_color, games_per_color)
+            losses = games_per_color - wins
+            print(f"AI as {ai_color}: {wins:g}-{losses:g} over {games_per_color} games "
+                  f"(seed={eval_seed}){_points_suffix(config, points, games_per_color)}")
     finally:
         random.setstate(py_state)
         np.random.set_state(np_state)
@@ -696,6 +710,7 @@ def evaluate_against_gold(
 
     def play_game(candidate_color: int):
         game = Game(config, starting_player=WHITE)
+        game.player = game.ruleset.starting_player(WHITE)
         while not game.is_over():
             current_player = game.current_player
             game.dice.roll()
@@ -709,23 +724,18 @@ def evaluate_against_gold(
                 move, _ = gold_agent.get_best_move(game.board, possible_moves, current_player, lookahead_plies=gold_lookahead)
             game.board.apply(move, current_player)
             game.switch_turn()
-        return game.get_winner()
+        return game.outcome()
 
     results = {}
     try:
         for candidate_color in (WHITE, BLACK):
             random.seed(eval_seed)
             np.random.seed(eval_seed)
-            wins = 0
-            losses = 0
-            for _ in range(games_per_color):
-                winner = play_game(candidate_color)
-                if winner == candidate_color:
-                    wins += 1
-                else:
-                    losses += 1
+            wins, points = _eval_color_series(play_game, candidate_color, games_per_color)
+            losses = games_per_color - wins
             results[candidate_color] = (wins, games_per_color)
-            print(f"Candidate as {candidate_color}: {wins}-{losses} over {games_per_color} games (seed={eval_seed})")
+            print(f"Candidate as {candidate_color}: {wins:g}-{losses:g} over {games_per_color} games "
+                  f"(seed={eval_seed}){_points_suffix(config, points, games_per_color)}")
     finally:
         random.setstate(py_state)
         np.random.set_state(np_state)

@@ -10,6 +10,7 @@ from ai.checkpoint_io import (
     load_state_dict,
 )
 from domain.constants import WHITE, BLACK
+from domain.ruleset import score_for
 from game.game import Game
 from tqdm import tqdm
 import numpy as np
@@ -65,7 +66,8 @@ class ReplayBuffer:
 
 
 def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
-                            terminal_winner_white: bool, lambda_: float) -> np.ndarray:
+                            terminal_winner_white: bool, lambda_: float,
+                            terminal_value_white: float = None) -> np.ndarray:
     """Compute λ-returns for each non-terminal state in a trajectory.
 
     Args:
@@ -73,18 +75,26 @@ def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
         movers: shape (T,), bool — True if White is the mover at state i.
         terminal_winner_white: who won the game.
         lambda_: TD(λ) trace decay.
+        terminal_value_white: optional `RuleSet.terminal_value(final_board, WHITE)` in
+            [0,1] (normalized points, 0.5 = draw). None ⇒ 1.0/0.0 from the winner —
+            identical to what a max_points == 1 rule set yields.
 
     Returns:
         targets: shape (T+1,), one target per state.
             - For i in [0, T): λ-return from mover_i's perspective.
-            - For i == T (post-terminal state): target = 0
-              (mover_T is the loser; their win prob is 0).
+            - For i == T (post-terminal state): the terminal value from the
+              perspective of the side to move there (the loser: 0 for a plain loss).
     """
     T = len(movers)
     targets = np.zeros(T + 1, dtype=np.float32)
+    if terminal_value_white is None:
+        terminal_value_white = 1.0 if terminal_winner_white else 0.0
+    tv_white = float(terminal_value_white)
 
-    # Post-terminal state: encoded from the loser's perspective. Target = 0.
-    targets[T] = 0.0
+    # Post-terminal state: encoded from the loser's perspective (the side to move after
+    # the winning move). Target = the loser's terminal value: 0.0 for a plain loss,
+    # 0.25 for a 1-point loss when max_points == 2, 0.5 for a draw.
+    targets[T] = min(tv_white, 1.0 - tv_white)
 
     if T == 0:
         return targets
@@ -97,8 +107,8 @@ def compute_lambda_returns(values: np.ndarray, movers: np.ndarray,
         # G^{(n)}_i = U(s_{i+n}, mover_i) for i+n < T (bootstrap),
         # or U_terminal(mover_i) for i+n == T.
         # All from mover_i's perspective: U(j, mover_i) = V[j] if mover_j == mover_i else 1 - V[j].
-        # U_terminal: 1 if mover_i won, else 0.
-        terminal_value = 1.0 if (mover_i_white == bool(terminal_winner_white)) else 0.0
+        # U_terminal: the terminal value from mover_i's perspective (1/0 for a plain win/loss).
+        terminal_value = tv_white if mover_i_white else (1.0 - tv_white)
 
         # Vectorized λ-return: G^λ_i = (1-λ) Σ_{n=1..N-1} λ^{n-1} G^{(n)}_i + λ^{N-1} G^{(N)}_i
         # Compute G^{(n)}_i for n=1..N as a vector.
@@ -219,6 +229,8 @@ class TdLambdaTraining:
         self.random_agent = RandomAgent()
         self.device = next(self.board_evaluator.parameters()).device
         self.gold_agent = None
+        # (white, black, avg) signed points per game of the last eval series.
+        self.last_eval_points = None
 
         self.model_save_path = self.config.get_model_save_path()
 
@@ -387,9 +399,31 @@ class TdLambdaTraining:
         except Exception as exc:
             print(f"Could not load optimizer state from {self.model_save_path}: {exc}. Starting Adam fresh.")
 
+    @staticmethod
+    def _eval_series(play_game, color, games_per_color, eval_seed):
+        """Play `games_per_color` games with the candidate as `color` from a fresh
+        `eval_seed` (so both colour halves see the same dice / starters). Returns
+        (win credits — a draw counts half, summed signed points)."""
+        random.seed(eval_seed)
+        np.random.seed(eval_seed)
+        wins, points = 0.0, 0
+        for _ in range(games_per_color):
+            credit, pts = score_for(play_game(color), color)
+            wins += credit
+            points += pts
+        return (int(wins) if wins == int(wins) else wins), points
+
+    def _format_eval_points(self) -> str:
+        """' , avg points/game ±x.xxx' suffix when the variant scores more than 1 point."""
+        if self.ruleset.max_points <= 1 or self.last_eval_points is None:
+            return ""
+        w, b, avg = self.last_eval_points
+        return f", points/game white {w:+.3f} black {b:+.3f} avg {avg:+.3f}"
+
     def _evaluate_against_random(self, games_per_color: int):
         def play_game(ai_color: int):
             game = Game(self.config, starting_player=WHITE)
+            game.player = game.ruleset.starting_player(WHITE)
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
@@ -408,25 +442,15 @@ class TdLambdaTraining:
 
                 game.board.apply(move, current_player)
                 game.switch_turn()
-            return game.get_winner()
+            return game.outcome()
 
         self.board_evaluator.eval()
         eval_seed = self._get_eval_seed()
         py_state = random.getstate()
         np_state = np.random.get_state()
         try:
-            random.seed(eval_seed)
-            np.random.seed(eval_seed)
-            white_wins = 0
-            for _ in range(games_per_color):
-                if play_game(WHITE) == WHITE:
-                    white_wins += 1
-            random.seed(eval_seed)
-            np.random.seed(eval_seed)
-            black_wins = 0
-            for _ in range(games_per_color):
-                if play_game(BLACK) == BLACK:
-                    black_wins += 1
+            white_wins, white_pts = self._eval_series(play_game, WHITE, games_per_color, eval_seed)
+            black_wins, black_pts = self._eval_series(play_game, BLACK, games_per_color, eval_seed)
         finally:
             random.setstate(py_state)
             np.random.set_state(np_state)
@@ -435,6 +459,8 @@ class TdLambdaTraining:
         white_rate = white_wins / games_per_color
         black_rate = black_wins / games_per_color
         avg_rate = (white_rate + black_rate) / 2.0
+        self.last_eval_points = (white_pts / games_per_color, black_pts / games_per_color,
+                                 (white_pts + black_pts) / (2.0 * games_per_color))
         return white_rate, black_rate, avg_rate
 
     def _try_load_gold_agent(self):
@@ -464,6 +490,7 @@ class TdLambdaTraining:
 
         def play_game(candidate_color: int):
             game = Game(self.config, starting_player=WHITE)
+            game.player = game.ruleset.starting_player(WHITE)
             while not game.is_over():
                 current_player = game.current_player
                 game.dice.roll()
@@ -485,7 +512,7 @@ class TdLambdaTraining:
 
                 game.board.apply(move, current_player)
                 game.switch_turn()
-            return game.get_winner()
+            return game.outcome()
 
         self.board_evaluator.eval()
         self.gold_agent.board_evaluator.eval()
@@ -493,18 +520,8 @@ class TdLambdaTraining:
         py_state = random.getstate()
         np_state = np.random.get_state()
         try:
-            random.seed(eval_seed)
-            np.random.seed(eval_seed)
-            white_wins = 0
-            for _ in range(games_per_color):
-                if play_game(WHITE) == WHITE:
-                    white_wins += 1
-            random.seed(eval_seed)
-            np.random.seed(eval_seed)
-            black_wins = 0
-            for _ in range(games_per_color):
-                if play_game(BLACK) == BLACK:
-                    black_wins += 1
+            white_wins, white_pts = self._eval_series(play_game, WHITE, games_per_color, eval_seed)
+            black_wins, black_pts = self._eval_series(play_game, BLACK, games_per_color, eval_seed)
         finally:
             random.setstate(py_state)
             np.random.set_state(np_state)
@@ -514,6 +531,8 @@ class TdLambdaTraining:
         white_rate = white_wins / games_per_color
         black_rate = black_wins / games_per_color
         avg_rate = (white_rate + black_rate) / 2.0
+        self.last_eval_points = (white_pts / games_per_color, black_pts / games_per_color,
+                                 (white_pts + black_pts) / (2.0 * games_per_color))
         return white_rate, black_rate, avg_rate
 
     def _ingest_trajectory(self, traj):
@@ -526,6 +545,7 @@ class TdLambdaTraining:
         states = traj["states"]
         movers = traj["movers"]
         terminal_winner_white = bool(traj["terminal_winner_white"])
+        terminal_value_white = traj.get("terminal_value_white")
         plies = traj["plies"]
         T = len(movers)
 
@@ -564,7 +584,8 @@ class TdLambdaTraining:
                 values[exact_mask] = exact_arr[exact_mask]
 
         movers_arr = np.array(movers, dtype=bool)
-        targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_)
+        targets = compute_lambda_returns(values, movers_arr, terminal_winner_white, self.lambda_,
+                                         terminal_value_white=terminal_value_white)
         if exact_mask is not None and exact_mask.any():
             targets[exact_mask] = exact_arr[exact_mask]
 
@@ -678,6 +699,7 @@ class TdLambdaTraining:
         """Self-play one full game in-process, collecting a trajectory dict matching the
         worker's output format. No mid-game weight updates."""
         game = Game(self.config)
+        game.player = game.ruleset.starting_player(game.player)
         if self.seed_pool is not None and random.random() < self.selfplay_seeded_fraction:
             game.board, game.player = self.seed_pool.sample(self.config)
         opponent, opponent_color = None, 0
@@ -735,15 +757,17 @@ class TdLambdaTraining:
                 if game.is_over():
                     if log_fh:
                         log_fh.write(f"Game over. Winner is {game.get_winner()}.\n")
-                    winner = game.get_winner()
+                    winner, points = game.outcome()
                     return {
                         "states": states,
                         "movers": movers,
                         "exact_values": exact_values,
                         "bootstrap_values": bootstrap_values,
                         "terminal_winner_white": (winner == WHITE),
-                        "win_by_pin": bool(getattr(game.board, "captured_starting",
-                                                   lambda _c: False)(winner)),
+                        "terminal_value_white": game.ruleset.terminal_value(game.board, WHITE),
+                        "result_points": int(points),
+                        "win_by_pin": bool(winner is not None and getattr(
+                            game.board, "captured_starting", lambda _c: False)(winner)),
                         "final_borne_off_white": int(game.board.borne_off[WHITE]),
                         "final_borne_off_black": int(game.board.borne_off[BLACK]),
                         "plies": len(movers),
@@ -837,7 +861,7 @@ class TdLambdaTraining:
             print(
                 f"Eval vs random @ epoch {epoch_num}: "
                 f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                f"({self.eval_games_per_color} games/color)"
+                f"({self.eval_games_per_color} games/color){self._format_eval_points()}"
             )
         if self.eval_against_gold:
             gold_eval = self._evaluate_against_gold(self.eval_games_per_color)
@@ -857,7 +881,7 @@ class TdLambdaTraining:
                 print(
                     f"Eval vs gold @ epoch {epoch_num}: "
                     f"white {white_rate*100:.1f}%, black {black_rate*100:.1f}%, avg {avg_rate*100:.1f}% "
-                    f"({self.eval_games_per_color} games/color)"
+                    f"({self.eval_games_per_color} games/color){self._format_eval_points()}"
                 )
                 self._append_gold_eval_log(
                     epoch_num=epoch_num,

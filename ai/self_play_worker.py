@@ -61,6 +61,7 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     - `states`: encoded board snapshots, length T+1.
     - `movers`: is-white-to-move at each ply, length T.
     - `terminal_winner_white`: True if White won.
+    - `terminal_value_white`: `ruleset.terminal_value(final, WHITE)` ∈ [0,1] (TD target).
 
     When `seed_pool` is set, a `seeded_fraction` share of games starts from a
     sampled high-residual position instead of the initial board (#83).
@@ -69,6 +70,8 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     exploration) instead of the live net (#83 league play)."""
     t0 = time.perf_counter()
     game = Game(config)
+    # Fixed Black starter unless the variant randomizes it (seeded global rng).
+    game.player = game.ruleset.starting_player(game.player)
     legal_moves = game.ruleset.legal_moves
     if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
         game.board, game.player = seed_pool.sample(config)
@@ -123,15 +126,19 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
         bootstrap_values.append(state_bootstrap_value())
 
         if game.is_over():
-            winner = game.get_winner()
+            winner, points = game.outcome()
             return {
                 "states": states,
                 "movers": movers,
                 "exact_values": exact_values,
                 "bootstrap_values": bootstrap_values,
                 "terminal_winner_white": (winner == WHITE),
+                # Normalized points (RuleSet.terminal_value) — the TD terminal target.
+                "terminal_value_white": game.ruleset.terminal_value(game.board, WHITE),
+                "result_points": int(points),
                 # Plakoto-only diagnostic; variants without pins report False.
-                "win_by_pin": bool(getattr(game.board, "captured_starting", _never)(winner)),
+                "win_by_pin": bool(winner is not None
+                                   and getattr(game.board, "captured_starting", _never)(winner)),
                 "final_borne_off_white": int(game.board.borne_off[WHITE]),
                 "final_borne_off_black": int(game.board.borne_off[BLACK]),
                 "plies": len(movers),

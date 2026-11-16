@@ -44,6 +44,17 @@ class Agent:
             ruleset = get_ruleset("plakoto")
         self.ruleset = ruleset
         self._legal_moves = ruleset.legal_moves
+        # Terminal leaves score RuleSet.terminal_value (1.0/0.0 for max_points == 1;
+        # normalized points for variants with gammons). Only called on game end.
+        self._terminal_value = ruleset.terminal_value
+        # Terminal test after a complete move. Rule sets that keep the default
+        # `RuleSet.is_over` can only end on a win by the side that just moved, so
+        # `board.has_won(mover)` is exact and cheap (the historical Plakoto hot path).
+        # Rule sets that override `is_over` (draws, standard Plakoto's mother rule:
+        # either result after any complete move) get the full `ruleset.is_over(board)`.
+        from domain.ruleset import RuleSet
+        self._mover_win_only = type(ruleset).is_over is RuleSet.is_over
+        self._is_over = ruleset.is_over
         # Optional ai.bearoff.BearoffDB: exact-race positions bypass the net and
         # get exact equity at every leaf-evaluation site.
         self.bearoff = bearoff
@@ -96,10 +107,12 @@ class Agent:
         encoded_afterstates = []
         encode_indices: List[int] = []
 
+        fast = self._mover_win_only
+        is_over = self._is_over
         for idx, move in enumerate(possible_moves):
             token = board.apply(move, color)
-            if board.has_won(color):
-                scores[idx] = 1.0
+            if board.has_won(color) if fast else is_over(board):
+                scores[idx] = self._terminal_value(board, color)
             else:
                 exact = self._exact_value(board, is_whites_turn_next)
                 if exact is not None:
@@ -133,7 +146,8 @@ class Agent:
         leaf_values: List[float] = []
         pending_encoded: List[np.ndarray] = []
         pending_slots: List[int] = []
-        plans: List[Optional[List[Tuple[int, int, float, str]]]] = []
+        # Per candidate: a dice plan, or a float terminal value when the move wins outright.
+        plans: List = []
 
         def add_leaf(persp_is_white: bool) -> None:
             exact = self._exact_value(board, persp_is_white)
@@ -145,10 +159,12 @@ class Agent:
                 pending_encoded.append(
                     self.board_encoder.encode_board(board, is_whites_turn=persp_is_white))
 
+        fast = self._mover_win_only
+        is_over = self._is_over
         for m_c in possible_moves:
             token_c = board.apply(m_c, color)
-            if board.has_won(color):
-                plans.append(None)
+            if board.has_won(color) if fast else is_over(board):
+                plans.append(self._terminal_value(board, color))
                 board.undo(token_c)
                 continue
             cand_plan: List[Tuple[int, int, float, str]] = []
@@ -164,10 +180,17 @@ class Agent:
                     opp_wins = False
                     for m_o in opp_moves:
                         token_o = board.apply(m_o, opponent_color)
-                        if board.has_won(opponent_color):
-                            opp_wins = True
+                        if board.has_won(opponent_color) if fast else is_over(board):
+                            tv = self._terminal_value(board, color)
+                            if tv <= 0.0:
+                                # Worst possible outcome for us: the min is settled.
+                                opp_wins = True
+                                board.undo(token_o)
+                                break
+                            # A smaller (e.g. 1-point) loss: a fixed leaf, not the floor.
+                            leaf_values.append(tv)
                             board.undo(token_o)
-                            break
+                            continue
                         # After the opponent's reply it is our turn again, so encode from
                         # our perspective — the net values the player on roll.
                         add_leaf(is_our_turn)
@@ -194,8 +217,8 @@ class Agent:
 
         scores: List[float] = []
         for cand_plan in plans:
-            if cand_plan is None:
-                scores.append(1.0)
+            if not isinstance(cand_plan, list):
+                scores.append(cand_plan)  # immediate win: its terminal value
                 continue
             expected = 0.0
             for (start, end, weight, kind) in cand_plan:
@@ -243,8 +266,9 @@ class Agent:
             # try/finally guarantees token_c is undone even if a deadline (_TimeoutError)
             # unwinds the recursion from a deeper frame mid-iteration.
             try:
-                if board.has_won(color):
-                    scores.append(1.0)
+                if (board.has_won(color) if self._mover_win_only
+                        else self._is_over(board)):
+                    scores.append(self._terminal_value(board, color))
                     continue
 
                 expected = 0.0

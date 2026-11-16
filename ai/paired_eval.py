@@ -38,12 +38,15 @@ from config.config_loader import ConfigLoader
 from ai.checkpoint_io import load_agent_from_checkpoint
 from game.game import Game
 from domain.constants import WHITE, BLACK
+from domain.ruleset import score_for
 
 
-def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: int) -> int:
-    """Play one full game and return the winning color. Dice are drawn from the global
-    RNG, so seed it before each call to share a common dice stream across orientations."""
+def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: int):
+    """Play one full game and return its outcome `(winner, points)`. Dice (and, for
+    random-starter variants, the starter) come from the global RNG, so seed it before
+    each call to share a common stream across orientations."""
     game = Game(config, starting_player=WHITE)
+    game.player = game.ruleset.starting_player(WHITE)
     while not game.is_over():
         current = game.current_player
         game.dice.roll()
@@ -56,20 +59,25 @@ def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: in
         move, _ = agent.get_best_move(game.board, moves, current, lookahead_plies=la)
         game.board.apply(move, current)
         game.switch_turn()
-    return game.get_winner()
+    return game.outcome()
 
 
-def run_pairs(agent_a, agent_b, config, seeds, lookahead: int) -> List[Tuple[int, int]]:
+def run_pairs(agent_a, agent_b, config, seeds, lookahead: int) -> List[Tuple]:
     """Single-process core. For each seed, play both orientations on identical dice.
-    Returns a list of (d_k, a_wins_k). Used directly by tests and by the workers."""
-    out: List[Tuple[int, int]] = []
+    Returns a list of (d_k, a_wins_k, a_points_k): a draw counts half a win, a_points_k
+    is A's summed signed points over the two games. Used by tests and the workers."""
+    out: List[Tuple] = []
     for s in seeds:
         random.seed(s); np.random.seed(s)
-        w1 = _play_one_game(agent_a, agent_b, config, lookahead, lookahead)  # A is White
+        o1 = _play_one_game(agent_a, agent_b, config, lookahead, lookahead)  # A is White
         random.seed(s); np.random.seed(s)
-        w2 = _play_one_game(agent_b, agent_a, config, lookahead, lookahead)  # A is Black
-        a_wins = (1 if w1 == WHITE else 0) + (1 if w2 == BLACK else 0)
-        out.append((a_wins - 1, a_wins))
+        o2 = _play_one_game(agent_b, agent_a, config, lookahead, lookahead)  # A is Black
+        c1, p1 = score_for(o1, WHITE)
+        c2, p2 = score_for(o2, BLACK)
+        a_wins = c1 + c2
+        if a_wins == int(a_wins):
+            a_wins = int(a_wins)
+        out.append((a_wins - 1, a_wins, p1 + p2))
     return out
 
 
@@ -81,12 +89,28 @@ def _worker(model_a, model_b, config_path, seeds, lookahead, result_q):
     agent_a, _ = load_agent_from_checkpoint(model_a, config, device=device)
     agent_b, _ = load_agent_from_checkpoint(model_b, config, device=device)
     for s in seeds:
-        (d_k, a_wins), = run_pairs(agent_a, agent_b, config, [s], lookahead)
-        result_q.put((d_k, a_wins))
+        result, = run_pairs(agent_a, agent_b, config, [s], lookahead)
+        result_q.put(result)
 
 
-def summarize(results: List[Tuple[int, int]]) -> dict:
-    """Aggregate (d_k, a_wins_k) pairs into the paired statistic + comparison numbers."""
+def _paired_stats(d: List[float]) -> Tuple[float, float, float]:
+    """(mean, sample std, one-sample z for mean > 0) of the per-pair differences."""
+    n = len(d)
+    mean_d = sum(d) / n if n else 0.0
+    var_d = sum((x - mean_d) ** 2 for x in d) / (n - 1) if n > 1 else 0.0
+    std_d = math.sqrt(var_d)
+    z = (mean_d * math.sqrt(n) / std_d) if std_d > 0 else 0.0
+    return mean_d, std_d, z
+
+
+def summarize(results: List[Tuple], max_points: int = 1) -> dict:
+    """Aggregate (d_k, a_wins_k[, a_points_k]) pairs into the paired statistic.
+
+    Win statistic (`mean_d`, `std_d`, `z`, `rate`): d_k = a_wins_k - 1 (a draw is half a
+    win). Points statistic (`pts_*`): d_k = a_points_k / (2 * max_points), A's summed
+    signed points over the pair normalized to [-1, 1]; `pts_rate = 0.5 + pts_mean_d / 2`
+    is the normalized equity on the win-rate scale. With max_points == 1 the two
+    statistics coincide exactly (win = +1, loss = -1, draw = 0 points)."""
     n = len(results)
     d = [r[0] for r in results]
     a_wins = [r[1] for r in results]
@@ -101,11 +125,22 @@ def summarize(results: List[Tuple[int, int]]) -> dict:
     ties = sum(1 for x in d if x == 0)
     # How much the pairing bought: an independent fair head-to-head has std(d) ≈ 0.707.
     var_reduction = (0.5 / var_d) if var_d > 0 else float("inf")  # ~ effective-sample multiplier
-    return {
+    # A's average signed points per game (only meaningful when max_points > 1).
+    a_points = [r[2] for r in results if len(r) > 2]
+    ppg = (sum(a_points) / (2.0 * len(a_points))) if a_points else None
+    out = {
         "num_pairs": n, "num_games": 2 * n, "mean_d": mean_d, "std_d": std_d,
         "z": z, "one_sided_p": one_sided_p, "rate": rate,
         "pos": pos, "neg": neg, "ties": ties, "var_reduction": var_reduction,
+        "points_per_game": ppg, "max_points": int(max_points),
     }
+    if len(a_points) == n and n:
+        scale = 2.0 * max_points
+        p_mean, p_std, p_z = _paired_stats([p / scale for p in a_points])
+    else:  # legacy 2-tuples: no points recorded -> the win statistic
+        p_mean, p_std, p_z = mean_d, std_d, z
+    out.update(pts_mean_d=p_mean, pts_std_d=p_std, pts_z=p_z, pts_rate=0.5 + p_mean / 2.0)
+    return out
 
 
 def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
@@ -121,6 +156,7 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
     if lookahead is None:
         lookahead = max(1, int(config.get_eval_candidate_lookahead_plies()))
 
+    max_points = config.get_ruleset().max_points
     seeds = [base_seed + k for k in range(num_pairs)]
     print(f"Paired eval: A='{model_a}'  vs  B='{model_b}'", flush=True)
     print(f"{num_pairs} pairs ({2 * num_pairs} games), {num_workers} workers, "
@@ -145,7 +181,7 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
     for done in range(1, num_pairs + 1):
         results.append(result_q.get())
         if done % report_every == 0 or done == num_pairs:
-            s = summarize(results)
+            s = summarize(results, max_points)
             elapsed = time.monotonic() - start
             eta = (elapsed / done) * (num_pairs - done)
             print(f"  {done}/{num_pairs} pairs  A={s['rate']:.4f}  z={s['z']:.2f}  "
@@ -154,10 +190,13 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
     for p in procs:
         p.join()
 
-    s = summarize(results)
+    s = summarize(results, max_points)
     elapsed = time.monotonic() - start
     print("\n========== PAIRED FINAL ==========")
     print(f"A win rate (over {s['num_games']} games): {s['rate']:.4f}")
+    if max_points > 1 and s["points_per_game"] is not None:
+        print(f"A average points/game: {s['points_per_game']:+.4f}   points z = {s['pts_z']:.3f} "
+              f"(normalized equity rate {s['pts_rate']:.4f})")
     print(f"mean d_k = {s['mean_d']:+.4f}   std d_k = {s['std_d']:.4f}")
     print(f"Paired one-sided z = {s['z']:.3f}   p = {s['one_sided_p']:.4f}   "
           f"=> A {'IS' if s['z'] > 1.645 else 'is NOT'} significantly stronger (z>1.645)")

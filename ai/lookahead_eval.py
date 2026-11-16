@@ -32,6 +32,7 @@ from config.config_loader import ConfigLoader
 from ai.checkpoint_io import load_agent_from_checkpoint
 from game.game import Game
 from domain.constants import WHITE, BLACK
+from domain.ruleset import score_for
 
 
 def _play_one_game(agent, config, flex_color, budget, rel, mb, md):
@@ -40,6 +41,7 @@ def _play_one_game(agent, config, flex_color, budget, rel, mb, md):
     depth_hist: Counter = Counter()
     move_times: List[float] = []
     game = Game(config, starting_player=WHITE)
+    game.player = game.ruleset.starting_player(WHITE)
     while not game.is_over():
         current = game.current_player
         game.dice.roll()
@@ -59,7 +61,8 @@ def _play_one_game(agent, config, flex_color, budget, rel, mb, md):
             move, _ = agent.get_best_move(game.board, moves, current, lookahead_plies=2)
         game.board.apply(move, current)
         game.switch_turn()
-    return game.get_winner() == flex_color, dict(depth_hist), move_times
+    credit, points = score_for(game.outcome(), flex_color)
+    return credit, dict(depth_hist), move_times, points
 
 
 def _worker(model_path, config_path, tasks, budget, rel, mb, md, result_q):
@@ -71,8 +74,10 @@ def _worker(model_path, config_path, tasks, budget, rel, mb, md, result_q):
     for flex_color, seed in tasks:
         random.seed(seed)
         np.random.seed(seed)
-        won, depth_hist, move_times = _play_one_game(agent, config, flex_color, budget, rel, mb, md)
-        result_q.put({"win": won, "depth_hist": depth_hist, "move_times": move_times})
+        won, depth_hist, move_times, points = _play_one_game(agent, config, flex_color,
+                                                             budget, rel, mb, md)
+        result_q.put({"win": won, "depth_hist": depth_hist, "move_times": move_times,
+                      "points": points})
 
 
 def _wilson_interval(wins: int, n: int, z: float = 1.96) -> Tuple[float, float]:
@@ -89,6 +94,7 @@ def _two_sided_binomial_p(wins: int, n: int) -> float:
     """Two-sided p-value vs a fair coin, exact for the n we use here (a few thousand)."""
     if n == 0:
         return 1.0
+    wins = int(round(wins))  # draws count half; round for the exact test
     k = min(wins, n - wins)
     tail = sum(math.comb(n, i) for i in range(0, k + 1)) * (0.5 ** n)
     return min(1.0, 2.0 * tail)
@@ -122,7 +128,7 @@ def _render_progress(done, total, flex_wins, depth_hist, elapsed) -> str:
     return "\n".join([
         sep,
         f" eval-lookahead   {done}/{total} games ({done / total:.0%})   flexible vs 2-ply",
-        f" win rate {rate:6.1%}   [{_bar(rate)}]   {flex_wins}W–{losses}L",
+        f" win rate {rate:6.1%}   [{_bar(rate)}]   {flex_wins:g}W–{losses:g}L",
         f" 95% CI [{lo:.1%}, {hi:.1%}]",
         f" depth: {depth_str}",
         f" elapsed {_fmt_dur(elapsed)}   eta ~{_fmt_dur(eta)}",
@@ -175,14 +181,15 @@ def evaluate_lookahead_selfplay(config, model_path, games_per_color=500, num_wor
 
     start = time.monotonic()
     flex_wins = 0
+    flex_points = 0
     depth_hist: Counter = Counter()
     move_times: List[float] = []
     report_every = max(1, total // 100)  # ~100 progress updates over the run
 
     for done in range(1, total + 1):
         r = result_q.get()
-        if r["win"]:
-            flex_wins += 1
+        flex_wins += r["win"]  # 1 / 0.5 (draw) / 0
+        flex_points += r.get("points", 0)
         for d, c in r["depth_hist"].items():
             depth_hist[d] += c
         move_times.extend(r["move_times"])
@@ -200,8 +207,10 @@ def evaluate_lookahead_selfplay(config, model_path, games_per_color=500, num_wor
     elapsed = time.monotonic() - start
 
     print("\n========== FINAL ==========")
-    print(f"Flexible win rate: {flex_wins}/{total} = {rate:.3f}  "
+    print(f"Flexible win rate: {flex_wins:g}/{total} = {rate:.3f}  "
           f"(95% Wilson CI [{lo:.3f}, {hi:.3f}], two-sided p={pval:.4f} vs 0.5)")
+    if config.get_ruleset().max_points > 1:
+        print(f"Flexible average points/game: {flex_points / total:+.3f}")
     print(f"Elapsed: {_fmt_dur(elapsed)}  ({elapsed / total:.1f}s/game)")
     print("\nDepth reached by the flexible search (how far it actually looked):")
     tot_moves = sum(depth_hist.values()) or 1

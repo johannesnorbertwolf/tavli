@@ -14,6 +14,12 @@ duck-typed board contract:
     board.clone() -> board
     board.has_won(color) -> bool
 
+Game outcome seam (non-abstract; defaults reproduce Plakoto exactly):
+`max_points`, `is_over(board)`, `outcome(board) -> (winner, points)`,
+`terminal_value(board, perspective)` and `random_starting_player`. Every
+place that decides game end / winner / terminal reward (Game, self-play TD
+targets, search leaves, eval) goes through these.
+
 plus whatever the variant's own rules / encoder need. `HalfMove` / `Move`
 (domain/move.py) are shared by all variants.
 
@@ -26,8 +32,11 @@ the variant's move generator so `ruleset.legal_moves(...)` costs one
 attribute lookup and no extra Python frame.
 """
 
+import random
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
+
+from domain.constants import WHITE, BLACK
 
 
 class RuleSet(ABC):
@@ -40,6 +49,13 @@ class RuleSet(ABC):
     #: True iff ai/bearoff.py (exact one-sided race DB) is valid for this variant.
     #: When False, callers must not build/load the DB (agents get bearoff=None).
     supports_bearoff_db: bool = False
+    #: Largest result a game can have (1 = win/loss only; 2 = gammons count double).
+    #: The value net of a variant learns normalized expected points:
+    #: V = 0.5 + E[signed points] / (2 * max_points), so V(opponent) = 1 - V.
+    max_points: int = 1
+    #: False: today's fixed starters (self-play Black, eval White). True: self-play
+    #: and eval pick the starter uniformly at random from the (seeded) global rng.
+    random_starting_player: bool = False
 
     @abstractmethod
     def initial_board(self, config):
@@ -67,8 +83,54 @@ class RuleSet(ABC):
         `default_encoder_version`. The returned object exposes `input_size`,
         `version` and `encode_board(board, is_whites_turn) -> np.ndarray`."""
 
+    # --- game outcome seam (non-abstract defaults) ---
+
+    def is_over(self, board) -> bool:
+        """True iff the game on `board` has ended (win for either side, or a draw)."""
+        return self.has_won(board, WHITE) or self.has_won(board, BLACK)
+
+    def outcome(self, board) -> Tuple[Optional[int], int]:
+        """(winner, points) of a finished game: winner is WHITE, BLACK or None (draw,
+        points 0). Call only when `is_over(board)`."""
+        if self.has_won(board, WHITE):
+            return WHITE, self.result_points(board, WHITE)
+        if self.has_won(board, BLACK):
+            return BLACK, self.result_points(board, BLACK)
+        return None, 0
+
+    def terminal_value(self, board, perspective_color: int) -> float:
+        """Value in [0, 1] of the finished game for `perspective_color`:
+        0.5 + signed_points / (2 * max_points). With max_points == 1 this is exactly
+        1.0 (win) / 0.0 (loss); a draw is 0.5."""
+        winner, points = self.outcome(board)
+        if winner is None:
+            return 0.5
+        signed = points if winner == perspective_color else -points
+        return 0.5 + signed / (2.0 * self.max_points)
+
+    def starting_player(self, default: int, rng=None) -> int:
+        """Who moves first: `default` unless `random_starting_player`, in which case a
+        uniform pick from `rng` (default: the global `random` module, which callers
+        seed). Never touches the rng for fixed-starter variants (determinism)."""
+        if not self.random_starting_player:
+            return default
+        r = rng if rng is not None else random
+        return WHITE if r.random() < 0.5 else BLACK
+
     def __repr__(self) -> str:
         return f"<RuleSet {self.name}>"
+
+
+def score_for(outcome: Tuple[Optional[int], int], color: int) -> Tuple[float, int]:
+    """(win_credit, signed_points) of a finished game's `outcome` for `color`:
+    credit 1 / 0.5 (draw) / 0; points +p for a win, -p for a loss, 0 for a draw.
+    Eval code aggregates these (win rate; average points when max_points > 1)."""
+    winner, points = outcome
+    if winner is None:
+        return 0.5, 0
+    if winner == color:
+        return 1.0, int(points)
+    return 0.0, -int(points)
 
 
 _REGISTRY: Dict[str, RuleSet] = {}
@@ -94,6 +156,7 @@ def _load_builtins() -> None:
     if not _BUILTINS_LOADED:
         _BUILTINS_LOADED = True
         import domain.plakoto_rules  # noqa: F401  (registers "plakoto")
+        import domain.portes_rules  # noqa: F401  (registers "portes")
         import domain.plakoto_standard_rules  # noqa: F401  (registers "plakoto_standard")
         import domain.fevga_rules  # noqa: F401  (registers "fevga")
 
