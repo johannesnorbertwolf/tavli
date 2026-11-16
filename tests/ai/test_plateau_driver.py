@@ -8,9 +8,10 @@ from pathlib import Path
 
 import yaml
 
+from ai.paired_eval import summarize
 from ai.plateau_driver import (
-    DEFAULTS, PlateauDriver, decide, format_status, load_settings, plateau_check,
-    pool_results, should_promote,
+    DEFAULTS, PlateauDriver, decide, decision_stats, format_status, load_settings,
+    plateau_check, pool_results, should_promote,
 )
 
 REPO = Path(__file__).resolve().parents[2]
@@ -97,6 +98,44 @@ class TestDecisionLogic(unittest.TestCase):
         d = decide(True, R(0.56, 4.0), streak, 4, SETTINGS)
         self.assertTrue(d["promote"])
         self.assertIsNone(d["stage_end"])
+
+
+class TestPointsStatistic(unittest.TestCase):
+    """max_points > 1 variants decide on normalized points; max_points == 1 unchanged."""
+
+    def test_summarize_points_equal_wins_for_one_point_games(self):
+        # (d_k, a_wins_k, a_points_k) with a draw: points 0, half a win.
+        res = [(1, 2, 2), (0, 1, 0), (-1, 0, -2), (0.5, 1.5, 1), (0, 1, 0)]
+        s = summarize(res, max_points=1)
+        for k in ("mean_d", "std_d", "z", "rate"):
+            self.assertAlmostEqual(s["pts_" + k], s[k], msg=k)
+
+    def test_summarize_points_two_point_games(self):
+        # A wins both games of each pair, but by gammons (2+2) vs singles (1+1).
+        res = [(1, 2, 4), (1, 2, 2), (1, 2, 4), (1, 2, 2)]
+        s = summarize(res, max_points=2)
+        self.assertEqual(s["rate"], 1.0)
+        self.assertAlmostEqual(s["pts_mean_d"], (1 + 0.5 + 1 + 0.5) / 4)
+        self.assertAlmostEqual(s["pts_rate"], 0.5 + 0.75 / 2)
+        self.assertAlmostEqual(s["points_per_game"], 12 / 8)
+
+    def test_decision_stats(self):
+        s = summarize([(1, 2, 4), (-1, 0, -2), (0, 1, 1), (0, 1, 2)], max_points=2)
+        wins = decision_stats(s, 1)
+        self.assertEqual((wins["metric"], wins["z"], wins["rate"]), ("wins", s["z"], s["rate"]))
+        pts = decision_stats(s, 2)
+        self.assertEqual((pts["metric"], pts["z"], pts["rate"]), ("points", s["pts_z"], s["pts_rate"]))
+        self.assertEqual(pts["win_rate"], s["rate"])
+        self.assertEqual(pts["ppg"], s["points_per_game"])
+
+    def test_bootstrap_gate_uses_win_rate(self):
+        r = dict(R(0.80, 20), win_rate=0.95)        # equity 0.80, wins 95%
+        self.assertTrue(decide(False, r, [], 1, SETTINGS)["promote"])
+
+    def test_settings_max_points(self):
+        self.assertEqual(load_settings({"variant": "plakoto"})["max_points"], 1)
+        for v in ("portes", "fevga", "plakoto_standard"):
+            self.assertEqual(load_settings({"variant": v})["max_points"], 2)
 
 
 class _Fakes:
@@ -234,6 +273,41 @@ class TestDriverStateMachine(unittest.TestCase):
         self.assertEqual(st["status"], "failed")
         self.assertIn("training", st["error"])
         self.assertIn("FAILED", format_status(self.cfg_path))
+
+    def test_points_variant_promotes_on_points(self):
+        """Portes: wins are flat (z=0) but A wins bigger -> promoted on the points z."""
+        self.cfg["variant"] = "portes"
+        with open(self.cfg_path, "w") as fh:
+            yaml.safe_dump(self.cfg, fh)
+        calls = []
+
+        def ev(cfg_path, a, opp, pairs, seed, workers, out_json, log):
+            calls.append(opp)
+            if opp == "random":
+                base = dict(R(0.95, 30, n=pairs), pts_mean_d=0.8, pts_std_d=0.3, pts_z=30.0,
+                            pts_rate=0.9, points_per_game=1.6)
+            elif len(calls) == 2:
+                base = dict(R(0.50, 0.0, n=pairs), pts_mean_d=0.1, pts_std_d=0.4, pts_z=8.0,
+                            pts_rate=0.55, points_per_game=0.2)
+            else:
+                base = dict(R(0.50, 0.0, n=pairs, std=0.4), pts_mean_d=0.0, pts_std_d=0.4,
+                            pts_z=0.0, pts_rate=0.5, points_per_game=0.0)
+            return 0, dict(base, num_games=2 * pairs)
+
+        f = _Fakes(self.model, [])
+        drv = PlateauDriver(self.cfg_path, train_runner=f.train, eval_runner=ev, out=lambda *_: None)
+        self.assertEqual(drv.run(), 0)
+        st = _json(self.cfg["plateau"]["state_path"])
+        self.assertEqual([os.path.basename(p) for p in st["ladder"]][:2],
+                         ["portes_gold_v1.pth", "portes_gold_v2.pth"])
+        r2 = st["rounds"][1]
+        self.assertTrue(r2["promoted"])
+        self.assertEqual((r2["metric"], r2["rate"], r2["win_rate"], r2["ppg"]),
+                         ("points", 0.55, 0.5, 0.2))
+        self.assertEqual(st["rounds"][0]["vs_random"], 0.95)
+        status = format_status(self.cfg_path)
+        self.assertIn("normalized points", status)
+        self.assertIn("+0.200", status)
 
     def test_settings_defaults(self):
         s = load_settings({"variant": "fevga"})

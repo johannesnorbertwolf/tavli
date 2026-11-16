@@ -8,6 +8,14 @@ Round = train `round_games` self-play games (subprocess: `main.py --config <stag
 train N`, exactly what `./run.sh train` runs) + paired duplicate-dice eval (subprocess,
 `ai.paired_eval`) of the live model vs the ladder top (or vs random before v1 exists).
 
+Statistic: for max_points == 1 variants everything runs on the paired win statistic
+(d_k = A's wins in the pair - 1; a draw is half a win), exactly as before. For variants
+whose games are worth up to max_points > 1 (gammon / mars / mother win), promotion and
+plateau run on POINTS: d_k = A's signed points over the pair / (2 * max_points), and
+"rate" is the normalized equity 0.5 + mean_d / 2 (see `decision_stats`). The bootstrap
+gate vs random stays on win rate (a sanity gate; an equity threshold vs random would
+depend on the gammon rate). Logs / status show both win rate and avg points per game.
+
 Decision per round (pure functions below, unit-tested):
   * no ladder yet  -> promote `_gold_v1` once rate vs random >= random_promote_winrate.
   * ladder exists  -> promote `_gold_v{K+1}` iff paired z >= promote_z AND
@@ -82,6 +90,22 @@ def pool_results(results, ucb_z=DEFAULTS["plateau_ucb_z"]):
             "se_edge": se_edge, "edge_ucb": edge + ucb_z * se_edge, "rate": 0.5 + edge}
 
 
+def decision_stats(summary, max_points):
+    """Pick the statistic promotion / plateau run on from a paired-eval summary
+    (`ai.paired_eval.summarize`). max_points == 1: the win statistic, unchanged.
+    max_points > 1: the normalized points statistic (`pts_*`). Always carries the plain
+    `win_rate` and average points per game `ppg` for logging."""
+    out = {k: summary[k] for k in ("num_pairs", "num_games", "mean_d", "std_d", "z", "rate")}
+    use_points = max_points > 1 and summary.get("pts_mean_d") is not None
+    if use_points:
+        out.update(mean_d=summary["pts_mean_d"], std_d=summary["pts_std_d"],
+                   z=summary["pts_z"], rate=summary["pts_rate"])
+    out["metric"] = "points" if use_points else "wins"
+    out["win_rate"] = summary["rate"]
+    out["ppg"] = summary.get("points_per_game")
+    return out
+
+
 def should_promote(result, promote_z, promote_min_winrate):
     return result["z"] >= promote_z and result["rate"] >= promote_min_winrate
 
@@ -100,7 +124,7 @@ def decide(has_ladder, result, streak, stage_rounds, settings):
     pooled = None
     stage_end = None
     if not has_ladder:
-        promote = result["rate"] >= settings["random_promote_winrate"]
+        promote = result.get("win_rate", result["rate"]) >= settings["random_promote_winrate"]
     else:
         promote = should_promote(result, settings["promote_z"], settings["promote_min_winrate"])
         if not promote:
@@ -126,6 +150,11 @@ def load_settings(base_cfg):
         s[k] = float(s[k])
     s["stages"] = list(s.get("stages") or []) or [{"name": "default", "overrides": {}}]
     s["variant"] = variant
+    try:
+        from domain.ruleset import get_ruleset
+        s["max_points"] = int(get_ruleset(variant).max_points)
+    except ValueError:
+        s["max_points"] = 1
     s["state_path"] = s["state_path"] or f"plateau_state_{variant}.json"
     s["log_path"] = s["log_path"] or os.path.join("training_runs", f"plateau_{variant}.log")
     s["work_dir"] = s["work_dir"] or os.path.join("training_runs", f"plateau_{variant}")
@@ -240,6 +269,7 @@ def _random_worker(model_a, config_path, seeds, lookahead, result_q):
 def _eval_vs_random(config, model_a, num_pairs, base_seed, workers):
     import multiprocessing as mp
     from ai.paired_eval import summarize
+    max_points = config.get_ruleset().max_points
     lookahead = max(1, int(config.get_eval_candidate_lookahead_plies()))
     seeds = [base_seed + k for k in range(num_pairs)]
     chunks = [c for c in (seeds[i::workers] for i in range(workers)) if c]
@@ -252,8 +282,9 @@ def _eval_vs_random(config, model_a, num_pairs, base_seed, workers):
     results = [q.get() for _ in range(num_pairs)]
     for p in procs:
         p.join()
-    s = summarize(results)
-    print(f"vs random: rate={s['rate']:.4f} over {s['num_games']} games  z={s['z']:.2f}")
+    s = summarize(results, max_points)
+    print(f"vs random: rate={s['rate']:.4f} over {s['num_games']} games  z={s['z']:.2f}"
+          + (f"  points/game={s['points_per_game']:+.3f}" if max_points > 1 else ""))
     return s
 
 
@@ -393,8 +424,7 @@ class PlateauDriver:
                                        os.path.join(self.s["work_dir"], "eval_output.log"))
         if rc != 0 or summary is None:
             return self._fail_or_retry("eval", rc)
-        keep = ("num_pairs", "num_games", "mean_d", "std_d", "z", "rate")
-        self.state["pending"] = {k: summary[k] for k in keep}
+        self.state["pending"] = decision_stats(summary, self.s["max_points"])
         self.state["pending"]["opponent"] = opp
         self.state.update(phase="decide", attempts=0)
         self.save()
@@ -430,7 +460,9 @@ class PlateauDriver:
             "opponent": res["opponent"], "num_pairs": res["num_pairs"], "rate": res["rate"],
             "z": res["z"], "mean_d": res["mean_d"], "std_d": res["std_d"],
             "promoted": bool(d["promote"]), "new_top": new_top,
-            "vs_random": res["rate"] if not has_ladder else None,
+            "metric": res.get("metric", "wins"), "win_rate": res.get("win_rate", res["rate"]),
+            "ppg": res.get("ppg"),
+            "vs_random": res.get("win_rate", res["rate"]) if not has_ladder else None,
             "pooled_edge": d["pooled"]["edge"] if d["pooled"] else None,
             "pooled_ucb": d["pooled"]["edge_ucb"] if d["pooled"] else None,
         }
@@ -447,12 +479,14 @@ class PlateauDriver:
         line = (f"stage={st['stage'] + 1}/{len(self.s['stages'])} round={rnd} "
                 f"games={st['games_played']} vs={opp_name} pairs={res['num_pairs']} "
                 f"rate={res['rate']:.4f} z={res['z']:.2f} "
-                f"promoted={'yes->' + os.path.basename(new_top) if new_top else 'no'} "
+                + (f"[points: win_rate={res.get('win_rate', res['rate']):.4f} "
+                   f"ppg={res['ppg']:+.3f}] " if res.get("metric") == "points" else "")
+                + f"promoted={'yes->' + os.path.basename(new_top) if new_top else 'no'} "
                 f"streak={len(st['streak'])}/{self.s['patience']}")
         if d["pooled"]:
             line += f" pooled_edge={_fmt_pp(d['pooled']['edge'])} ucb={_fmt_pp(d['pooled']['edge_ucb'])}"
         if not has_ladder:
-            line += f" vs_random={res['rate']:.4f}/{res['num_games']}g"
+            line += f" vs_random={res.get('win_rate', res['rate']):.4f}/{res['num_games']}g"
         self._log(line)
 
         st["pending"] = None
@@ -494,7 +528,8 @@ class PlateauDriver:
                                        out_json, os.path.join(self.s["work_dir"], "eval_output.log"))
         if rc != 0 or summary is None:
             return self._fail_or_retry("final random eval", rc)
-        self.state["final_vs_random"] = {"rate": summary["rate"], "games": summary["num_games"]}
+        self.state["final_vs_random"] = {"rate": summary["rate"], "games": summary["num_games"],
+                                         "ppg": summary.get("points_per_game")}
         self.state["phase"] = "done"
         self.save()
         return True
@@ -508,7 +543,9 @@ class PlateauDriver:
             f"FINISHED {self.variant}: {len(self.s['stages'])} stage(s), {st['round']} rounds, "
             f"{st['games_played']} games. Ladder top: {self.top or 'none'} "
             f"({len(st['ladder'])} rungs). Last stage: {last['message'] if last else 'n/a'}."
-            + (f" Final vs random: {fr['rate']:.4f} over {fr['games']} games." if fr else ""))
+            + (f" Final vs random: {fr['rate']:.4f} over {fr['games']} games"
+               + (f", {fr['ppg']:+.3f} points/game." if fr.get("ppg") is not None else ".")
+               if fr else ""))
         self._log(st["verdict"])
         self.save()
 
@@ -577,13 +614,19 @@ def format_status(config_path):
         lines.append(f"vs_random: {r['vs_random']:.4f} over {2 * r['num_pairs']} games (round {r['round']})")
     if st.get("final_vs_random"):
         fr = st["final_vs_random"]
-        lines.append(f"final vs_random: {fr['rate']:.4f} over {fr['games']} games")
-    lines.append("  rnd stg   games  vs                 rate      z  promoted")
+        lines.append(f"final vs_random: {fr['rate']:.4f} over {fr['games']} games"
+                     + (f", {fr['ppg']:+.3f} points/game" if fr.get("ppg") is not None else ""))
+    if s["max_points"] > 1:
+        lines.append(f"decision statistic: normalized points (max_points={s['max_points']}; "
+                     f"rate = 0.5 + mean signed points / (2*max_points))")
+    lines.append("  rnd stg   games  vs                 rate      z  win_rate    ppg  promoted")
     for r in st.get("rounds", [])[-10:]:
         opp = os.path.basename(r["opponent"]).replace(".pth", "")[:18]
         promo = os.path.basename(r["new_top"]).replace(".pth", "") if r.get("new_top") else "-"
+        win = r.get("win_rate", r["rate"])
+        ppg = f"{r['ppg']:+.3f}" if r.get("ppg") is not None else "   n/a"
         lines.append(f"  {r['round']:>3} {r['stage']:>3} {r['games']:>7}  {opp:<18} "
-                     f"{r['rate']:.4f} {r['z']:>6.2f}  {promo}")
+                     f"{r['rate']:.4f} {r['z']:>6.2f}    {win:.4f} {ppg}  {promo}")
     for sr in st.get("stage_results", []):
         lines.append(f"stage {sr['stage']}: {sr['reason']}")
     if st.get("error"):
