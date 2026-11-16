@@ -137,7 +137,8 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
                 "terminal_value_white": game.ruleset.terminal_value(game.board, WHITE),
                 "result_points": int(points),
                 # Plakoto-only diagnostic; variants without pins report False.
-                "win_by_pin": bool(getattr(game.board, "captured_starting", _never)(winner)),
+                "win_by_pin": bool(winner is not None
+                                   and getattr(game.board, "captured_starting", _never)(winner)),
                 "final_borne_off_white": int(game.board.borne_off[WHITE]),
                 "final_borne_off_black": int(game.board.borne_off[BLACK]),
                 "plies": len(movers),

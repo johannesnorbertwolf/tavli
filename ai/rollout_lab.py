@@ -113,8 +113,8 @@ def rollout_value(agent, board, mover_color: int, rng: np.random.Generator,
         if moves:
             move, _ = agent.get_best_move(b, moves, cur, lookahead_plies=1)
             b.apply(move, cur)
-            if b.has_won(cur):
-                return 1.0 if cur == mover_color else 0.0
+            if agent.ruleset.is_over(b):
+                return agent.ruleset.terminal_value(b, mover_color)
         cur = -cur
     # Pathologically long playout: fall back to the net's value.
     v = state_net_value(agent, b, cur == WHITE)

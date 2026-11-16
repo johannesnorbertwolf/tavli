@@ -47,6 +47,14 @@ class Agent:
         # Terminal leaves score RuleSet.terminal_value (1.0/0.0 for max_points == 1;
         # normalized points for variants with gammons). Only called on game end.
         self._terminal_value = ruleset.terminal_value
+        # Terminal test after a complete move. Rule sets that keep the default
+        # `RuleSet.is_over` can only end on a win by the side that just moved, so
+        # `board.has_won(mover)` is exact and cheap (the historical Plakoto hot path).
+        # Rule sets that override `is_over` (draws, standard Plakoto's mother rule:
+        # either result after any complete move) get the full `ruleset.is_over(board)`.
+        from domain.ruleset import RuleSet
+        self._mover_win_only = type(ruleset).is_over is RuleSet.is_over
+        self._is_over = ruleset.is_over
         # Optional ai.bearoff.BearoffDB: exact-race positions bypass the net and
         # get exact equity at every leaf-evaluation site.
         self.bearoff = bearoff
@@ -99,9 +107,11 @@ class Agent:
         encoded_afterstates = []
         encode_indices: List[int] = []
 
+        fast = self._mover_win_only
+        is_over = self._is_over
         for idx, move in enumerate(possible_moves):
             token = board.apply(move, color)
-            if board.has_won(color):
+            if board.has_won(color) if fast else is_over(board):
                 scores[idx] = self._terminal_value(board, color)
             else:
                 exact = self._exact_value(board, is_whites_turn_next)
@@ -149,9 +159,11 @@ class Agent:
                 pending_encoded.append(
                     self.board_encoder.encode_board(board, is_whites_turn=persp_is_white))
 
+        fast = self._mover_win_only
+        is_over = self._is_over
         for m_c in possible_moves:
             token_c = board.apply(m_c, color)
-            if board.has_won(color):
+            if board.has_won(color) if fast else is_over(board):
                 plans.append(self._terminal_value(board, color))
                 board.undo(token_c)
                 continue
@@ -168,7 +180,7 @@ class Agent:
                     opp_wins = False
                     for m_o in opp_moves:
                         token_o = board.apply(m_o, opponent_color)
-                        if board.has_won(opponent_color):
+                        if board.has_won(opponent_color) if fast else is_over(board):
                             tv = self._terminal_value(board, color)
                             if tv <= 0.0:
                                 # Worst possible outcome for us: the min is settled.
@@ -254,7 +266,8 @@ class Agent:
             # try/finally guarantees token_c is undone even if a deadline (_TimeoutError)
             # unwinds the recursion from a deeper frame mid-iteration.
             try:
-                if board.has_won(color):
+                if (board.has_won(color) if self._mover_win_only
+                        else self._is_over(board)):
                     scores.append(self._terminal_value(board, color))
                     continue
 

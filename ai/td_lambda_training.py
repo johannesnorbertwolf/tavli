@@ -766,8 +766,8 @@ class TdLambdaTraining:
                         "terminal_winner_white": (winner == WHITE),
                         "terminal_value_white": game.ruleset.terminal_value(game.board, WHITE),
                         "result_points": int(points),
-                        "win_by_pin": bool(getattr(game.board, "captured_starting",
-                                                   lambda _c: False)(winner)),
+                        "win_by_pin": bool(winner is not None and getattr(
+                            game.board, "captured_starting", lambda _c: False)(winner)),
                         "final_borne_off_white": int(game.board.borne_off[WHITE]),
                         "final_borne_off_black": int(game.board.borne_off[BLACK]),
                         "plies": len(movers),
