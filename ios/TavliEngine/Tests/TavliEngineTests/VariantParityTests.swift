@@ -92,3 +92,13 @@ final class StandardPlakotoParityTests: XCTestCase {
     func testAgent2PlyParity() throws { try VariantAgentParity.check2Ply(try variantFixtures(v), v) }
 }
 
+final class FevgaParityTests: XCTestCase {
+    private let v: any GameVariant = GameVariants.fevga
+    func testMetadata() throws { VariantParity.checkMetadata(try variantFixtures(v), v) }
+    func testEncodingParity() throws { VariantParity.checkEncodings(try variantFixtures(v), v) }
+    func testLegalMoveAndApplyUndoParity() throws { VariantParity.checkMoves(try variantFixtures(v), v) }
+    func testOutcomeParity() throws { VariantParity.checkOutcomes(try variantFixtures(v), v) }
+    func testAgent1PlyParity() throws { try VariantAgentParity.check1Ply(try variantFixtures(v), v) }
+    func testAgent2PlyParity() throws { try VariantAgentParity.check2Ply(try variantFixtures(v), v) }
+}
+

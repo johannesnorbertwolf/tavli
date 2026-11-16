@@ -8,14 +8,14 @@ import XCTest
 /// variant (2-point wins, draws), saves replay to the identical position, and the
 /// board's undo bookkeeping stays balanced. No fixtures or model needed.
 final class VariantPlayTests: XCTestCase {
-    private let newVariants: [any GameVariant] = [GameVariants.plakotoStandard]
+    private let newVariants: [any GameVariant] = [GameVariants.plakotoStandard, GameVariants.fevga]
 
     private func checkerCount(_ board: GameBoard, _ c: Color) -> Int {
         board.points.reduce(0) { $0 + $1.countForColor(c) }
     }
 
     func testRegistryAndInitialPositions() {
-        XCTAssertEqual(GameVariants.all.map(\.id), ["plakoto", "plakoto_standard"])
+        XCTAssertEqual(GameVariants.all.map(\.id), ["plakoto", "plakoto_standard", "fevga"])
         for v in newVariants {
             XCTAssertEqual(GameConfig(variantID: v.id).variant.id, v.id)
             let board = GameBoard(config: GameConfig(variant: v))
@@ -30,7 +30,7 @@ final class VariantPlayTests: XCTestCase {
         XCTAssertEqual(GameVariants.plakoto.maxPoints, 1)
         XCTAssertFalse(GameVariants.plakoto.randomStartingPlayer)
         XCTAssertFalse(GameVariants.plakotoStandard.endsOnlyByMoverWin)
-        XCTAssertTrue(GameVariants.plakoto.endsOnlyByMoverWin)
+        XCTAssertTrue(GameVariants.fevga.endsOnlyByMoverWin)
     }
 
     /// Random games where every turn is composed through `MoveBuilder` one half at a
@@ -73,6 +73,24 @@ final class VariantPlayTests: XCTestCase {
                 XCTAssertTrue(game.isOver(), "\(v.id): game did not finish")
             }
         }
+    }
+
+    /// The merged half of a Fevga Black checker wraps 24→1: the split must follow the
+    /// path, not `src + color*die`.
+    func testFevgaBlackMergedHalfSplitsAlongWrappedPath() {
+        let v = GameVariants.fevga
+        let board = GameBoard(config: GameConfig(variant: v))
+        board.clear()
+        board.setPoint(1, pieces: Array(repeating: .white, count: 15))
+        board.setPoint(13, pieces: Array(repeating: .black, count: 14))
+        board.setPoint(22, pieces: [.black])
+        let dice = Dice()
+        dice.set(5, 3)
+        let legal = v.legalMoves(on: board, color: .black, dice: dice)
+        XCTAssertEqual(swiftMovePairs(legal).sorted { $0.count < $1.count }, [[[22, 6]], [[22, 3], [13, 16]]])  // spec F5
+        let builder = MoveBuilder(legalMoves: legal, board: board, die1: 5, die2: 3)
+        XCTAssertEqual(builder.validDestinations(for: 22), [3, 6])   // via slot 3 only (slot 1 is White's)
+        XCTAssertEqual(builder.path(from: 22, to: 6).map(\.to.position), [3, 6])
     }
 
     @MainActor private func playOut(_ s: GameSession, seed: UInt64) {
