@@ -2,6 +2,22 @@ import Foundation
 import XCTest
 @testable import TavliEngine
 
+/// The next half-move of `m` (its bag minus what `builder` has built) that the builder
+/// offers right now — i.e. one that may legally be played next. Replaying a legal move
+/// through the builder must follow a legal play order, which is not necessarily the
+/// engine's canonical half-move order (#169 follow-up).
+func nextOfferedHalf(_ builder: MoveBuilder, of m: Move) -> HalfMove? {
+    var rem = m.halfMoves
+    for t in builder.built {
+        if let i = rem.firstIndex(where: { $0 == t }) { rem.remove(at: i) }
+    }
+    let sources = builder.selectableSourcePoints
+    return rem.first {
+        sources.contains($0.from.position)
+            && builder.validDestinations(for: $0.from.position).contains($0.to.position)
+    }
+}
+
 struct Fixtures: Decodable {
     struct Config: Decodable {
         let board_size: Int

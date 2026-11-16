@@ -98,6 +98,16 @@ public protocol GameVariant: Sendable {
     /// not a merged two-dice move (`MoveBuilder` then leaves it whole). Default: the
     /// Plakoto rule — exact distance `die1 + die2` along the path, landable midpoint.
     func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int]
+
+    /// Whether a `color` checker may play `from → to` (board indices) with the single die
+    /// `die` **right now**, as one step of a turn: the variant's per-play rules at this
+    /// exact position (bar first, bear-off only with every checker home, larger-die
+    /// bear-off, Fevga's first-checker lock, …). The dice obligation over the whole turn
+    /// (most dice, larger die) is *not* checked — the legal-move list enforces that.
+    /// `MoveBuilder` uses it so a legal move's half-moves are accepted only in an order
+    /// that is itself a legal sequence of plays. Default: the Plakoto rule — exact
+    /// distance, movable source, open target, bear-off only when all checkers are home.
+    func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool
 }
 
 public extension GameVariant {
@@ -142,6 +152,15 @@ public extension GameVariant {
 
     func movableCount(at point: Int, for color: Color, on board: GameBoard) -> Int {
         board.points[point].movablePieces(for: color)
+    }
+
+    func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool {
+        let n = board.boardSize
+        guard pathIndex(of: to, for: color, boardSize: n) - pathIndex(of: from, for: color, boardSize: n) == die,
+              movableCount(at: from, for: color, on: board) > 0,
+              isOpen(to, for: color, on: board) else { return false }
+        if to == bearOffPoint(for: color, boardSize: n) { return board.countCheckersOutsideHome(color) == 0 }
+        return true
     }
 
     func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] {

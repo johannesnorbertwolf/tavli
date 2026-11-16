@@ -131,6 +131,7 @@ final class RouteChoiceTests: XCTestCase {
     /// Bar first: with a checker on the bar, another checker's two-dice route is not offered.
     func testNoRouteForOtherCheckersWhileOnTheBar() {
         let s = session(white: [5: 1, 24: 13], black: [1: 15], whiteBar: 1, dice: (2, 3))
+        XCTAssertEqual(s.selectableSources, [0])
         XCTAssertTrue(s.moveBuilder.routeOptions(from: 5, to: 10).isEmpty)
     }
 

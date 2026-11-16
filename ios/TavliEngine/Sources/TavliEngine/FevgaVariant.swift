@@ -79,6 +79,12 @@ public struct FevgaVariant: GameVariant {
         return color.isWhite ? path : FevgaGeometry.slot(ofPath: path)
     }
 
+    /// One play by the generator's step rules (first-checker lock, no landing on the
+    /// opponent, bear-off with all home and a larger die only from the rearmost checker).
+    public func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool {
+        FevgaMoveGenerator(board: board, color: color).isStep(from: from, to: to, die: die)
+    }
+
     public func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] {
         var gen = FevgaMoveGenerator(board: board, color: half.color)
         return gen.intermediatePoints(from: half.from.position, to: half.to.position, die1: die1, die2: die2)
@@ -264,6 +270,15 @@ struct FevgaMoveGenerator {
                 HalfMove(from: board.points[physical($0.0)], to: board.points[physical($0.1)], color: color)
             })
         }
+    }
+
+    /// Whether `from → to` (board indices) is one legal play with `die` here, by the
+    /// same rules `rec` applies to each step (#169 follow-up).
+    func isStep(from: Int, to: Int, die d: Int) -> Bool {
+        guard (1...24).contains(from) else { return false }
+        let pf = color.isWhite ? from : FevgaGeometry.path(ofSlot: from)
+        let pt = to == (color.isWhite ? 25 : 0) ? 25 : (color.isWhite ? to : FevgaGeometry.path(ofSlot: to))
+        return stepTargets(d).contains { $0 == (pf, pt) }
     }
 
     /// Midpoints (board indices, `die1`/`die2` order) through which the merged half

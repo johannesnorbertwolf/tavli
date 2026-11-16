@@ -53,11 +53,11 @@ final class VariantPlayTests: XCTestCase {
                         for m in legal { v.apply(m, on: game.board); targets.insert(variantKey(game.board)); v.undo(m, on: game.board) }
                         let builder = MoveBuilder(legalMoves: legal, board: game.board, die1: d1, die2: d2)
                         let chosen = builder.activeMoves[Int.random(in: 0..<builder.activeMoves.count, using: &rng)]
-                        for h in chosen.halfMoves {
-                            XCTAssertTrue(builder.selectableSourcePoints.contains(h.from.position),
-                                          "\(v.id): source \(h.from.position) not offered for \(chosen)")
-                            XCTAssertTrue(builder.validDestinations(for: h.from.position).contains(h.to.position),
-                                          "\(v.id): \(h) not offered for \(chosen)")
+                        // Every legal move can be composed in some legal play order.
+                        for _ in chosen.halfMoves {
+                            guard let h = nextOfferedHalf(builder, of: chosen) else {
+                                XCTFail("\(v.id): no legal play order offered for \(chosen)"); break
+                            }
                             let hm = HalfMove(from: game.board.points[h.from.position],
                                               to: game.board.points[h.to.position], color: color)
                             v.applyHalfMove(hm, on: game.board)
@@ -132,7 +132,7 @@ final class VariantPlayTests: XCTestCase {
                 while s.phase == .picking || s.phase == .moving {
                     let idx = s.moveBuilder.built.count
                     guard idx < chosen.halfMoves.count else { break }
-                    let h = chosen.halfMoves[idx]
+                    guard let h = nextOfferedHalf(s.moveBuilder, of: chosen) else { XCTFail("no legal play order for \(chosen)"); break }
                     s.selectPoint(h.from.position)
                     s.commitHalfMove(from: h.from.position, to: h.to.position)
                 }

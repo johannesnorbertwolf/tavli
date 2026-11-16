@@ -43,6 +43,18 @@ so the game flow is validated without a simulator.
   highlight, and tapping a stop lets the same checker continue; the final board position is
   identical to the merged half-move. With this, non-Pasch single-checker moves run through the same
   bag/chaining machinery as Pasch.
+  **Legal play order (#169).** The bag would accept a legal move's halves in any order, incl.
+  orders no player may play (the engine's canonical order is not always one either: house Plakoto
+  lists `[22→25, 18→19]` for dice 3·1, standard Plakoto sorts its halves). So every play must also
+  pass the variant's `isLegalStep(from:to:color:die:on:)` at the position it is played, for one of
+  the still-unplayed dice (`diceStates`, a set of remaining-dice multisets per built half — a
+  bear-off may be playable by more than one die). Portes/Fevga/standard Plakoto answer it with
+  their own generator's step rule (`isStep`), house Plakoto with the protocol default. Enforced:
+  Portes bar-first; bear-off only once every checker is home (bar included); larger-die bear-off
+  only from the rearmost point; Fevga's first-checker lock. Before this, the builder let a player
+  break each of these in all four variants. Commits are judged on the turn-start position replayed
+  through `built`; far-endpoint chains are simulated on a scratch board. Without dice
+  (`die1 == 0`, tests) only board playability is checked.
   **Routes (#169).** Portes never merges (a two-dice checker move is two halves in the legal list,
   since an intermediate hit matters), so the same chaining also offers its far endpoints — but
   `src→a→dst` and `src→b→dst` may end in different positions. `routeOptions(from:to:)` collects

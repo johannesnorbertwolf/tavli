@@ -41,6 +41,16 @@ import Foundation
 /// non-Pasch case is handled by the same bag/chaining machinery as Pasch; the
 /// dice are needed only to know `d1`/`d2` for the split.
 ///
+/// **Legal play order (#169 follow-up).** The bag alone would accept a legal move's
+/// halves in *any* order, including orders no player could legally play (Portes: move
+/// another checker before entering from the bar; any variant: bear off before the last
+/// checker is home; a larger-die bear-off before the checker behind has moved; Fevga:
+/// a second checker leaving the start under the first-checker lock). So each play is
+/// also checked against the variant's `isLegalStep` at the position it is played, for
+/// one of the dice still unplayed (`diceStates`, tracked per built half-move). Chains
+/// to far endpoints are simulated on a scratch board so every hop is judged at its
+/// own position. Without dice (`die1 == 0`) only board playability is checked.
+///
 /// **Routes (#169).** Portes never merges: a checker using both dice is two
 /// single-die halves, and the two routes `src→a→dst` / `src→b→dst` can end in
 /// different positions (a blot hit at `a` but not at `b`, or different blots hit).
@@ -71,20 +81,42 @@ public final class MoveBuilder {
     /// so the builder always sees the position after the built prefix.
     private let board: GameBoard
 
+    /// The turn's dice as single plays (`[d1, d2]`, or four of a double); empty when
+    /// the builder was made without dice (then only board playability is checked).
+    private let dice: [Int]
+    /// The position at construction (turn start), replayed to evaluate each commit.
+    private let startStacks: [[Color]]
+    /// `diceStates[i]`: the possible multisets (sorted) of dice still unplayed after
+    /// the first `i` built half-moves. A set because a bear-off may be played by more
+    /// than one die value.
+    private var diceStates: [Set<[Int]>]
+
     public init(legalMoves: [Move], board: GameBoard, die1: Int = 0, die2: Int = 0) {
         let expanded = MoveBuilder.unmerge(legalMoves, board: board, die1: die1, die2: die2)
         self.allMoves = expanded
         self.activeMoves = expanded
         self.board = board
+        if die1 > 0, die2 > 0 {
+            dice = die1 == die2 ? [die1, die1, die1, die1] : [min(die1, die2), max(die1, die2)]
+        } else {
+            dice = []
+        }
+        startStacks = board.captureStacks()
+        diceStates = [[dice]]
     }
 
     /// Points a checker may be picked up FROM for the next half-move.
     public var selectableSourcePoints: Set<Int> {
         var sources: Set<Int> = []
+        var checked: [HalfMoveKey: Bool] = [:]
+        let states = diceStates[built.count]
         for m in activeMoves {
             guard let rem = remaining(of: m) else { continue }
-            for hm in rem where isPlayable(hm, arrivedAt: nil) {
-                sources.insert(hm.from.position)
+            for hm in rem where !sources.contains(hm.from.position) {
+                let key = HalfMoveKey(hm)
+                let ok = checked[key] ?? !advance(states, by: hm, on: board).isEmpty
+                checked[key] = ok
+                if ok { sources.insert(hm.from.position) }
             }
         }
         return sources
@@ -111,30 +143,13 @@ public final class MoveBuilder {
     /// `toPosition` is unreachable; one element = unambiguous; more = the routes lead
     /// to different positions and the player must choose (#169).
     public func routeOptions(from fromPosition: Int, to toPosition: Int) -> [[HalfMove]] {
-        var all: [[HalfMove]] = []
-        collectChains(from: fromPosition, to: toPosition, hops: [], into: &all)
-        guard let shortest = all.map(\.count).min() else { return [] }
-        let chains = all.filter { $0.count == shortest }
-        guard chains.count > 1 else { return chains }
-
-        // Group by resulting position on a scratch copy (the live board is never touched).
-        let variant = board.variant
-        let scratch = GameBoard(config: board.config)
-        let start = board.captureStacks()
+        let all = chains(from: fromPosition).filter { $0.hops.last?.to.position == toPosition }
+        guard let shortest = all.map(\.hops.count).min() else { return [] }
         var seen: [[[Color]]] = []
         var options: [[HalfMove]] = []
-        for chain in chains {
-            scratch.restoreStacks(start)
-            scratch.undoLog.removeAll()
-            for hop in chain {
-                variant.applyHalfMove(HalfMove(from: scratch.points[hop.from.position],
-                                               to: scratch.points[hop.to.position],
-                                               color: hop.color), on: scratch)
-            }
-            let result = scratch.captureStacks()
-            guard !seen.contains(result) else { continue }
-            seen.append(result)
-            options.append(chain)
+        for chain in all where chain.hops.count == shortest && !seen.contains(chain.result) {
+            seen.append(chain.result)
+            options.append(chain.hops)
         }
         return options
     }
@@ -166,6 +181,7 @@ public final class MoveBuilder {
         guard let start = gestureStarts.last else { return }
         built.removeLast(built.count - start)
         gestureStarts.removeLast()
+        diceStates.removeLast(diceStates.count - built.count - 1)
         activeMoves = allMoves.filter { remaining(of: $0) != nil }
     }
 
@@ -175,6 +191,11 @@ public final class MoveBuilder {
     /// legality is enforced by the caller before it is applied.
     @discardableResult
     public func commit(halfMove hm: HalfMove) -> Bool {
+        // Which dice this play consumed, judged at the position before it (turn start
+        // replayed through `built`, so it does not matter whether the owner applied it yet).
+        let states = diceStates[built.count]
+        let next = advance(states, by: hm, on: replayedBoard())
+        diceStates.append(next.isEmpty ? states : next)   // unchecked commit: dice left as is
         activeMoves = activeMoves.filter { m in
             guard let rem = remaining(of: m) else { return false }
             return rem.contains { $0 == hm }
@@ -196,6 +217,7 @@ public final class MoveBuilder {
     public func undo() {
         guard !built.isEmpty else { return }
         built.removeLast()
+        diceStates.removeLast()
         if let last = gestureStarts.last, last >= built.count { gestureStarts.removeLast() }
         activeMoves = allMoves.filter { remaining(of: $0) != nil }
     }
@@ -253,63 +275,112 @@ public final class MoveBuilder {
         return rem
     }
 
-    /// Whether `hm` can be played right now on the live board. Its `from` must
-    /// hold a movable checker (or a checker just arrived there via `arrivedAt`, for
-    /// a continuation hop whose predecessor isn't applied to the board yet) and its
-    /// `to` must be open.
-    private func isPlayable(_ hm: HalfMove, arrivedAt: Int?) -> Bool {
-        let hasChecker = board.variant.movableCount(at: hm.from.position, for: hm.color, on: board) > 0
-            || arrivedAt == hm.from.position
-        return hasChecker && board.variant.isOpen(hm.to.position, for: hm.color, on: board)
+    /// Hashable identity of a half-move by value.
+    private struct HalfMoveKey: Hashable {
+        let from: Int, to: Int, white: Bool
+        init(_ hm: HalfMove) { from = hm.from.position; to = hm.to.position; white = hm.color.isWhite }
     }
 
-    /// All endpoints reachable by chaining a single checker from `start` along the
-    /// die ray, mapped to the ordered hops that reach each. Follows continuations
-    /// of the same checker (a hop whose `from` is the previous hop's `to`), bounded
-    /// by what the surviving moves and the board allow.
+    /// The dice states after playing `hm` at position `b` from `states`; empty when
+    /// `hm` is not a legal single play there. Board playability (movable source, open
+    /// target) always applies; with dice, the variant's `isLegalStep` must accept `hm`
+    /// for one of the unplayed dice — so a legal move's half-moves are only accepted in
+    /// an order that is itself a legal sequence of plays (Portes bar-first, bear-off
+    /// only once every checker is home, larger-die bear-off, Fevga's first-checker lock).
+    private func advance(_ states: Set<[Int]>, by hm: HalfMove, on b: GameBoard) -> Set<[Int]> {
+        let v = b.variant
+        let from = hm.from.position, to = hm.to.position
+        guard v.movableCount(at: from, for: hm.color, on: b) > 0,
+              v.isOpen(to, for: hm.color, on: b) else { return [] }
+        guard !dice.isEmpty else { return states }
+        var out = Set<[Int]>()
+        for s in states {
+            for d in Set(s) where v.isLegalStep(from: from, to: to, color: hm.color, die: d, on: b) {
+                var r = s
+                r.remove(at: r.firstIndex(of: d)!)
+                out.insert(r)
+            }
+        }
+        if out.isEmpty {
+            // A merged two-dice half the variant did not split: it plays every die left.
+            let n = b.boardSize
+            let dist = v.pathIndex(of: to, for: hm.color, boardSize: n)
+                - v.pathIndex(of: from, for: hm.color, boardSize: n)
+            for s in states where s.count > 1 && s.reduce(0, +) == dist { out.insert([]) }
+        }
+        return out
+    }
+
+    /// A scratch board holding `position` (the live board is never touched).
+    private func scratch(_ position: [[Color]]) -> GameBoard {
+        let b = GameBoard(config: board.config)
+        b.restoreStacks(position)
+        return b
+    }
+
+    /// The turn-start position with `built` replayed: the position before the next play.
+    private func replayedBoard() -> GameBoard {
+        let b = scratch(startStacks)
+        for hm in built { apply(hm, on: b) }
+        return b
+    }
+
+    private func apply(_ hm: HalfMove, on b: GameBoard) {
+        b.variant.applyHalfMove(HalfMove(from: b.points[hm.from.position], to: b.points[hm.to.position],
+                                         color: hm.color), on: b)
+    }
+
+    private func unapply(_ hm: HalfMove, on b: GameBoard) {
+        b.variant.undoHalfMove(HalfMove(from: b.points[hm.from.position], to: b.points[hm.to.position],
+                                        color: hm.color), on: b)
+    }
+
+    /// Every chain of plays of the single checker on `start` — each a prefix of some
+    /// surviving move's remaining bag, each step legal at the position it is played
+    /// (simulated on a scratch board) — in DFS preorder, with the position it leads to.
+    private func chains(from start: Int) -> [(hops: [HalfMove], result: [[Color]])] {
+        var out: [(hops: [HalfMove], result: [[Color]])] = []
+        let b = scratch(board.captureStacks())
+        walk(from: start, hops: [], states: diceStates[built.count], on: b, into: &out)
+        return out
+    }
+
+    private func walk(from point: Int, hops: [HalfMove], states: Set<[Int]>, on b: GameBoard,
+                      into out: inout [(hops: [HalfMove], result: [[Color]])]) {
+        for (hm, next) in nextHops(from: point, taken: hops, states: states, on: b) {
+            let chain = hops + [hm]
+            apply(hm, on: b)
+            out.append((chain, b.captureStacks()))
+            walk(from: hm.to.position, hops: chain, states: next, on: b, into: &out)
+            unapply(hm, on: b)
+        }
+    }
+
+    /// All endpoints reachable by chaining a single checker from `start`, mapped to the
+    /// ordered hops of the first chain found to each.
     private func reachable(from start: Int) -> [Int: [HalfMove]] {
         var paths: [Int: [HalfMove]] = [:]
-        extend(from: start, hops: [], into: &paths)
+        for c in chains(from: start) {
+            let end = c.hops[c.hops.count - 1].to.position
+            if paths[end] == nil { paths[end] = c.hops }
+        }
         return paths
     }
 
-    private func extend(from point: Int, hops: [HalfMove], into paths: inout [Int: [HalfMove]]) {
-        for hm in nextHops(from: point, taken: hops) {
-            let endpoint = hm.to.position
-            let chain = hops + [hm]
-            if paths[endpoint] == nil { paths[endpoint] = chain }
-            extend(from: endpoint, hops: chain, into: &paths)
-        }
-    }
-
-    /// Every hop chain of a single checker from `point` that ends exactly on `target`
-    /// (DFS in the same order as `extend`, so the first chain matches `path`).
-    private func collectChains(from point: Int, to target: Int, hops: [HalfMove],
-                               into out: inout [[HalfMove]]) {
-        for hm in nextHops(from: point, taken: hops) {
-            let chain = hops + [hm]
-            if hm.to.position == target {
-                out.append(chain)
-            } else {
-                collectChains(from: hm.to.position, to: target, hops: chain, into: &out)
-            }
-        }
-    }
-
     /// Distinct half-moves (deduped by destination) leaving `point` that are
-    /// consistent with some surviving move's remaining bag after `taken` and are
-    /// board-legal. For the first hop (`taken` empty) the source must hold a real
-    /// checker; for a continuation the checker is the one delivered by the last hop.
-    private func nextHops(from point: Int, taken: [HalfMove]) -> [HalfMove] {
-        let arrived = taken.last?.to.position
-        var result: [HalfMove] = []
+    /// consistent with some surviving move's remaining bag after `taken` and are a
+    /// legal play at position `b` (which already has `taken` applied), each with the
+    /// dice states after it.
+    private func nextHops(from point: Int, taken: [HalfMove], states: Set<[Int]>,
+                          on b: GameBoard) -> [(HalfMove, Set<[Int]>)] {
+        var result: [(HalfMove, Set<[Int]>)] = []
         var seen: Set<Int> = []
         for m in activeMoves {
             guard let rem = remaining(of: m), let bag = subtract(taken, from: rem) else { continue }
             for hm in bag where hm.from.position == point && !seen.contains(hm.to.position) {
-                guard isPlayable(hm, arrivedAt: arrived) else { continue }
                 seen.insert(hm.to.position)
-                result.append(hm)
+                let next = advance(states, by: hm, on: b)
+                if !next.isEmpty { result.append((hm, next)) }
             }
         }
         return result
