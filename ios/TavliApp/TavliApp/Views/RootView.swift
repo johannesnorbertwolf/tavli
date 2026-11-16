@@ -563,6 +563,10 @@ private struct ModePickerView: View {
         isFullTavli ? fullTavliPreview.isAIAvailable() : AppSettings.aiAvailable(variant)
     }
 
+    /// Minimum gap before a row's trailing chevron — tighter on a phone (#109) so a
+    /// long DE/NL label keeps its room instead of truncating.
+    private var rowSpacerMin: CGFloat { ChromeType.isCompact ? 8 : 24 }
+
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
@@ -570,6 +574,7 @@ private struct ModePickerView: View {
                 VStack(spacing: 24) {
                     Text("Tavli")
                         .font(ChromeType.wordmark)
+                        .compactSingleLine()
                         .foregroundStyle(CaramelPalette.frameText)
 
                     variantCard
@@ -588,7 +593,7 @@ private struct ModePickerView: View {
                             .frame(maxWidth: 440)
                     }
                 }
-                .padding(40)
+                .compactPadding(40, compact: 16)
                 .frame(maxWidth: .infinity)
             }
 
@@ -635,8 +640,11 @@ private struct ModePickerView: View {
         Button(action: onTwoPlayer) {
             HStack(spacing: 10) {
                 Image(systemName: "person.2")
-                Text("Two players on this iPad")
-                Spacer(minLength: 24)
+                // Names the device it runs on (#109).
+                Text(UIDevice.current.userInterfaceIdiom == .phone
+                     ? String(localized: "Two players on this iPhone")
+                     : String(localized: "Two players on this iPad"))
+                Spacer(minLength: rowSpacerMin)
                 Image(systemName: "chevron.right")
                     .foregroundStyle(ChromeKit.inkSecondary)
             }
@@ -662,7 +670,7 @@ private struct ModePickerView: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: 392)
-            .chromeCard(padding: 24)
+            .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         } else if let fixed = preferredColor.engineColor {
             Button { onSelect(fixed) } label: {
                 HStack(spacing: 10) {
@@ -686,7 +694,7 @@ private struct ModePickerView: View {
                 }
             }
             .frame(maxWidth: 392)
-            .chromeCard(padding: 24)
+            .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         }
     }
 
@@ -710,7 +718,7 @@ private struct ModePickerView: View {
             HStack(spacing: 10) {
                 Image(systemName: "person.2.fill")
                 Text("Play Online")
-                Spacer(minLength: 24)
+                Spacer(minLength: rowSpacerMin)
                 Image(systemName: "chevron.right")
                     .foregroundStyle(ChromeKit.inkSecondary)
             }
@@ -727,7 +735,7 @@ private struct ModePickerView: View {
             HStack(spacing: 10) {
                 Image(systemName: "chart.bar.fill")
                 Text("My Record")
-                Spacer(minLength: 24)
+                Spacer(minLength: rowSpacerMin)
                 Text(recordSubtitle)
                     .foregroundStyle(ChromeKit.inkSecondary)
                 Image(systemName: "chevron.right")
@@ -743,21 +751,24 @@ private struct ModePickerView: View {
     private var statsSheet: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            VStack(spacing: 16) {
-                HStack {
-                    Text("My Record")
-                        .font(ChromeType.title3.bold())
-                        .foregroundStyle(ChromeTheme.ink)
-                    Spacer()
-                    Button("Done") { showStats = false }
-                        .buttonStyle(ChromeButton(role: .secondary))
+            // A phone in landscape (#109) can't fit the 480 pt card; scroll there.
+            FitOrScroll(enabled: ChromeType.isCompact) {
+                VStack(spacing: 16) {
+                    HStack {
+                        Text("My Record")
+                            .font(ChromeType.title3.bold())
+                            .foregroundStyle(ChromeTheme.ink)
+                        Spacer()
+                        Button("Done") { showStats = false }
+                            .buttonStyle(ChromeButton(role: .secondary))
+                    }
+                    .padding(.horizontal, ChromeType.isCompact ? 16 : 24)
+                    .padding(.top, 16)
+                    Spacer(minLength: 0)
+                    StatsPanelView(stats: stats)
+                        .padding(.horizontal, ChromeType.isCompact ? 16 : 24)
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-                Spacer(minLength: 0)
-                StatsPanelView(stats: stats)
-                    .padding(.horizontal, 24)
-                Spacer(minLength: 0)
             }
         }
         .presentationDetents([.height(480)])

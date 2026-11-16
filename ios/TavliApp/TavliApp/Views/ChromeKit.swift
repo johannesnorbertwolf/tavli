@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 
 /// #101 — the chrome's shared visual language: flat tinted surfaces, soft
 /// shadows, one button system, one card style. Everything outside the board
@@ -63,8 +64,7 @@ struct ChromeButton: ButtonStyle {
             .font(ChromeType.callout.bold())
             .lineLimit(1)
             .frame(maxWidth: fullWidth ? .infinity : nil)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)          // ≥ 44 pt tall with 19 pt text
+            .modifier(ChromeButtonPadding())
             .background(fill(pressed: configuration.isPressed))
             .foregroundStyle(label)
             .cornerRadius(ChromeKit.buttonRadius)
@@ -93,6 +93,123 @@ struct ChromeButton: ButtonStyle {
         case .destructive:  return ChromeTheme.surrenderTint
         case .quiet:        return ChromeKit.inkSecondary
         case .scrim:        return .white
+        }
+    }
+}
+
+/// The button's insets: 18 × 12 (≥ 44 pt tall with 19 pt text) on iPad; on a compact
+/// screen (#109) a little tighter horizontally, with an explicit 44 pt floor because
+/// the scaled-down text alone no longer guarantees it.
+private struct ChromeButtonPadding: ViewModifier {
+    func body(content: Content) -> some View {
+        if ChromeType.isCompact {
+            content
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+        } else {
+            content
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+        }
+    }
+}
+
+extension View {
+    /// The `.secondary` `ChromeButton` look for labels that aren't `Button`s (a `Menu`
+    /// label, #109), so a menu reads as one more button in the bar.
+    func chromeSecondaryButtonSurface() -> some View {
+        self
+            .font(ChromeType.callout.bold())
+            .lineLimit(1)
+            .modifier(ChromeButtonPadding())
+            .background(ChromeTheme.undoTint.opacity(0.16))
+            .foregroundStyle(ChromeTheme.ink)
+            .cornerRadius(ChromeKit.buttonRadius)
+            .contentShape(RoundedRectangle(cornerRadius: ChromeKit.buttonRadius))
+    }
+
+    /// Compact screens only (#109): keep a large display line (wordmark, win title)
+    /// on one line by letting it shrink, instead of clipping a long DE/NL string.
+    @ViewBuilder
+    func compactSingleLine(minimumScale: CGFloat = 0.5) -> some View {
+        if ChromeType.isCompact {
+            self.lineLimit(1).minimumScaleFactor(minimumScale)
+        } else {
+            self
+        }
+    }
+
+    /// Compact screens only (#109): the given padding instead of the iPad one.
+    @ViewBuilder
+    func compactPadding(_ regular: CGFloat, compact: CGFloat) -> some View {
+        self.padding(ChromeType.isCompact ? compact : regular)
+    }
+}
+
+// ── Compact layout (#109) ───────────────────────────────────────────────────
+
+extension ChromeLayout {
+    /// The layout for a `GeometryReader`: its size plus its safe-area insets is the
+    /// container (the reader itself sits inside the safe area).
+    init(_ proxy: GeometryProxy) {
+        let i = proxy.safeAreaInsets
+        self.init(container: CGSize(width: proxy.size.width + i.leading + i.trailing,
+                                    height: proxy.size.height + i.top + i.bottom),
+                  safeArea: SafeAreaInsets(top: i.top, leading: i.leading,
+                                           bottom: i.bottom, trailing: i.trailing))
+    }
+}
+
+private struct ChromeModeKey: EnvironmentKey {
+    static let defaultValue: ChromeMode = .regular
+}
+
+extension EnvironmentValues {
+    /// The chrome arrangement of the enclosing board screen (#109), so overlays and
+    /// sub-views can tighten up without measuring again. `.regular` unless a screen
+    /// sets it from its `ChromeLayout`.
+    var chromeMode: ChromeMode {
+        get { self[ChromeModeKey.self] }
+        set { self[ChromeModeKey.self] = newValue }
+    }
+}
+
+/// A row that falls back to a column when it doesn't fit the width — on compact
+/// screens only (#109); on iPad it is exactly an `HStack`.
+struct AdaptiveRow<Content: View>: View {
+    var spacing: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if ChromeType.isCompact {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: spacing) { content }
+                VStack(spacing: spacing) { content }
+            }
+        } else {
+            HStack(spacing: spacing) { content }
+        }
+    }
+}
+
+/// Shows `content` as is when it fits the height, else inside a vertical
+/// `ScrollView` (#109) — the safety net for tall stacks (win overlays, the landscape
+/// rail) on a short phone screen. A plain pass-through when `enabled` is false.
+struct FitOrScroll<Content: View>: View {
+    var enabled: Bool = true
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if enabled {
+            ViewThatFits(in: .vertical) {
+                content
+                ScrollView(.vertical, showsIndicators: false) {
+                    content.frame(maxWidth: .infinity)
+                }
+            }
+        } else {
+            content
         }
     }
 }

@@ -303,7 +303,8 @@ struct ManualDiceControl: View {
 
     private var enabled: Bool { session.phase == .awaitingRoll }
 
-    private let faceSize: CGFloat = 36
+    /// Die edge — 36 on iPad; the compact chrome (#109) passes 32.
+    var faceSize: CGFloat = 36
     private let spacing: CGFloat = 6
 
     var body: some View {

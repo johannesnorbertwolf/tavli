@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
@@ -43,10 +44,17 @@ struct DrillView: View {
     private var flipped: Bool { humanColor == .black }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            content
+        GeometryReader { proxy in
+            // iPhone landscape (#109): the header moves into the card's rail so the
+            // board keeps the full safe height.
+            let railHeader = ChromeLayout(proxy).mode == .compactLandscape && isDrilling
+            VStack(spacing: 0) {
+                if !railHeader {
+                    header
+                    Divider()
+                }
+                content(railHeader: railHeader)
+            }
         }
         .background(SColor(hex: 0xece6dc))
         .task {
@@ -55,7 +63,18 @@ struct DrillView: View {
         }
     }
 
+    private var isDrilling: Bool {
+        if case .drilling = model.phase { return true }
+        return false
+    }
+
     private var header: some View {
+        headerRow
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+    }
+
+    private var headerRow: some View {
         HStack {
             Text("Drill")
                 .font(.title3.bold())
@@ -71,12 +90,10 @@ struct DrillView: View {
                 .foregroundStyle(ChromeTheme.ink)
                 .buttonStyle(.plain)
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
     }
 
     @ViewBuilder
-    private var content: some View {
+    private func content(railHeader: Bool) -> some View {
         switch model.phase {
         case .analyzing:
             centered {
@@ -98,7 +115,8 @@ struct DrillView: View {
                           solved: model.solvedThisCard,
                           onTryAgain: { model.tryAgain() },
                           onShowSolution: { model.revealSolution() },
-                          onAdvance: { model.advance() })
+                          onAdvance: { model.advance() },
+                          railHeader: railHeader ? AnyView(headerRow) : nil)
                 .id(model.index)   // fresh card (and board) per blunder
             }
         case .complete(let s):
@@ -341,11 +359,57 @@ private struct DrillCard: View {
     let onTryAgain: () -> Void
     let onShowSolution: () -> Void
     let onAdvance: () -> Void
+    /// The drill header, when the screen moved it into this card's rail (iPhone
+    /// landscape, #109).
+    var railHeader: AnyView? = nil
 
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
-            if landscape {
+            let layout = ChromeLayout(proxy)
+            if layout.mode == .compactLandscape {
+                // Board at full safe height; header, prompt, feedback, scores and
+                // the actions in the rail.
+                HStack(spacing: ChromeLayout.compactRailGap) {
+                    board
+                        .frame(width: layout.boardSide, height: layout.boardSide)
+                    FitOrScroll {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let railHeader { railHeader }
+                            Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
+                                .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                            feedbackLine
+                            movesPanel
+                            Spacer(minLength: 0)
+                            controls
+                        }
+                        .padding(.vertical, 8)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    }
+                    .frame(width: layout.panelRect.width)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            } else if layout.mode == .compactPortrait {
+                // Board edge-to-edge; actions directly under the feedback.
+                VStack(spacing: 10) {
+                    Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
+                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        .padding(.horizontal, 12)
+                    board
+                        .frame(width: layout.boardSide, height: layout.boardSide)
+                    FitOrScroll {
+                        VStack(spacing: 10) {
+                            feedbackLine
+                            movesPanel
+                            controls
+                        }
+                        .padding(.horizontal, 12)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else if landscape {
                 HStack(spacing: 0) {
                     board
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

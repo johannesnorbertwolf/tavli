@@ -485,7 +485,52 @@ never drops below 0.72 ink opacity.
   (the single most important action on a surface — e.g. Done, Play Again); `.secondary`
   flat caramel tint + ink (everyday actions); `.destructive` flat brick tint + brick label
   (Resign); `.quiet` no fill + secondary ink; `.scrim` white tint + white label (secondary
-  actions on the dark game-over scrim). Pressed states deepen the fill.
+  actions on the dark game-over scrim). Pressed states deepen the fill. On a compact
+  screen (#109) the insets drop to 14 × 10 with an explicit 44 pt minimum height.
+
+### Compact (iPhone) layout — #109
+
+The iPhone/iPad split lives in one pure helper, **`ChromeLayout`** (package
+`BoardGeometry`, unit-tested): from a container size + safe-area insets it returns the
+`mode` (`.regular` / `.compactPortrait` / `.compactLandscape`), the square `boardRect`,
+the chrome `panelRect`, `boardPadding` and `fontScale`. A container whose shorter side is
+< 500 pt is compact (every iPhone, both orientations; never a full-screen iPad); `.regular`
+reproduces the pre-#109 iPad numbers (8 pt board padding, 280 pt panel + 12 pt inset), so
+**every iPhone change is a separate `if layout.isCompact` branch** and the iPad code paths
+are untouched. Compact: portrait — board = full safe width, bottom of the safe area;
+landscape — board = full safe height, leading safe edge, chrome in a rail (rail ≥ 220 pt).
+
+App-side helpers in `ChromeKit.swift`:
+- `ChromeLayout(proxy)` — builds the layout from a `GeometryReader` (size + insets).
+- `\.chromeMode` environment value — set by `GameView` so overlays tighten up.
+- `ChromeType.scale` / `ChromeType.isCompact` — set once in `App.init` from the screen
+  (`ChromeLayout.fontScale(forScreen:)`: 1 on iPad, 0.86 on a phone ≈ −2…3 pt). Use
+  `ChromeType.isCompact` for paddings on scrolling pages (start screen, lobby, settings,
+  Full Tavli screens: 40 → 16 via `.compactPadding(_:compact:)`).
+- `AdaptiveRow` (row → column when it doesn't fit; compact only), `FitOrScroll` (content
+  as is, or in a `ScrollView` when too tall), `.compactSingleLine()` (wordmarks shrink
+  instead of clipping DE/NL), `.chromeSecondaryButtonSurface()` (a `Menu` label that looks
+  like a secondary button).
+
+**No TavTav mascot on compact layouts** (owner's call — it goes in a future rebrand and
+only costs space on a phone): no logo tile in the game / opening-roll chrome, no avatar
+in the win / match / Full Tavli overlays or the Full Tavli result screen. iPad unchanged.
+
+Per screen (compact only):
+- **GameView** — portrait: icon nav bar (Back · Settings · ⋯ menu with Save/Resign or
+  Leave, Move history, debug pane; compact borne-off chips trailing), free space, then
+  turn status + one-line scoreboard + win bar + manual dice (32 pt faces) + Undo/Done
+  right above the board, all in `FitOrScroll`. Landscape: the same pieces in the rail
+  beside a full-height board. The debug pane floats over the board (by design); its
+  ladybug closes it. Win / match / Full Tavli leg overlays: spacing 14, secondary buttons
+  via `AdaptiveRow`, `FitOrScroll`.
+- **OpeningRollView** — same arrangement (Back, status, manual choice, board).
+- **GameReviewView** — portrait: Close + "Drill blunders" bar, edge-to-edge board,
+  Prev/Next pinned under it, move detail + chart in a scrollable card; landscape: board
+  + rail (bar, scrolling detail, Prev/Next). The panel is split into `panelInfo` /
+  `navRow` / `drillButton`; the regular `panel` recomposes them unchanged.
+- **DrillView** — portrait: board edge-to-edge between the prompt and the feedback/
+  actions; landscape: the header moves into the card's rail (`railHeader`).
 
 ## DebugOverlay.swift (T11 — debug eval overlay)
 
@@ -709,5 +754,6 @@ from the mode picker's "My Record" sheet.
 
 ## App.swift
 
-`@main`. Minimal — `WindowGroup { RootView() }`. (Earlier the T7 sign-off bootstrap
+`@main`. Minimal — `WindowGroup { RootView() }`; `init` sets `ChromeType.scale` from the
+screen size (#109, compact type on a phone). (Earlier the T7 sign-off bootstrap
 hosted `PlayableBoardView` on a fixed scenario here; T10 moved the entry to `RootView`.)

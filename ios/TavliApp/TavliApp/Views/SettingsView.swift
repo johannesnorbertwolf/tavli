@@ -80,7 +80,7 @@ struct SettingsView: View {
                                   caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery.")
                     }
                 }
-                .padding(28)
+                .compactPadding(28, compact: 16)
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
             }

@@ -30,10 +30,15 @@ struct OpeningRollView: View {
 
     var body: some View {
         GeometryReader { screen in
+            let layout = ChromeLayout(screen)
             ZStack {
                 SColor(hex: 0xece6dc).ignoresSafeArea()
 
-                if screen.size.width >= screen.size.height {
+                if layout.mode == .compactLandscape {
+                    compactLandscapeLayout(layout)
+                } else if layout.mode == .compactPortrait {
+                    compactPortraitLayout(layout)
+                } else if screen.size.width >= screen.size.height {
                     landscapeLayout
                 } else {
                     portraitLayout
@@ -80,6 +85,51 @@ struct OpeningRollView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.vertical, 12)
+    }
+
+    // iPhone (#109): the same pieces as `GameView`'s compact layouts — the board
+    // edge-to-edge (full safe width in portrait, full safe height in landscape) and
+    // the chrome above it / in a rail beside it. No mascot on iPhone (owner's call).
+    private func compactPortraitLayout(_ layout: ChromeLayout) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                backButton
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
+            // No mascot on iPhone (#109): the slack pools above the status.
+            Spacer(minLength: 0)
+            statusBlock
+                .padding(.horizontal, 12)
+            manualRow
+                .padding(.horizontal, 12)
+            boardArea
+                .frame(width: layout.boardSide, height: layout.boardSide)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func compactLandscapeLayout(_ layout: ChromeLayout) -> some View {
+        HStack(spacing: ChromeLayout.compactRailGap) {
+            boardArea
+                .frame(width: layout.boardSide, height: layout.boardSide)
+            VStack(spacing: 10) {
+                HStack {
+                    backButton
+                    Spacer(minLength: 0)
+                }
+                statusBlock
+                    .frame(maxWidth: .infinity)
+                    .chromeCard(padding: 10)
+                manualRow
+            }
+            .padding(.vertical, 8)
+            .frame(width: layout.panelRect.width)
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private var backButton: some View {
@@ -180,7 +230,7 @@ struct OpeningRollView: View {
                 Text("Or choose manually:")
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
-                HStack(spacing: 12) {
+                AdaptiveRow(spacing: 12) {
                     Button("You start") { startGame(humanColor) }
                         .buttonStyle(ChromeButton(role: .secondary))
                     Button("TavTav starts") { startGame(humanColor.opponent) }

@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Hide debug pane" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug-Ansicht ausblenden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debugpaneel verbergen"
+          }
+        }
+      }
+    },
     "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move." : {
       "localizations" : {
         "de" : {
@@ -17,6 +33,22 @@
         }
       }
     },
+    "More" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mehr"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Meer"
+          }
+        }
+      }
+    },
     "Relaxed" : {
       "localizations" : {
         "de" : {
@@ -29,6 +61,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ontspannen"
+          }
+        }
+      }
+    },
+    "Show debug pane" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debug-Ansicht zeigen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Debugpaneel tonen"
           }
         }
       }
@@ -62,6 +110,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : " · %lld overgeslagen"
+          }
+        }
+      }
+    },
+    "Two players on this iPhone" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwei Spieler auf diesem iPhone"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Twee spelers op deze iPhone"
           }
         }
       }

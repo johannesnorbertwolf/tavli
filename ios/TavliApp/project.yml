@@ -45,7 +45,7 @@ targets:
         product: BoardGeometry
     settings:
       base:
-        TARGETED_DEVICE_FAMILY: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliApp
         INFOPLIST_FILE: TavliApp/Info.plist
@@ -69,7 +69,7 @@ targets:
         product: BoardGeometry
     settings:
       base:
-        TARGETED_DEVICE_FAMILY: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
         PRODUCT_BUNDLE_IDENTIFIER: com.plakoto.TavliAppUITests
         GENERATE_INFOPLIST_FILE: "YES"
         SWIFT_VERSION: "5.9"

@@ -85,21 +85,25 @@ private struct OnlineLobbyView: View {
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            VStack(spacing: 24) {
-                header
-                Text("Play Online")
-                    .font(ChromeType.wordmark)
-                    .foregroundStyle(CaramelPalette.frameText)
+            // Scrolls on a phone (#109) when the lobby outgrows a landscape screen.
+            FitOrScroll(enabled: ChromeType.isCompact) {
+                VStack(spacing: 24) {
+                    header
+                    Text("Play Online")
+                        .font(ChromeType.wordmark)
+                        .compactSingleLine()
+                        .foregroundStyle(CaramelPalette.frameText)
 
-                if coordinator.isAuthenticated {
-                    authenticatedBody
-                } else {
-                    signInPrompt
+                    if coordinator.isAuthenticated {
+                        authenticatedBody
+                    } else {
+                        signInPrompt
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .compactPadding(40, compact: 16)
+                .frame(maxWidth: 520)
             }
-            .padding(40)
-            .frame(maxWidth: 520)
         }
     }
 
@@ -187,7 +191,7 @@ private struct OnlineLobbyView: View {
             Button("Try again") { coordinator.authenticate() }
                 .buttonStyle(ChromeButton(role: .secondary))
         }
-        .chromeCard(padding: 24)
+        .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         .frame(maxWidth: 392)
     }
 }
