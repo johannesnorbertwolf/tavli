@@ -43,6 +43,29 @@ so the game flow is validated without a simulator.
   highlight, and tapping a stop lets the same checker continue; the final board position is
   identical to the merged half-move. With this, non-Pasch single-checker moves run through the same
   bag/chaining machinery as Pasch.
+  **Legal play order (#169).** The bag would accept a legal move's halves in any order, incl.
+  orders no player may play (the engine's canonical order is not always one either: house Plakoto
+  lists `[22→25, 18→19]` for dice 3·1, standard Plakoto sorts its halves). So every play must also
+  pass the variant's `isLegalStep(from:to:color:die:on:)` at the position it is played, for one of
+  the still-unplayed dice (`diceStates`, a set of remaining-dice multisets per built half — a
+  bear-off may be playable by more than one die). Portes/Fevga/standard Plakoto answer it with
+  their own generator's step rule (`isStep`), house Plakoto with the protocol default. Enforced:
+  Portes bar-first; bear-off only once every checker is home (bar included); larger-die bear-off
+  only from the rearmost point; Fevga's first-checker lock. Before this, the builder let a player
+  break each of these in all four variants. Commits are judged on the turn-start position replayed
+  through `built`; far-endpoint chains are simulated on a scratch board. Without dice
+  (`die1 == 0`, tests) only board playability is checked.
+  **Routes (#169).** Portes never merges (a two-dice checker move is two halves in the legal list,
+  since an intermediate hit matters), so the same chaining also offers its far endpoints — but
+  `src→a→dst` and `src→b→dst` may end in different positions. `routeOptions(from:to:)` collects
+  the **shortest** hop chains to `dst` that are prefixes of a surviving move (so the legal list,
+  incl. bar-first and use-max-dice, decides what exists), applies each on a scratch board copy and
+  keeps one chain per distinct resulting position (first in search order). One option → play it;
+  several → the session asks (never auto-resolved). Plakoto/Fevga unmerged routes always end in the
+  same position (a pin made in passing is released), so they keep playing directly; doubles have
+  fixed intermediates, so they never ask. Engine move representation and Python parity untouched.
+  **Gestures.** `commit(halfMoves:)` commits one player gesture's hops together (`commit(halfMove:)`
+  is a one-hop gesture); `lastGesture` / `undoGesture()` take the whole last gesture back.
   `selectableSourcePoints` / `validDestinations(for:)` are the `from`/`to` of the board-aware
   playable-next half-moves across surviving moves; `commit(halfMove:)` keeps the moves whose
   remaining bag contains the half-move, appends it, and returns whether nothing remains (complete);
@@ -112,8 +135,10 @@ so the game flow is validated without a simulator.
   pass) is appended to a private `undoHistory` of `UndoRecord`s — `(mover, move?, dice)` — via
   `recordTurn`, in lockstep with the entry added to `record.plies`. The live `Move` objects let
   `board.undo(move)` reverse board mutations exactly; passes carry `move == nil`.
-  - `undo()` — half-move only (the **within-turn editing primitive**): peels the last committed
-    half-move off `moveBuilder` while a move is being composed; no-op otherwise. `canUndo` is
+  - `undo()` — the **within-turn editing primitive**: peels the last committed **gesture** off
+    `moveBuilder` (`lastGesture`, reversed on the board) while a move is being composed — a single
+    step, or all hops of a Pasch multi-hop / Portes two-dice gesture at once (#169; before #169 a
+    multi-hop gesture was peeled hop by hop); no-op otherwise. `canUndo` is
     true only while `moveBuilder.built` is non-empty.
   - `undoOrStepBack()` / `canUndoOrStepBack` — what the persistent **Undo** button in `ControlsView`
     actually calls. It is `undo()` plus, in **manual-dice mode** (#110), a step back when nothing is

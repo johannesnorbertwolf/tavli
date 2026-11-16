@@ -122,6 +122,13 @@ public struct PortesVariant: GameVariant {
 
     public func makeEncoder(config: GameConfig) -> any BoardEncoding { PortesEncoder() }
 
+    /// One play by the generator's own step rules: while a checker is on the bar only
+    /// entries; bear-off only with every checker home (bar included), a larger die only
+    /// from the rearmost home point.
+    public func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool {
+        PortesMoveGenerator(board: board, color: color).isStep(from: from, to: to, die: die)
+    }
+
     /// Portes never merges a two-dice move into one half.
     public func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] { [] }
 
@@ -228,6 +235,21 @@ struct PortesMoveGenerator {
             moved = true
         }
         if !moved && idx > 0 { record(idx == 1 ? seq[0] : 0) }
+    }
+
+    /// Whether `from → to` (board indices) is one legal play with `die` at this
+    /// position, by the same rules `rec` applies to each step (#169 follow-up).
+    func isStep(from: Int, to: Int, die d: Int) -> Bool {
+        let white = color.isWhite
+        let src = white ? 25 - from : from
+        let dst = to == PortesVariant.offIndex(color) ? 0 : (white ? 25 - to : to)
+        if q[25] > 0 {
+            return src == 25 && dst == 25 - d && q[dst] >= -1
+        }
+        guard src <= 24 else { return false }
+        var outside = 0
+        for r in 7...25 where q[r] > 0 { outside += q[r] }
+        return steps(d, outside, 25).contains { $0.0 == src && max($0.1, 0) == dst }
     }
 
     mutating func moves(_ d1: Int, _ d2: Int) -> [Move] {

@@ -729,6 +729,22 @@
         }
       }
     },
+    "Choose where to land in between" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wähle das Zwischenfeld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kies waar je tussendoor landt"
+          }
+        }
+      }
+    },
     "Close" : {
       "extractionState" : "stale",
       "localizations" : {

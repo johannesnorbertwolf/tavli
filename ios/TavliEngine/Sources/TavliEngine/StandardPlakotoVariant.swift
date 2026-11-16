@@ -104,6 +104,12 @@ public struct StandardPlakotoVariant: GameVariant {
 
     // ── Merged-half split (exact rules, incl. the larger-die bear-off) ───────
 
+    /// One play by the generator's step rules (open target, bear-off with all home, a
+    /// larger die only from the rearmost occupied home point, own pinned checkers count).
+    public func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool {
+        StandardPlakotoMoveGenerator(board: board, color: color).isStep(from: from, to: to, die: die)
+    }
+
     public func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] {
         var gen = StandardPlakotoMoveGenerator(board: board, color: half.color)
         return gen.intermediatePoints(from: half.from.position, to: half.to.position, die1: die1, die2: die2)
@@ -246,6 +252,15 @@ struct StandardPlakotoMoveGenerator {
         }
         rec(1, outside)
         return found.map { s in Move(s.map { half($0.0, $0.1) }) }
+    }
+
+    /// Whether `from → to` (board indices) is one legal play with `die` here, by the
+    /// same `canStep` rule the generator applies to each step (#169 follow-up).
+    func isStep(from: Int, to: Int, die d: Int) -> Bool {
+        guard (1...n).contains(from) else { return false }
+        let pf = color.isWhite ? from : off - from
+        let pt = color.isWhite ? to : off - to
+        return mov[pf] > 0 && canStep(pf, d, outside) && min(pf + d, off) == pt
     }
 
     /// Midpoints (board indices, `die1`/`die2` order) through which the merged half

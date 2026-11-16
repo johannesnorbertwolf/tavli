@@ -63,6 +63,20 @@ public struct AIAnimatedHop: Equatable, Sendable {
     public let duration: TimeInterval
 }
 
+/// A pending choice between routes of one checker that end in different positions
+/// (#169, Portes). Keyed by the route's first intermediate point: unique per route,
+/// since only two-dice (non-double) routes can be ambiguous.
+public struct RouteChoice: Equatable {
+    /// The checker's source position and the far destination the player chose.
+    public let source: Int
+    public let destination: Int
+    /// First intermediate point -> the route's ordered hops.
+    public let routes: [Int: [HalfMove]]
+
+    /// The points the player may tap to pick a route.
+    public var intermediatePoints: Set<Int> { Set(routes.keys) }
+}
+
 /// Headless, UI-agnostic controller for a single game.
 ///
 /// Owns the `Game`, drives the turn state machine, and exposes observable
@@ -189,6 +203,10 @@ public final class GameSession: ObservableObject {
     @Published public private(set) var validTargets: Set<Int> = []
     /// Points a checker may be picked up from for the next half-move.
     @Published public private(set) var selectableSources: Set<Int> = []
+    /// A pending two-dice route choice (#169), or `nil`. While set, `selectedPoint` is
+    /// its source, `validTargets` is empty, and the view highlights `destination` plus
+    /// the `intermediatePoints`; resolve with `chooseRoute(via:)` / `cancelRouteChoice()`.
+    @Published public private(set) var routeChoice: RouteChoice? = nil
 
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
@@ -347,6 +365,7 @@ public final class GameSession: ObservableObject {
             phase = .picking
             return
         }
+        routeChoice = nil
         selectedPoint = pointIndex
         validTargets = moveBuilder.validDestinations(for: pointIndex)
         phase = .moving
@@ -357,21 +376,61 @@ public final class GameSession: ObservableObject {
     /// single-die hop. Advances to the next half-move, or finishes the turn when
     /// the move is complete (or the only remaining continuation is itself a
     /// complete legal move).
+    ///
+    /// **Route choice (#169).** When the checker can reach `to` by routes that end in
+    /// *different* positions (Portes: hit a blot on the way or not, or hit different
+    /// blots), nothing is played: the session enters a pending `routeChoice` exposing
+    /// the candidate intermediate points, resolved by `chooseRoute(via:)` or aborted by
+    /// `cancelRouteChoice()`. Routes that all end in the same position play directly.
     public func commitHalfMove(from fromIndex: Int, to toIndex: Int) {
         guard phase == .picking || phase == .moving else { return }
+        routeChoice = nil
         guard selectableSources.contains(fromIndex) else { return }
 
-        let hops = moveBuilder.path(from: fromIndex, to: toIndex)
-        guard !hops.isEmpty else { return }
+        let options = moveBuilder.routeOptions(from: fromIndex, to: toIndex)
+        guard let first = options.first else { return }
+        guard options.count == 1 else {
+            var routes: [Int: [HalfMove]] = [:]
+            for hops in options where routes[hops[0].to.position] == nil {
+                routes[hops[0].to.position] = hops
+            }
+            selectedPoint = fromIndex
+            validTargets = []
+            routeChoice = RouteChoice(source: fromIndex, destination: toIndex, routes: routes)
+            phase = .moving
+            return
+        }
+        play(gesture: first)
+    }
 
-        var complete = false
-        for hop in hops {
+    /// Resolve a pending `routeChoice` (#169): `point` is one of its
+    /// `intermediatePoints` -> play that route as one gesture; anything else aborts the
+    /// choice with nothing played (the board and the built move are untouched).
+    public func chooseRoute(via point: Int) {
+        guard let choice = routeChoice else { return }
+        guard let hops = choice.routes[point] else { cancelRouteChoice(); return }
+        routeChoice = nil
+        play(gesture: hops)
+    }
+
+    /// Abort a pending `routeChoice` (#169) with nothing played; back to `.picking`.
+    public func cancelRouteChoice() {
+        guard routeChoice != nil else { return }
+        clearSelection()
+        phase = .picking
+    }
+
+    /// Apply one gesture's hops to the board and commit them to the builder as a
+    /// single gesture (so `undo` takes them back together).
+    private func play(gesture hops: [HalfMove]) {
+        let applied = hops.map { hop -> HalfMove in
             let hm = HalfMove(from: game.board.points[hop.from.position],
                               to: game.board.points[hop.to.position],
                               color: game.currentPlayer)
             game.variant.applyHalfMove(hm, on: game.board)
-            complete = moveBuilder.commit(halfMove: hm)
+            return hm
         }
+        let complete = moveBuilder.commit(halfMoves: applied)
         clearSelection()
 
         if complete || moveBuilder.canFinishNow {
@@ -381,13 +440,16 @@ public final class GameSession: ObservableObject {
         }
     }
 
-    /// Undo the last committed half-move within the current turn (the within-turn
-    /// editing primitive). No-op when nothing has been built yet this turn.
+    /// Undo the last committed **gesture** within the current turn (the within-turn
+    /// editing primitive): a single step, or every hop of a multi-hop / two-dice
+    /// gesture at once (#169). No-op when nothing has been built yet this turn.
     /// For stepping back a whole decision see `undoLastDecision()`.
     public func undo() {
-        guard isUndoablePhase, let last = moveBuilder.built.last else { return }
-        game.variant.undoHalfMove(last, on: game.board)
-        moveBuilder.undo()
+        guard isUndoablePhase else { return }
+        let gesture = moveBuilder.lastGesture
+        guard !gesture.isEmpty else { return }
+        for hm in gesture.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
+        moveBuilder.undoGesture()
         clearSelection()
         refreshSources()
     }
@@ -599,6 +661,7 @@ public final class GameSession: ObservableObject {
     private func clearSelection() {
         selectedPoint = nil
         validTargets = []
+        routeChoice = nil
     }
 
     /// Advance the turn (or end the game). Call `recordPly` first so the mover

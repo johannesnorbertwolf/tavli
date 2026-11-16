@@ -956,7 +956,10 @@ private struct TurnIndicatorView: View {
         switch session.phase {
         case .awaitingRoll:      return String(localized: "\(name)'s turn")
         case .picking:           return String(localized: "Pick a checker")
-        case .moving:            return String(localized: "Choose destination")
+        case .moving:
+            // Pending two-dice route choice (#169).
+            if session.routeChoice != nil { return String(localized: "Choose where to land in between") }
+            return String(localized: "Choose destination")
         case .aiThinking:        return String(localized: "TavTav thinking…")
         case .animating:         return String(localized: "\(name) moving…")
         case .gameOver(let w?):

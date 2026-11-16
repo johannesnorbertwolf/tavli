@@ -140,7 +140,10 @@ struct PlayableBoardView: View {
 
             // Highlight targets: drag targets (read-only, no session mutation) while
             // dragging; fall back to the session's selection-driven targets otherwise.
+            // A pending route choice (#169) marks the chosen far destination amber and the
+            // candidate intermediate points in the distinct route colour.
             let highlightTargets: Set<Int> = {
+                if let choice = session.routeChoice { return [choice.destination] }
                 guard let drag = liveDrag,
                       session.selectableSources.contains(sourcePosition(drag.sourcePoint)) else {
                     return session.validTargets
@@ -156,6 +159,10 @@ struct PlayableBoardView: View {
                     BoardView(flipped: flipped)
                     TargetHighlightView(targets: highlightTargets, style: highlightStyle,
                                         flipped: flipped)
+                    if let choice = session.routeChoice {
+                        TargetHighlightView(targets: choice.intermediatePoints, style: highlightStyle,
+                                            flipped: flipped, tint: CaramelPalette.hlRoute)
+                    }
                     CheckersView(stacks: displayStacks, flipped: flipped)
                     SourceRingView(selectedPoint: ringPoint, stacks: displayStacks,
                                    flipped: flipped)
@@ -248,12 +255,18 @@ struct PlayableBoardView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
             .updating($liveDrag) { value, state, _ in
                 let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
-                guard moved,
+                // No drag while a route choice (#169) is pending: the next touch picks
+                // an intermediate point or cancels.
+                guard moved, session.routeChoice == nil,
                       let src = geo.hitTest(value.startLocation, candidates: sourceSlots)
                 else { return }
                 state = LiveDrag(sourcePoint: src, location: value.location)
             }
             .onEnded { value in
+                if session.routeChoice != nil {
+                    handleTap(value.location, geo: geo)
+                    return
+                }
                 let moved = hypot(value.translation.width, value.translation.height) > dragThreshold
                 if moved,
                    let src = geo.hitTest(value.startLocation, candidates: sourceSlots) {
@@ -298,6 +311,12 @@ struct PlayableBoardView: View {
         // Display slots 0…27 (incl. the bar, #143). Targets are points or trays,
         // identical in both spaces; a source tap maps a bar slot to its engine end.
         let tapped = geo.hitTest(location, candidates: Array(0..<BoardLayout.slotCount)) ?? -1
+        // Pending route choice (#169): a candidate intermediate point plays that route;
+        // any other tap cancels with nothing played.
+        if session.routeChoice != nil {
+            session.chooseRoute(via: tapped)
+            return
+        }
         if let sel = session.selectedPoint, session.validTargets.contains(tapped) {
             session.commitHalfMove(from: sel, to: tapped)
         } else {
@@ -316,6 +335,9 @@ struct TargetHighlightView: View {
     let targets: Set<Int>
     let style: HighlightStyle
     var flipped: Bool = false
+    /// Overrides the amber marking (#169: `CaramelPalette.hlRoute` for the
+    /// intermediate points of a pending route choice). `nil` = the standard colours.
+    var tint: SwiftUI.Color? = nil
 
     var body: some View {
         Canvas { context, size in
@@ -343,10 +365,10 @@ struct TargetHighlightView: View {
         tri.closeSubpath()
         switch style {
         case .frame:
-            context.stroke(tri, with: .color(CaramelPalette.hl),
+            context.stroke(tri, with: .color(tint ?? CaramelPalette.hl),
                            style: StrokeStyle(lineWidth: 5 * s, lineJoin: .round))
         case .fill:
-            context.fill(tri, with: .color(CaramelPalette.hlFill))
+            context.fill(tri, with: .color(tint ?? CaramelPalette.hlFill))
             context.stroke(tri, with: .color(CaramelPalette.triangleStroke),
                            style: StrokeStyle(lineWidth: 2.6 * s, lineJoin: .round))
         }
@@ -361,9 +383,9 @@ struct TargetHighlightView: View {
         let box = Path(roundedRect: tray, cornerRadius: 8 * s)
         switch style {
         case .frame:
-            context.stroke(box, with: .color(CaramelPalette.hl), lineWidth: 5 * s)
+            context.stroke(box, with: .color(tint ?? CaramelPalette.hl), lineWidth: 5 * s)
         case .fill:
-            context.fill(box, with: .color(CaramelPalette.hlFill))
+            context.fill(box, with: .color(tint ?? CaramelPalette.hlFill))
             context.stroke(box, with: .color(CaramelPalette.hlEdge), lineWidth: 2 * s)
         }
     }

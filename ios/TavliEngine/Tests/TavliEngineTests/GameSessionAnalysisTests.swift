@@ -36,7 +36,7 @@ final class GameSessionAnalysisTests: XCTestCase {
         while s.phase == .picking || s.phase == .moving {
             let idx = s.moveBuilder.built.count
             guard idx < chosen.halfMoves.count else { break }
-            let h = chosen.halfMoves[idx]
+            guard let h = nextOfferedHalf(s.moveBuilder, of: chosen) else { XCTFail("no legal play order for \(chosen)"); break }
             s.selectPoint(h.from.position)
             s.commitHalfMove(from: h.from.position, to: h.to.position)
         }

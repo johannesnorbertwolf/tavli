@@ -466,7 +466,9 @@ private struct DrillCard: View {
     private var feedbackLine: some View {
         switch feedback {
         case .none:
-            Text("Make your move on the board.")
+            // A pending two-dice route choice (#169) asks for the in-between point.
+            Text(session.routeChoice != nil ? LocalizedStringKey("Choose where to land in between")
+                                            : LocalizedStringKey("Make your move on the board."))
                 .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.55))
         case .checking:
             HStack(spacing: 8) {
