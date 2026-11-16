@@ -26,7 +26,7 @@ struct StatsPanelView: View {
             }
         }
         .frame(maxWidth: 352)
-        .chromeCard(padding: 24)
+        .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         .accessibilityIdentifier("statsPanel")
     }
 

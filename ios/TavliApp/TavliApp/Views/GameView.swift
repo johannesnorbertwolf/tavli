@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
@@ -205,10 +206,19 @@ struct GameView: View {
     var body: some View {
         GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
+            let layout = ChromeLayout(proxy)
             ZStack {
                 SColor(hex: 0xece6dc).ignoresSafeArea()
 
-                if landscape {
+                if layout.mode == .compactLandscape {
+                    // iPhone landscape (#109): full-safe-height board on the leading
+                    // edge, all chrome in a rail beside it.
+                    compactLandscapeLayout(layout)
+                } else if layout.mode == .compactPortrait {
+                    // iPhone portrait (#109): full-safe-width board on the bottom,
+                    // compact chrome stacked above it.
+                    compactPortraitLayout(layout)
+                } else if landscape {
                     // Board bound to the LEADING edge, filling the height; the chrome
                     // column takes a fixed strip on the trailing edge. The board owns
                     // the leftover width via `frame(maxWidth:)` (flanking it with
@@ -345,6 +355,7 @@ struct GameView: View {
                                    mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
                 }
             }
+            .environment(\.chromeMode, layout.mode)
             .sheet(isPresented: $showHistory) {
                 HistoryView(session: session)
                     .presentationDetents([.medium, .large])
@@ -591,20 +602,219 @@ struct GameView: View {
             Spacer(minLength: 16)
         }
     }
+
+    // MARK: - Compact (iPhone, #109)
+
+    /// The board at exactly the side `ChromeLayout` computed — edge-to-edge within
+    /// the safe area, no padding.
+    private func compactBoard(_ layout: ChromeLayout) -> some View {
+        PlayableBoardView(session: session, flipped: flipped,
+                          manualDiceEntry: diceMode == .manual,
+                          interactive: boardInteractive)
+            .frame(width: layout.boardSide, height: layout.boardSide)
+    }
+
+    /// Portrait: one icon bar on top (Back · Settings · ⋯ menu, borne-off counts
+    /// trailing), the TavTav logo filling whatever height is left, the turn status +
+    /// contextual controls just above the board, and the board on the safe bottom.
+    /// The controls sit above the board (never under the home indicator), with a gap
+    /// so a near-miss lands on chrome padding, not a point.
+    private func compactPortraitLayout(_ layout: ChromeLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                compactNavBar
+                    .padding(.horizontal, 12)
+                    .padding(.top, 4)
+                // Shrinks to nothing first when the status stack needs the room.
+                TavTavLogo()
+                    .frame(maxWidth: 200, maxHeight: .infinity)
+                    .padding(.vertical, 6)
+                    .allowsHitTesting(false)
+                FitOrScroll {
+                    compactStatusStack
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 10)
+                }
+                .layoutPriority(1)
+                compactBoard(layout)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            compactDebugPane
+                .padding(.top, 56)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    /// Landscape: the board takes the full safe height on the leading edge; every
+    /// control lives in the rail to its right (scrolls only if an unusually tall
+    /// combination — manual dice + win bar + match score — overflows a short phone).
+    private func compactLandscapeLayout(_ layout: ChromeLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: ChromeLayout.compactRailGap) {
+                compactBoard(layout)
+                FitOrScroll {
+                    compactRail
+                }
+                .frame(width: layout.panelRect.width)
+                .frame(maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+
+            compactDebugPane
+                .padding(8)
+        }
+    }
+
+    /// Navigation as icons + a "more" menu (Save / Resign or Leave, history, debug),
+    /// borne-off counters trailing. Every target stays ≥ 44 pt.
+    private var compactNavBar: some View {
+        HStack(spacing: 8) {
+            if showsBackButton {
+                BackButton(action: onBack, iconOnly: true)
+            }
+            SettingsButton { showSettings = true }
+            gameMenu
+            Spacer(minLength: 8)
+            BorneOffView(session: session, color: .white, compact: true)
+            BorneOffView(session: session, color: .black, compact: true)
+        }
+    }
+
+    /// Save / Resign (offline) or Leave (online), plus move history and the debug
+    /// pane — the actions the iPad shows as separate buttons.
+    private var gameMenu: some View {
+        Menu {
+            if !session.isTerminal {
+                if let online {
+                    Button(role: .destructive, action: online.onLeave) {
+                        Label("Leave match", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } else {
+                    Button(action: presentSaveDialog) {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
+                    Button(role: .destructive, action: onSurrenderTapped) {
+                        Label("Resign", systemImage: "flag.fill")
+                    }
+                    .disabled(!session.canSurrender)
+                }
+            }
+            Button { showHistory = true } label: {
+                Label("Move history", systemImage: "clock.arrow.circlepath")
+            }
+            Button { showDebugPane.toggle() } label: {
+                Label(showDebugPane ? String(localized: "Hide debug pane")
+                                    : String(localized: "Show debug pane"),
+                      systemImage: "ladybug")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(minWidth: 20, minHeight: 20)
+                .chromeSecondaryButtonSurface()
+        }
+        .accessibilityLabel("More")
+        .accessibilityIdentifier("gameMenu")
+    }
+
+    /// Turn status, score, win bar, manual dice and Undo/Done for portrait.
+    private var compactStatusStack: some View {
+        VStack(spacing: 8) {
+            turnStatus
+            compactScoreboard
+            if online == nil && showWinProbability && !session.isTerminal {
+                WinProbabilityBar(session: session)
+            }
+            if manualDiceActive {
+                ManualDiceControl(session: session, faceSize: 32)
+            }
+            if !session.isTerminal && boardInteractive {
+                ControlsView(session: session)
+            }
+        }
+    }
+
+    /// The landscape rail: nav bar, status card (with the score), win bar, then the
+    /// manual dice and Undo/Done anchored at the bottom.
+    private var compactRail: some View {
+        VStack(spacing: 8) {
+            compactNavBar
+            VStack(spacing: 8) {
+                turnStatus
+                compactScoreboard
+            }
+            .frame(maxWidth: .infinity)
+            .chromeCard(padding: 10)
+            if online == nil && showWinProbability && !session.isTerminal {
+                WinProbabilityBar(session: session)
+            }
+            Spacer(minLength: 0)
+            if manualDiceActive {
+                ManualDiceControl(session: session, faceSize: 32)
+            }
+            if !session.isTerminal && boardInteractive {
+                ControlsView(session: session)
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Best-of-three or Full Tavli score as a single line (two when it can't fit).
+    @ViewBuilder
+    private var compactScoreboard: some View {
+        if let match {
+            MatchScoreboardView(state: match.state,
+                                localColor: match.localColor,
+                                opponentName: match.opponentName,
+                                compact: true)
+        }
+        if let fullTavli {
+            FullTavliScoreboardView(state: fullTavli.state,
+                                    legIndex: fullTavliLegIndex,
+                                    compact: true)
+        }
+    }
+
+    /// The debug pane floats over the board on iPhone (by design, #109); its ladybug
+    /// closes it again (the menu opens it).
+    @ViewBuilder
+    private var compactDebugPane: some View {
+        if showDebugPane {
+            VStack(alignment: .leading, spacing: 8) {
+                DebugToggleButton(isOn: $showDebugPane)
+                FitOrScroll {
+                    DebugOverlay(session: session,
+                                 onHistory: { showHistory = true },
+                                 width: 220)
+                }
+                .frame(width: 220)
+            }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
 }
 
 /// Returns to the mode picker.
 private struct BackButton: View {
     let action: () -> Void
+    /// Chevron only (the compact nav bar, #109); the label stays for VoiceOver.
+    var iconOnly = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            if iconOnly {
                 Image(systemName: "chevron.left")
-                Text("Back")
+                    .frame(minWidth: 20)       // ≥ 44 pt wide with the button insets
+            } else {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
             }
         }
         .buttonStyle(ChromeButton(role: .secondary))
+        .accessibilityLabel("Back")
     }
 }
 
@@ -779,6 +989,8 @@ private struct TurnIndicatorView: View {
 private struct BorneOffView: View {
     @ObservedObject var session: GameSession
     let color: TavliEngine.Color
+    /// Disc + count only, tighter padding (the compact nav bar, #109).
+    var compact = false
 
     /// Only this colour's borne-off checkers in its own tray (#143): Portes keeps the
     /// opponent's bar checkers in the same end stack, so a raw stack count would lie.
@@ -788,6 +1000,29 @@ private struct BorneOffView: View {
     }
 
     var body: some View {
+        if compact {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(ChromeTheme.checkerColor(color))
+                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
+                    .frame(width: 18, height: 18)
+                Text("\(count)")
+                    .font(ChromeType.callout.bold())
+                    .monospacedDigit()
+                    .foregroundStyle(ChromeTheme.ink)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 44)
+            .background(ChromeTheme.ink.opacity(0.06))
+            .cornerRadius(ChromeKit.buttonRadius)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: "\(ChromeTheme.displayName(color)) \(count)"))
+        } else {
+            regularBody
+        }
+    }
+
+    private var regularBody: some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(ChromeTheme.checkerColor(color))
@@ -893,14 +1128,25 @@ private struct WinOverlayView: View {
         return tournamentExit == nil ? String(localized: "Play Again") : "Zurück zum Turnier"
     }
 
+    @Environment(\.chromeMode) private var chromeMode
+
     var body: some View {
-        VStack(spacing: 28) {
-            if let mascot {
-                TavTavAvatar(persona: mascot, size: 108)
+        FitOrScroll(enabled: chromeMode.isCompact) {
+            content
+                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
+                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
+            if let mascot, chromeMode != .compactLandscape {
+                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)
                 .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
             if let subtitle {
                 Text(subtitle)
                     .font(ChromeType.headline)
@@ -923,7 +1169,7 @@ private struct WinOverlayView: View {
                 .padding(.vertical, 4)
             }
             .buttonStyle(ChromeButton(role: .primary))
-            HStack(spacing: 14) {
+            AdaptiveRow(spacing: 14) {
                 if showsReview {
                     Button {
                         onReview()
@@ -955,6 +1201,8 @@ private struct MatchScoreboardView: View {
     let state: MatchState
     let localColor: TavliEngine.Color
     let opponentName: String
+    /// One line — "You 1 – 0 TavTav · Game 2 of 3" — when it fits (#109).
+    var compact = false
 
     // The score in points (#143): games for Plakoto, a double game counts 2.
     private var localWins: Int { state.score(for: localColor) }
@@ -962,6 +1210,39 @@ private struct MatchScoreboardView: View {
     private var gameNumber: Int { min(state.currentGameNumber, state.maxGames) }
 
     var body: some View {
+        if compact {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { scoreLine; Text(verbatim: "·"); gameLine }
+                VStack(spacing: 2) { scoreLine; gameLine }
+            }
+            .font(ChromeType.caption)
+            .foregroundStyle(ChromeKit.inkSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(ChromeTheme.ink.opacity(0.06))
+            .cornerRadius(ChromeKit.buttonRadius)
+        } else {
+            regularBody
+        }
+    }
+
+    private var scoreLine: some View {
+        HStack(spacing: 6) {
+            Text("You")
+            Text("\(localWins) – \(opponentWins)")
+                .font(ChromeType.callout.bold().monospacedDigit())
+                .foregroundStyle(ChromeTheme.ink)
+            Text(opponentName)
+        }
+        .lineLimit(1)
+    }
+
+    private var gameLine: some View {
+        Text("Game \(gameNumber) of \(state.maxGames)").lineLimit(1)
+    }
+
+    private var regularBody: some View {
         VStack(spacing: 4) {
             HStack(spacing: 10) {
                 Text("You")
@@ -1047,10 +1328,20 @@ private struct MatchOverlayView: View {
             : String(localized: "Game \(min(state.currentGameNumber, state.maxGames)) of \(state.maxGames)")
     }
 
+    @Environment(\.chromeMode) private var chromeMode
+
     var body: some View {
-        VStack(spacing: 28) {
-            if let mascot {
-                TavTavAvatar(persona: mascot, size: 108)
+        FitOrScroll(enabled: chromeMode.isCompact) {
+            content
+                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
+                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
+            if let mascot, chromeMode != .compactLandscape {
+                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)
@@ -1074,7 +1365,7 @@ private struct MatchOverlayView: View {
 
             primaryButton
 
-            HStack(spacing: 14) {
+            AdaptiveRow(spacing: 14) {
                 if let onReview {
                     Button(action: onReview) {
                         HStack(spacing: 6) {
@@ -1248,24 +1539,38 @@ private struct HistoryRow: View {
 /// the use site (`.bold()`, `.monospaced()`), as before. Sizes are fixed —
 /// Dynamic Type is a deliberate non-goal for now. Internal, like `ChromeTheme`:
 /// the chrome views live in separate files.
+///
+/// **Compact screens (#109):** every size is multiplied by `scale`, which `App`
+/// sets once at launch from the screen size via `ChromeLayout.fontScale(forScreen:)`
+/// — 1 on iPad (sizes unchanged), ~0.86 on a phone (2–3 pt smaller). The screen's
+/// shorter side never changes with rotation, so the scale is constant per process.
 enum ChromeType {
-    static let title2 = Font.system(size: 26)                       // was .title2 (22)
-    static let title3 = Font.system(size: 24)                       // was .title3 (20)
-    static let headline = Font.system(size: 22, weight: .semibold)  // was .headline (17)
-    static let body = Font.system(size: 20)                         // was .body (17)
-    static let callout = Font.system(size: 19)                      // was .callout (16)
-    static let subheadline = Font.system(size: 18)                  // was .subheadline (15)
-    static let caption = Font.system(size: 16)                      // was .caption (12)
-    static let caption2 = Font.system(size: 14)                     // was .caption2 (11)
+    /// Size multiplier — 1 on iPad. Set once at launch (`TavliApp.init`).
+    static var scale: CGFloat = 1
+    /// Whether the chrome runs at the compact (phone) scale.
+    static var isCompact: Bool { scale < 1 }
+
+    private static func pt(_ size: CGFloat) -> CGFloat {
+        scale == 1 ? size : (size * scale).rounded()
+    }
+
+    static var title2: Font { .system(size: pt(26)) }                       // was .title2 (22)
+    static var title3: Font { .system(size: pt(24)) }                       // was .title3 (20)
+    static var headline: Font { .system(size: pt(22), weight: .semibold) }  // was .headline (17)
+    static var body: Font { .system(size: pt(20)) }                         // was .body (17)
+    static var callout: Font { .system(size: pt(19)) }                      // was .callout (16)
+    static var subheadline: Font { .system(size: pt(18)) }                  // was .subheadline (15)
+    static var caption: Font { .system(size: pt(16)) }                      // was .caption (12)
+    static var caption2: Font { .system(size: pt(14)) }                     // was .caption2 (11)
 
     // Display faces with bespoke sizes.
-    static let winTitle = Font.system(size: 54, weight: .bold, design: .serif)
-    static let statsTitle = Font.custom("Cormorant Garamond", size: 38)
-    static let wordmark = Font.custom("Cormorant Garamond", size: 96)
+    static var winTitle: Font { .system(size: pt(54), weight: .bold, design: .serif) }
+    static var statsTitle: Font { .custom("Cormorant Garamond", size: pt(38)) }
+    static var wordmark: Font { .custom("Cormorant Garamond", size: pt(96)) }
 
     // Debug overlay (developer chrome, but it was 9–10 pt — illegible on device).
-    static let debugMono = Font.system(size: 12, design: .monospaced)
-    static let debugLabel = Font.system(size: 13)
+    static var debugMono: Font { .system(size: pt(12), design: .monospaced) }
+    static var debugLabel: Font { .system(size: pt(13)) }
 }
 
 /// Centralizes the engine-`Color` → display mappings (name + checker color) so a

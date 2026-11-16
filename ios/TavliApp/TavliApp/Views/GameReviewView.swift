@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
@@ -55,13 +56,19 @@ struct GameReviewView: View {
     private var scale: EvalScale { EvalScale(variant: variant) }
 
     var body: some View {
-        ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
-            content
-            // Floating Done, top-leading, clear of the board/panel.
-            CloseButton { dismiss() }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .padding(20)
+        GeometryReader { proxy in
+            let compact = ChromeLayout(proxy).isCompact
+            ZStack {
+                SColor(hex: 0xece6dc).ignoresSafeArea()
+                content
+                // Floating Done, top-leading, clear of the board/panel. The compact
+                // review (#109) puts it in its own top bar instead.
+                if !(compact && isReviewing) {
+                    CloseButton { dismiss() }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(compact ? 12 : 20)
+                }
+            }
         }
         .task { await model.run(record: record, agent: agent, humanColor: humanColor) }
         .onChange(of: onlyBlunders) { _, on in
@@ -78,6 +85,11 @@ struct GameReviewView: View {
             DrillView(record: record, precomputed: model.result,
                       agent: agent, humanColor: humanColor)
         }
+    }
+
+    private var isReviewing: Bool {
+        if case .reviewing = model.phase { return true }
+        return false
     }
 
     @ViewBuilder
@@ -125,8 +137,12 @@ struct GameReviewView: View {
         }
         return GeometryReader { proxy in
             let landscape = proxy.size.width >= proxy.size.height
+            let layout = ChromeLayout(proxy)
             Group {
-                if landscape {
+                if layout.isCompact {
+                    compactReviewMode(layout, eval: eval, i: i, count: plies.count,
+                                      finished: finished, onScrub: scrub)
+                } else if landscape {
                     HStack(alignment: .top, spacing: 0) {
                         boardArea(eval)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -170,6 +186,100 @@ struct GameReviewView: View {
 
     private func panel(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
                        onScrub: @escaping (Int) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
+            navRow(i: i)
+            drillButton
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // Navigation: Prev / Next.
+    private func navRow(i: Int) -> some View {
+        let prev = navIndex(from: i, dir: -1)
+        let next = navIndex(from: i, dir: 1)
+        return HStack(spacing: 12) {
+            Button { index = prev } label: { Label("Prev", systemImage: "chevron.left") }
+                .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
+                .disabled(prev == i).opacity(prev == i ? 0.4 : 1)
+            Button { index = next } label: { Label("Next", systemImage: "chevron.right") }
+                .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
+                .disabled(next == i).opacity(next == i ? 0.4 : 1)
+        }
+    }
+
+    // Drilling is offered whenever the game had blunders to drill.
+    @ViewBuilder
+    private var drillButton: some View {
+        if !model.blunderPlies.isEmpty {
+            Button("Drill blunders") { showDrill = true }
+                .buttonStyle(ReviewButton(tint: ChromeTheme.doneTint))
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    // ── Compact (iPhone, #109) ──────────────────────────────────────────────────
+
+    /// Close + Drill on one bar (the drill button sized to its label).
+    private var compactTopBar: some View {
+        HStack(spacing: 12) {
+            CloseButton { dismiss() }
+            Spacer(minLength: 0)
+            if !model.blunderPlies.isEmpty {
+                Button("Drill blunders") { showDrill = true }
+                    .buttonStyle(ReviewButton(tint: ChromeTheme.doneTint))
+                    .fixedSize()
+            }
+        }
+    }
+
+    /// Portrait: Close/Drill bar, the board edge-to-edge, Prev/Next pinned under it,
+    /// and the move detail + chart in a scrollable card below.
+    /// Landscape: the board at full safe height; Close/Drill, the scrollable detail
+    /// and Prev/Next in a rail beside it.
+    @ViewBuilder
+    private func compactReviewMode(_ layout: ChromeLayout, eval: PlyEvaluation, i: Int,
+                                   count: Int, finished: Bool,
+                                   onScrub: @escaping (Int) -> Void) -> some View {
+        if layout.mode == .compactLandscape {
+            HStack(alignment: .top, spacing: ChromeLayout.compactRailGap) {
+                boardArea(eval)
+                    .frame(width: layout.boardSide, height: layout.boardSide)
+                VStack(alignment: .leading, spacing: 10) {
+                    compactTopBar
+                    ScrollView {
+                        panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
+                            .padding(.bottom, 8)
+                    }
+                    navRow(i: i)
+                }
+                .padding(.vertical, 8)
+                .frame(width: layout.panelRect.width)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            VStack(spacing: 8) {
+                compactTopBar
+                    .padding(.horizontal, 12)
+                    .padding(.top, 4)
+                boardArea(eval)
+                    .frame(width: layout.boardSide, height: layout.boardSide)
+                navRow(i: i)
+                    .padding(.horizontal, 12)
+                ScrollView {
+                    panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    /// The move detail: no-blunders note, chart, move counter, played vs best, the
+    /// highlight picker and the step filter.
+    private func panelInfo(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
+                           onScrub: @escaping (Int) -> Void) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
         let isHuman = eval.mover == humanColor
         let mover: LocalizedStringKey = isHuman ? "You" : "TavTav"
@@ -275,24 +385,6 @@ struct GameReviewView: View {
                     Text("My blunders").tag(true)
                 }
                 .pickerStyle(.segmented)
-            }
-
-            // Navigation + drill.
-            let prev = navIndex(from: i, dir: -1)
-            let next = navIndex(from: i, dir: 1)
-            HStack(spacing: 12) {
-                Button { index = prev } label: { Label("Prev", systemImage: "chevron.left") }
-                    .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(prev == i).opacity(prev == i ? 0.4 : 1)
-                Button { index = next } label: { Label("Next", systemImage: "chevron.right") }
-                    .buttonStyle(ReviewButton(tint: ChromeTheme.undoTint))
-                    .disabled(next == i).opacity(next == i ? 0.4 : 1)
-            }
-            // Drilling is offered whenever the game had blunders to drill.
-            if !model.blunderPlies.isEmpty {
-                Button("Drill blunders") { showDrill = true }
-                    .buttonStyle(ReviewButton(tint: ChromeTheme.doneTint))
-                    .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

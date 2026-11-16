@@ -140,6 +140,25 @@ first whose `hitRect` contains `location`, else `nil`. Taps in the bar gap, on
 diamonds, or on non-candidate slots fall through to `nil`. Candidate order is
 respected, so callers control precedence when regions could overlap.
 
+## Screen layout — `ChromeLayout` (#109, `ChromeLayout.swift`)
+
+Where the board and the chrome go on a whole screen (iPhone vs iPad), as pure math so the
+views never branch on device type. `ChromeLayout(container:safeArea:)` takes the window size +
+`SafeAreaInsets` and returns `mode`, `safeRect`, square `boardRect`, chrome `panelRect`,
+`boardPadding`, `fontScale` (all in container coordinates):
+
+- **Compact** iff the container's shorter side `< compactThreshold` (500): every iPhone in
+  both orientations, never a full-screen iPad. Padding 0.
+  - `compactPortrait` (safe width < safe height): side = `min(safeW, safeH − 180)`, centred
+    horizontally, bottom on the safe bottom; panel = the band above.
+  - `compactLandscape`: side = `min(safeH, safeW − 8 gap − 8 inset − 220 min rail)`, on the
+    leading safe edge, centred vertically; panel = the rail to its right (to `safe.maxX − 8`).
+- **Regular** reproduces the pre-#109 iPad layout: landscape side =
+  `min(safeW − 280 − 12 − 16, safeH − 16)` at `(safe.minX + 8, vertically centred)`, panel 280
+  wide inset 12; portrait side = `safeW − 16` at `(safe.minX + 8, safe.maxY − 12 − side)`.
+- `fontScale(forScreen:)` — 1 regular, `compactFontScale` (0.86) compact; per screen, so
+  it doesn't change with rotation.
+
 ## Tests
 
 `Tests/BoardGeometryTests/BoardGeometryTests.swift` (run via `swift test`,
@@ -149,3 +168,6 @@ slot placement, bear-off checker stacking, dice layout (`boardCenter`,
 `diceSize`, the horizontal two-dice row + the four-in-a-row pasch, and that both
 scale with the board), scaling/centered-square fit, hit-testing (playable
 point, bar-gap miss, bear-off), and the bar slots (stacking, dice clearance, hit, flip).
+`ChromeLayoutTests.swift` pins the board rect / mode for 375×812, 812×375, 390×844,
+844×390, 430×932 (board maximal, inside the safe area, clear of the chrome) and that
+iPad sizes reproduce the pre-#109 values.

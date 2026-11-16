@@ -719,8 +719,8 @@ ios/
 │                                GameSessionAITests, GameSessionAnimationTests,
 │                                GameSessionAnalysisTests, GameSavePersistenceTests
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
-├── TavliApp/                    SwiftUI iPad app (xcodegen project; .xcodeproj is generated)
-│   ├── project.yml              xcodegen spec — iPad-only, all orientations, iOS 17, Swift-5 mode,
+├── TavliApp/                    SwiftUI iPad + iPhone app (xcodegen project; .xcodeproj is generated)
+│   ├── project.yml              xcodegen spec — iPhone + iPad (device family 1,2, #109), iOS 17, Swift-5 mode,
 │   │                            local TavliEngine dep, bundles Resources/
 │   ├── setup.sh                 generate model (if missing) → ensure xcodegen → generate project → resolve packages
 │   ├── TavliAppUITests/         XCUITest target — drives the real gesture stack:
@@ -734,7 +734,7 @@ ios/
 │       ├── Views/               SwiftUI views — BoardView (T3), CheckersView (T4),
 │       │                        DiceView (T8), PlayableBoardView (T7), GameView (T9+T10),
 │       │                        DebugOverlay (T11), RootView (T10 — picker + navigation)
-│       ├── Info.plist           iPad, all orientations; UIAppFonts registration
+│       ├── Info.plist           iPad all orientations, iPhone portrait + landscape; UIAppFonts
 │       └── Resources/           bundled into the app:
 │           ├── PlakotoValue.mlpackage   (generated; Xcode compiles → .mlmodelc)
 │           ├── {PlakotoStandard,Fevga,Portes}Value.mlpackage  (optional, #143)

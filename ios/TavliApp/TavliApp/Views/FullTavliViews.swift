@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 private typealias SColor = SwiftUI.Color
@@ -63,10 +64,46 @@ struct FullTavliScoreboardView: View {
     let state: FullTavliSession
     /// The leg on the board (0-based) — the session may already count it once over.
     let legIndex: Int
+    /// One line — "You 1 – 0 TavTav · Game 2 of 3 · Fevga" — when it fits (#109).
+    var compact = false
 
     private var names: FullTavliNames { FullTavliNames(session: state) }
 
     var body: some View {
+        if compact {
+            compactBody
+        } else {
+            regularBody
+        }
+    }
+
+    private var compactBody: some View {
+        let score = HStack(spacing: 6) {
+            Text(names.leftName)
+            Text("\(state.score(for: names.leftColor)) – \(state.score(for: names.leftColor.opponent))")
+                .font(ChromeType.callout.bold().monospacedDigit())
+                .foregroundStyle(ChromeTheme.ink)
+            Text(names.rightName)
+        }
+        .lineLimit(1)
+        let leg = Text(legCaption(index: legIndex, variantID: state.legVariantIDs[legIndex]))
+            .lineLimit(1)
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { score; Text(verbatim: "·"); leg }
+            VStack(spacing: 2) { score; leg }
+        }
+        .font(ChromeType.caption)
+        .foregroundStyle(ChromeKit.inkSecondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(ChromeTheme.ink.opacity(0.06))
+        .cornerRadius(ChromeKit.buttonRadius)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("fullTavliScoreboard")
+    }
+
+    private var regularBody: some View {
         VStack(spacing: 4) {
             Text("Full Tavli")
                 .font(ChromeType.caption2.weight(.bold))
@@ -131,10 +168,20 @@ struct FullTavliLegOverlayView: View {
         return ResultCopy.pointsSubtitle(points: result.points, variant: variant)
     }
 
+    @Environment(\.chromeMode) private var chromeMode
+
     var body: some View {
-        VStack(spacing: 28) {
-            if let mascot {
-                TavTavAvatar(persona: mascot, size: 108)
+        FitOrScroll(enabled: chromeMode.isCompact) {
+            content
+                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
+                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
+            if let mascot, chromeMode != .compactLandscape {
+                TavTavAvatar(persona: mascot, size: chromeMode.isCompact ? 72 : 108)
             }
             Text(title)
                 .font(ChromeType.winTitle)
@@ -165,7 +212,7 @@ struct FullTavliLegOverlayView: View {
             }
             .buttonStyle(ChromeButton(role: .primary))
             .accessibilityIdentifier("fullTavliContinue")
-            HStack(spacing: 14) {
+            AdaptiveRow(spacing: 14) {
                 if let onReview {
                     Button(action: onReview) {
                         HStack(spacing: 6) {
@@ -221,7 +268,7 @@ private struct FullTavliScoreCard: View {
             }
         }
         .frame(maxWidth: 420)
-        .chromeCard(padding: 24)
+        .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
     }
 
     private func legRow(_ i: Int) -> some View {
@@ -268,6 +315,7 @@ struct FullTavliTransitionView: View {
                 VStack(spacing: 24) {
                     Text("Full Tavli")
                         .font(ChromeType.wordmark)
+                        .compactSingleLine()
                         .foregroundStyle(CaramelPalette.frameText)
                     FullTavliScoreCard(state: state)
                     if let next, let index = state.currentLegIndex {
@@ -286,7 +334,7 @@ struct FullTavliTransitionView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .frame(maxWidth: 392)
-                        .chromeCard(padding: 24)
+                        .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
                         Button(action: onStartNext) {
                             HStack(spacing: 8) {
                                 Image(systemName: "arrow.right")
@@ -305,7 +353,7 @@ struct FullTavliTransitionView: View {
                     }
                     .buttonStyle(ChromeButton(role: .secondary))
                 }
-                .padding(40)
+                .compactPadding(40, compact: 16)
                 .frame(maxWidth: .infinity)
             }
         }
@@ -341,7 +389,7 @@ struct FullTavliResultView: View {
             ScrollView {
                 VStack(spacing: 24) {
                     if let mascot {
-                        TavTavAvatar(persona: mascot, size: 108)
+                        TavTavAvatar(persona: mascot, size: ChromeType.isCompact ? 72 : 108)
                     }
                     Text(title)
                         .font(ChromeType.winTitle)
@@ -370,7 +418,7 @@ struct FullTavliResultView: View {
                     }
                     .buttonStyle(ChromeButton(role: .secondary))
                 }
-                .padding(40)
+                .compactPadding(40, compact: 16)
                 .frame(maxWidth: .infinity)
             }
         }

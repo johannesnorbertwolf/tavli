@@ -1,6 +1,6 @@
-# ios/ — native iPad app (Swift)
+# ios/ — native iPad + iPhone app (Swift)
 
-A native, **offline** iPad app for the Plakoto AI, also playing standard Plakoto, Fevga and
+A native, **offline** iPad + iPhone app (#109) for the Plakoto AI, also playing standard Plakoto, Fevga and
 Portes (variant selector + per-variant board UI, #143). The value network runs on-device via
 Core ML; the game engine and board encoder are re-implemented in Swift. Background:
 `docs/ios_port_plan.md` (status + how to run), `docs/decisions.md`, `docs/history.md`.
@@ -56,7 +56,7 @@ best-of-three). Needs the Game Center capability (`TavliApp.entitlements`), a re
 
 ```bash
 bash ios/TavliApp/setup.sh            # generates the Core ML model (if missing) + TavliApp.xcodeproj
-open ios/TavliApp/TavliApp.xcodeproj  # select an iPad simulator, ⌘R
+open ios/TavliApp/TavliApp.xcodeproj  # select an iPad or iPhone simulator, ⌘R
 ```
 
 `setup.sh` generates `PlakotoValue.mlpackage` only when absent (shells out to `convert_to_coreml.py`
