@@ -657,6 +657,34 @@ too), and `match.recordGame(winner:points:)`.
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
   `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
 
+## Full Tavli (#144 — `FullTavliViews.swift` + `RootView` wiring)
+
+- **Mode choice.** `ModePickerView`'s match-length toggle gains "Full Tavli"
+  (`MatchLengthSetting.fullTavli`; the online lobby iterates `onlineCases` without it) and is no
+  longer dimmed when the selected variant has no model. In Full Tavli mode `FullTavliInfoCard`
+  replaces the variant picker and the play card is gated on `fullTavliPreview.isAIAvailable()`
+  (every leg's model) with a "still learning some of the Full Tavli games" note; "Two players on
+  this iPad" always works.
+- **Running it.** `beginFullTavli(humanColor:)` (`nil` = two players) creates the session via
+  `AppSettings.newFullTavli` (Plakoto leg per `VariantPreference`), names every leg
+  `"Full Tavli · <date>"`, and `startFullTavliLeg` builds each leg's session for the leg's
+  variant (its own agent). Starter = single-game rules: vs AI the starting-player setting or the
+  opening-roll ceremony (`pendingVariant`/`pendingHumanColor`; backing out of leg 1 cancels the
+  session, later legs return to the transition screen), two players
+  `variant.startingPlayer(default: .white)`. `onGameFinished` records the leg (game log + W/L as
+  for any game) and immediately autosaves the finished leg with the updated session.
+- **Screens.** During play `GameView.FullTavli` shows `FullTavliScoreboardView`; at game over
+  `FullTavliLegOverlayView` (verdict + points, score, Continue / Review if the leg's model is
+  bundled / History / Back to menu). Continue sets `fullTavliScreen` to `.transition`
+  (`FullTavliTransitionView`) or `.result` (`FullTavliResultView`, "New Full Tavli").
+- **Persistence.** `persist(session:fullTavli:name:store:)` writes `snapshot(name:fullTavli:)`;
+  a terminal game is cleared only when there is no unfinished session. Manual saves carry the
+  session too. `prepareResume` (picker + cold launch) reconciles via
+  `FullTavliSession.resume(savedGame:)`: mid-leg → the replayed session, between legs → the
+  transition screen, complete → the result screen (cold launch then clears the autosave). A
+  vs-AI session save needs every leg's model (`resumeAgent`, `SavedGameRow.resumable`); its row
+  subtitle is prefixed "Full Tavli ·".
+
 ## StatsPanelView.swift (#64 — human W/L panel)
 
 The iPad analogue of the CLI's post-game summary box. A **pure** view of a

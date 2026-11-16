@@ -3096,6 +3096,406 @@
           }
         }
       }
+    },
+    "Full Tavli" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli"
+          }
+        }
+      }
+    },
+    "Full Tavli · " : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli · "
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli · "
+          }
+        }
+      }
+    },
+    "Full Tavli · %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli · %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli · %@"
+          }
+        }
+      }
+    },
+    "Game %lld of 3 · %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partie %lld von 3 · %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partij %lld van 3 · %@"
+          }
+        }
+      }
+    },
+    "Next: game %lld of 3" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als Nächstes: Partie %lld von 3"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende: partij %lld van 3"
+          }
+        }
+      }
+    },
+    "Start %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ starten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ starten"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Weiter"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Doorgaan"
+          }
+        }
+      }
+    },
+    "See final result" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endergebnis ansehen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eindstand bekijken"
+          }
+        }
+      }
+    },
+    "Back to menu" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück zum Menü"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terug naar menu"
+          }
+        }
+      }
+    },
+    "Game over" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partie vorbei"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partij voorbij"
+          }
+        }
+      }
+    },
+    "%@ · 1 point" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 1 Punkt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · 1 punt"
+          }
+        }
+      }
+    },
+    "%@ · %lld points" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld Punkte"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %lld punten"
+          }
+        }
+      }
+    },
+    "Drawn session" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unentschieden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelijkspel"
+          }
+        }
+      }
+    },
+    "You won the Full Tavli!" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast das Full Tavli gewonnen!"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jij hebt de Full Tavli gewonnen!"
+          }
+        }
+      }
+    },
+    "%@ won the Full Tavli" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat das Full Tavli gewonnen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ heeft de Full Tavli gewonnen"
+          }
+        }
+      }
+    },
+    "%@ wins the Full Tavli!" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ gewinnt das Full Tavli!"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wint de Full Tavli!"
+          }
+        }
+      }
+    },
+    "Equal points after three games — the session is drawn." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gleich viele Punkte nach drei Partien – das Full Tavli endet unentschieden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Evenveel punten na drie partijen – de Full Tavli eindigt in een gelijkspel."
+          }
+        }
+      }
+    },
+    "New Full Tavli" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neues Full Tavli"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe Full Tavli"
+          }
+        }
+      }
+    },
+    "The traditional session: three games in a row, points add up across all three. The higher total wins; equal totals are a draw." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die traditionelle Runde: drei Partien hintereinander, die Punkte aller drei werden addiert. Wer mehr Punkte hat, gewinnt; bei Gleichstand ist es unentschieden."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De traditionele sessie: drie partijen achter elkaar, de punten van alle drie tellen op. Het hoogste totaal wint; bij gelijke stand is het gelijkspel."
+          }
+        }
+      }
+    },
+    "The Plakoto rules follow your game choice in Settings." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Plakoto-Regeln folgen deiner Spielwahl in den Einstellungen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De Plakoto-regels volgen je spelkeuze in Instellingen."
+          }
+        }
+      }
+    },
+    "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav lernt einige der Full-Tavli-Spiele noch. Spiel Full Tavli vorerst zu zweit."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav leert sommige Full Tavli-spellen nog. Speel Full Tavli voorlopig met z'n tweeën."
+          }
+        }
+      }
+    },
+    "Land on a lone opposing checker to pin it until you leave. Every win counts one point." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zieh auf einen einzelnen gegnerischen Stein, um ihn festzusetzen, bis du weiterziehst. Jeder Sieg zählt einen Punkt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Land op een losse steen van je tegenstander om hem vast te zetten tot je verder gaat. Elke winst telt één punt."
+          }
+        }
+      }
+    },
+    "Land on a lone opposing checker to pin it; pinning the mother checker can win two points." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zieh auf einen einzelnen gegnerischen Stein, um ihn festzusetzen; wer den Mutterstein festsetzt, kann zwei Punkte gewinnen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Land op een losse steen van je tegenstander om hem vast te zetten; wie de moedersteen vastzet, kan twee punten winnen."
+          }
+        }
+      }
+    },
+    "Hit lone checkers to the bar; they must re-enter before anything else moves." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schlag einzelne Steine auf die Bar; sie müssen erst wieder einsteigen, bevor etwas anderes zieht."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sla losse stenen naar de bar; ze moeten eerst weer inkomen voordat er iets anders beweegt."
+          }
+        }
+      }
+    },
+    "Both sides race the same way round; one checker holds a point and nothing is hit." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beide Seiten laufen in dieselbe Richtung; ein Stein hält ein Feld, geschlagen wird nie."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beide kanten racen dezelfde kant op; één steen houdt een punt bezet en er wordt nooit geslagen."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

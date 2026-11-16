@@ -126,7 +126,7 @@ private struct OnlineLobbyView: View {
             .chromeCard(padding: 20)
 
         Picker("Match length", selection: $matchLength) {
-            ForEach(MatchLengthSetting.allCases) { option in
+            ForEach(MatchLengthSetting.onlineCases) { option in
                 Text(option.label).tag(option)
             }
         }

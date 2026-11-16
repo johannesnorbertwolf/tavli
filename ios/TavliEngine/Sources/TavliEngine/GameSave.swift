@@ -137,6 +137,10 @@ public struct GameSave: Codable, Equatable {
     /// present the file is written at `schemaVersion: 2`; when `nil` it is omitted and
     /// the file stays v1-reader-compatible.
     public var analysis: [AnalysisEntry]?
+    /// The Full Tavli session (#144) this game is a leg of, or `nil` for a standalone
+    /// game. Written only when present (older readers ignore the key; older files decode
+    /// as `nil`), so it never changes the schema version.
+    public var fullTavli: FullTavliSession?
 
     public init(schemaVersion: Int = GameSave.currentSchemaVersion,
                 gameId: UUID? = nil,
@@ -148,8 +152,10 @@ public struct GameSave: Codable, Equatable {
                 history: [PlyRecord],
                 analysis: [AnalysisEntry]? = nil,
                 variant: String = GameVariants.defaultID,
-                points: Int? = nil) {
+                points: Int? = nil,
+                fullTavli: FullTavliSession? = nil) {
         self.schemaVersion = schemaVersion
+        self.fullTavli = fullTavli
         self.points = points
         self.gameId = gameId
         self.name = name
@@ -164,7 +170,7 @@ public struct GameSave: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis, variant
-        case points
+        case points, fullTavli
     }
 
     /// The `outcome` string a drawn game is saved with.
@@ -185,6 +191,7 @@ public struct GameSave: Codable, Equatable {
         analysis = try c.decodeIfPresent([AnalysisEntry].self, forKey: .analysis)
         variant = try c.decodeIfPresent(String.self, forKey: .variant) ?? GameVariants.defaultID
         points = try c.decodeIfPresent(Int.self, forKey: .points)
+        fullTavli = try c.decodeIfPresent(FullTavliSession.self, forKey: .fullTavli)
     }
 
     /// Encode the version the on-disk shape actually warrants: `2` only when an
@@ -204,6 +211,7 @@ public struct GameSave: Codable, Equatable {
         try c.encodeIfPresent(analysis, forKey: .analysis)
         try c.encode(variant, forKey: .variant)
         try c.encodeIfPresent(points, forKey: .points)
+        try c.encodeIfPresent(fullTavli, forKey: .fullTavli)
     }
 }
 
@@ -263,5 +271,14 @@ public extension GameSession {
     /// Capture the current game as a `GameSave` for persistence.
     func snapshot(name: String, savedAt: Date = Date()) -> GameSave {
         GameSave(record: record, name: name, savedAt: savedAt)
+    }
+
+    /// Capture the current game as a leg of a Full Tavli session (#144): the save
+    /// carries `fullTavli` so a resume lands back in the session — mid-leg, or on the
+    /// between-legs screen when this leg is already over. `nil` = a standalone game.
+    func snapshot(name: String, fullTavli: FullTavliSession?, savedAt: Date = Date()) -> GameSave {
+        var save = GameSave(record: record, name: name, savedAt: savedAt)
+        save.fullTavli = fullTavli
+        return save
     }
 }
