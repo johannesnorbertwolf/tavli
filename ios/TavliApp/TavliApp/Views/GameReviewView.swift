@@ -61,9 +61,10 @@ struct GameReviewView: View {
             ZStack {
                 SColor(hex: 0xece6dc).ignoresSafeArea()
                 content
-                // Floating Done, top-leading, clear of the board/panel. The compact
-                // review (#109) puts it in its own top bar instead.
-                if !(compact && isReviewing) {
+                // Floating Close while analysing / on a message screen. The review
+                // itself lays Close out as part of its chrome on every layout (#193),
+                // so it can never float over the board, chart or panel.
+                if !isReviewing {
                     CloseButton { dismiss() }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .padding(compact ? 12 : 20)
@@ -136,32 +137,34 @@ struct GameReviewView: View {
             index = nearest
         }
         return GeometryReader { proxy in
-            let landscape = proxy.size.width >= proxy.size.height
             let layout = ChromeLayout(proxy)
             Group {
                 if layout.isCompact {
                     compactReviewMode(layout, eval: eval, i: i, count: plies.count,
                                       finished: finished, onScrub: scrub)
-                } else if landscape {
+                } else if layout.isLandscape {
+                    // Board at full height; Close/Drill bar, the scrollable detail and
+                    // Prev/Next in a 320 pt rail beside it.
                     HStack(alignment: .top, spacing: 0) {
                         boardArea(eval)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                             .padding(12)
-                        panel(eval: eval, i: i, count: plies.count, finished: finished, onScrub: scrub)
-                            .frame(width: 320)
-                            .padding(.top, 56)   // clear the floating Close button
-                            .padding(.trailing, 16)
+                        VStack(alignment: .leading, spacing: 16) {
+                            topBar
+                            ScrollView {
+                                panelInfo(eval: eval, i: i, count: plies.count,
+                                          finished: finished, onScrub: scrub)
+                                    .padding(.bottom, 8)
+                            }
+                            navRow(i: i)
+                        }
+                        .padding(.vertical, 16)
+                        .frame(width: 320)
+                        .padding(.trailing, 16)
                     }
                 } else {
-                    VStack(spacing: 12) {
-                        panel(eval: eval, i: i, count: plies.count, finished: finished, onScrub: scrub)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 56)   // clear the floating Done button
-                        boardArea(eval)
-                            .padding(.horizontal, 12)
-                            .layoutPriority(1)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    regularPortraitMode(proxy.size, eval: eval, i: i, count: plies.count,
+                                        finished: finished, onScrub: scrub)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -184,14 +187,57 @@ struct GameReviewView: View {
         .aspectRatio(1, contentMode: .fit)
     }
 
-    private func panel(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
-                       onScrub: @escaping (Int) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 18) {
-            panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
+    // ── Regular portrait (iPad, #193) ──────────────────────────────────────────
+
+    /// Below this width the portrait detail is one column; above it, two.
+    private static let portraitTwoColumnWidth: CGFloat = 700
+
+    /// Close/Drill bar, the board as large as fits, Prev/Next pinned under it, then
+    /// the move detail (chart + pickers beside played/best on a wide screen) in a
+    /// scroll view. Same pieces and order as the iPhone portrait review.
+    private func regularPortraitMode(_ size: CGSize, eval: PlyEvaluation, i: Int, count: Int,
+                                     finished: Bool, onScrub: @escaping (Int) -> Void) -> some View {
+        let twoColumn = size.width >= Self.portraitTwoColumnWidth
+        let side = Self.portraitBoardSide(size, twoColumn: twoColumn)
+        return VStack(spacing: 14) {
+            topBar
+                .frame(width: side)
+                .padding(.top, 12)
+            boardArea(eval)
+                .frame(width: side, height: side)
             navRow(i: i)
-            drillButton
+                .frame(width: side)
+            ScrollView {
+                Group {
+                    if twoColumn {
+                        HStack(alignment: .top, spacing: 28) {
+                            VStack(alignment: .leading, spacing: 18) {
+                                overviewSection(eval: eval, finished: finished, onScrub: onScrub)
+                                pickerSection
+                            }
+                            moveSection(eval: eval, i: i, count: count, finished: finished)
+                        }
+                    } else {
+                        panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
+                    }
+                }
+                .frame(width: side)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The portrait board side: full width minus the gutters, shrunk only as far as
+    /// needed to leave the bar, Prev/Next and a readable slice of the detail on
+    /// screen (the rest scrolls).
+    private static func portraitBoardSide(_ size: CGSize, twoColumn: Bool) -> CGFloat {
+        let chrome: CGFloat = 12 + 48 + 44 + 3 * 14       // bar + Prev/Next + gaps
+        let detail: CGFloat = twoColumn ? 250 : 340        // visible detail before scrolling
+        let byHeight = size.height - chrome - detail
+        let byWidth = size.width - 2 * 24
+        return max(280, min(byWidth, byHeight))
     }
 
     // Navigation: Prev / Next.
@@ -208,20 +254,9 @@ struct GameReviewView: View {
         }
     }
 
-    // Drilling is offered whenever the game had blunders to drill.
-    @ViewBuilder
-    private var drillButton: some View {
-        if !model.blunderPlies.isEmpty {
-            Button("Drill blunders") { showDrill = true }
-                .buttonStyle(ReviewButton(tint: ChromeTheme.doneTint))
-                .frame(maxWidth: .infinity)
-        }
-    }
-
-    // ── Compact (iPhone, #109) ──────────────────────────────────────────────────
-
-    /// Close + Drill on one bar (the drill button sized to its label).
-    private var compactTopBar: some View {
+    /// Close + Drill on one bar (the drill button sized to its label; drilling is
+    /// offered whenever the game had blunders). Every review layout leads with it.
+    private var topBar: some View {
         HStack(spacing: 12) {
             CloseButton { dismiss() }
             Spacer(minLength: 0)
@@ -232,6 +267,8 @@ struct GameReviewView: View {
             }
         }
     }
+
+    // ── Compact (iPhone, #109) ──────────────────────────────────────────────────
 
     /// Portrait: Close/Drill bar, the board edge-to-edge, Prev/Next pinned under it,
     /// and the move detail + chart in a scrollable card below.
@@ -246,7 +283,7 @@ struct GameReviewView: View {
                 boardArea(eval)
                     .frame(width: layout.boardSide, height: layout.boardSide)
                 VStack(alignment: .leading, spacing: 10) {
-                    compactTopBar
+                    topBar
                     ScrollView {
                         panelInfo(eval: eval, i: i, count: count, finished: finished, onScrub: onScrub)
                             .padding(.bottom, 8)
@@ -259,7 +296,7 @@ struct GameReviewView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         } else {
             VStack(spacing: 8) {
-                compactTopBar
+                topBar
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
                 boardArea(eval)
@@ -280,10 +317,18 @@ struct GameReviewView: View {
     /// highlight picker and the step filter.
     private func panelInfo(eval: PlyEvaluation, i: Int, count: Int, finished: Bool,
                            onScrub: @escaping (Int) -> Void) -> some View {
-        let isBlunder = model.blunderPlies.contains(eval.plyNumber)
-        let isHuman = eval.mover == humanColor
-        let mover: LocalizedStringKey = isHuman ? "You" : "TavTav"
-        return VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 18) {
+            overviewSection(eval: eval, finished: finished, onScrub: onScrub)
+            moveSection(eval: eval, i: i, count: count, finished: finished)
+            pickerSection
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// No-blunders note + the whole-game chart.
+    private func overviewSection(eval: PlyEvaluation, finished: Bool,
+                                 onScrub: @escaping (Int) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
             // Reassurance headline when the whole game had no blunders (#105).
             if finished, model.blunderPlies.isEmpty {
                 Text("No blunders — nicely played!")
@@ -303,7 +348,16 @@ struct GameReviewView: View {
                                         blunders: model.blunderPlies, onScrub: onScrub)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    /// Move counter, mover, dice, depth, then played vs best.
+    private func moveSection(eval: PlyEvaluation, i: Int, count: Int, finished: Bool) -> some View {
+        let isBlunder = model.blunderPlies.contains(eval.plyNumber)
+        let isHuman = eval.mover == humanColor
+        let mover: LocalizedStringKey = isHuman ? "You" : "TavTav"
+        return VStack(alignment: .leading, spacing: 18) {
             // Move counter + blunder badge + dice.
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
@@ -356,7 +410,13 @@ struct GameReviewView: View {
                         .foregroundStyle(ChromeKit.inkSecondary)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    /// The board-highlight picker + legend and the step filter.
+    private var pickerSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
             // Highlight selector — your move alone, or compared against the best.
             VStack(alignment: .leading, spacing: 8) {
                 Picker("Show on board", selection: $overlay) {

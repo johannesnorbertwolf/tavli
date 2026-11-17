@@ -586,8 +586,16 @@ Per screen (compact only):
 - **OpeningRollView** — same arrangement (Back, status, manual choice, board).
 - **GameReviewView** — portrait: Close + "Drill blunders" bar, edge-to-edge board,
   Prev/Next pinned under it, move detail + chart in a scrollable card; landscape: board
-  + rail (bar, scrolling detail, Prev/Next). The panel is split into `panelInfo` /
-  `navRow` / `drillButton`; the regular `panel` recomposes them unchanged.
+  + rail (bar, scrolling detail, Prev/Next). **iPad (#193) uses the same structure**:
+  landscape = board + a 320 pt rail (`topBar`, scrolling `panelInfo`, `navRow`);
+  portrait (`regularPortraitMode`) = `topBar`, the board (side = full width minus
+  24 pt gutters, shrunk only to keep ~250 pt of detail visible — 340 pt below 700 pt
+  width), Prev/Next, then the detail in a `ScrollView`, as two columns ≥ 700 pt wide
+  (chart + pickers | move + played/best). Close is laid out in `topBar` on every
+  review layout — it floats only on the analysing/message screens — so it can never
+  cover the chart or board. `panelInfo` = `overviewSection` (no-blunders note +
+  chart) + `moveSection` (counter, dice, played/best) + `pickerSection` (overlay +
+  step filter).
 - **DrillView** — portrait: board edge-to-edge between the prompt and the feedback/
   actions; landscape: the header moves into the card's rail (`railHeader`).
 
