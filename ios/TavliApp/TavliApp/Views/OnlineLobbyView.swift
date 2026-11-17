@@ -92,6 +92,9 @@ private struct OnlineLobbyView: View {
                     Text("Play Online")
                         .font(ChromeType.wordmark)
                         .compactSingleLine()
+                        // One line on iPad too: let the wordmark run wider than the
+                        // 520 pt column rather than wrap (the screen has the room).
+                        .fixedSize(horizontal: !ChromeType.isCompact, vertical: false)
                         .foregroundStyle(CaramelPalette.frameText)
 
                     if coordinator.isAuthenticated {
@@ -118,6 +121,9 @@ private struct OnlineLobbyView: View {
             .buttonStyle(ChromeButton(role: .secondary))
             Spacer()
         }
+        // Same 392 pt column as the cards and buttons below, so Back lines up with
+        // their leading edge.
+        .frame(maxWidth: 392)
     }
 
     @ViewBuilder

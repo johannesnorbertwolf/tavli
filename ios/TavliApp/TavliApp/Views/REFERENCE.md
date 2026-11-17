@@ -326,11 +326,11 @@ screen is fully playable, and added the Back button + hosted debug toggle.)
 `BoardLayout.borneOffCount` (never the raw end stack). The win overlay shows for
 `.gameOver(winner: nil)` too: title "Draw" + `ResultCopy.drawSubtitle`; a win in a 2-point
 variant gets a "Double game · 2 points" / "Single game · 1 point" subtitle and the turn label
-"… wins a double game!". The vs-AI record card is hidden for two-player games
+"… wins a double game". The vs-AI record card is hidden for two-player games
 (`WinOverlayView.showsStats`). `GameView.Match.lastGameResult: MatchGameResult?` replaces
 `lastGameWinner` (offline falls back to `session.record.result`); `MatchScoreboardView` /
 `MatchOverlayView` show `score(for:)` (points) and a draw title/subtitle. `WinProbabilityBar`,
-the resign warning and `DebugOverlay` go through `EvalScale` ("Equity +0.52" for 2-point
+the resign confirmation's chance line and `DebugOverlay` go through `EvalScale` ("Equity +0.52" for 2-point
 variants). Review falls back to `makeAgent(config:)` for a two-player game.
 
 - **`GameView`** (`@ObservedObject session`, plus `stats: HumanGameStats = .empty` (#64) — the
@@ -387,20 +387,30 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
     ply — `history` grows by one per finished turn (human, AI, or forced pass) — so the
     in-progress game is persisted after **every move**, not just on background. `RootView`'s
     `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
-  - **Surrender / resign (#74):** tapping the `SurrenderButton` runs `onSurrenderTapped`, which
-    reads `session.humanWinProbability`: above the `surrenderWarningThreshold` (10%) it captures the
-    rounded percent and flips `showWinProbWarning`; at/below it goes straight to `showSurrenderConfirm`.
-    Two `.alert`s on the `ZStack` render the flow — the preliminary "you still have X% chance" warning
-    ("I'm sure"/"Keep playing") and the standard "Are you sure you want to give up?" confirmation
-    ("Give up"/"Keep playing"). "I'm sure" advances to the confirmation via `DispatchQueue.main.async`
-    so the second alert presents only after the first fully dismisses (chained same-view alerts
-    otherwise race). "Give up" calls `session.surrender()` then `onAutosave()` — surrender records no
-    ply, so the per-move auto-save hook never fires; this clears the now-terminal game's auto-save
-    slot, matching a played-out loss.
-  - The game-over takeover is layered **last** whenever `session.phase` is `.gameOver`
-    (#101): a `black.opacity(0.65)` scrim as a **direct ZStack child** (hosting it inside
-    `WinOverlayView` sized it to the board column in landscape, leaving the panel bright),
-    then `WinOverlayView` above it.
+  - **Surrender / resign (#74):** one confirmation everywhere (iPad Resign button and the
+    iPhone "⋯" menu both call `onSurrenderTapped`). It captures `surrenderChanceLine` — "You still
+    have a X% chance of winning." (or "TavTav still rates your position at +0.52 points." for a
+    2-point variant via `EvalScale`) only when `session.humanWinProbability` is known **and** above
+    `surrenderWarningThreshold` (10%), else `nil` — then flips `showSurrenderConfirm`. A single
+    `.alert("Give up this game?")` shows that line as its message (no message when `nil`) with
+    "Keep playing" (cancel) and "Give up" (destructive). "Give up" calls `session.surrender()` then
+    `onAutosave()` (or the tournament's `onGiveUp`) — surrender records no ply, so the per-move
+    auto-save hook never fires; this clears the now-terminal game's auto-save slot, matching a
+    played-out loss.
+  - **Game-over overlays** are layered **last** whenever `session.phase` is `.gameOver` (or an
+    online match's `showResultOverlay`): a `black.opacity(0.65)` scrim as a **direct ZStack
+    child** (hosting it inside the overlay sized it to the board column in landscape, leaving
+    the panel bright), then exactly one of `FullTavliLegOverlayView` / `MatchOverlayView` /
+    `WinOverlayView` (win or draw). All three render through the shared **`GameOverCard`**
+    (`GameOverCard.swift`), so they look identical — see below.
+  - **Winner wording** comes from one `WinnerNaming(localColor:opponentName:)` built by
+    `GameView.naming` and used by every overlay and `TurnIndicatorView`: vs the AI "You win" /
+    "TavTav wins", online "You win" / "`<opponent>` wins" (Game Center name), two-player
+    "White wins" / "Red wins"; `doubleTitle` adds "a double game". (Tournament keeps its German
+    verdict.)
+  - **Review gating:** `hasReviewableMoves` (any ply in `session.history` with half-moves) — a
+    game resigned before any move offers no "Review game" in any overlay. Full Tavli also needs
+    the leg's model; the match overlay only vs the AI; online never.
   - Page background is `#ece6dc` (matches `RootView`'s picker).
 - **`BackButton`** — chevron + "Back", `ChromeButton(role: .secondary)`, calling the
   injected `onBack`.
@@ -410,8 +420,9 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
-  "`<Name>` moving…"; `.gameOver(w)` → "`<Name>` wins!". `<Name>` and the player come
-  from `ChromeTheme` + `session.currentPlayer`.
+  "`<Name>` moving…"; `.gameOver(w)` → `naming.title(w)` ("You win" / "TavTav wins" /
+  "Red wins", or `doubleTitle` for a 2-point result). `<Name>` and the player come from
+  `ChromeTheme` + `session.currentPlayer`; the winner wording from the `WinnerNaming` passed in.
 - **`BorneOffView(session:color:)`** — a horizontal chip (#101): checker-colored disc,
   `displayName` in secondary ink, bold monospaced-digit count, on an `ink.opacity(0.06)`
   rounded fill. Counts read straight off the board on each session publish: white =
@@ -428,17 +439,32 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   `ChromeButton(role: .primary)` — the one solid button on the board screen — while Undo is
   `.secondary`. The dice no longer live here — they moved to the board's center bar
   (`BoardDiceView`, #46). Decision-level undo lives in the debug pane (see below).
-- **`WinOverlayView(title:stats:onNewGame:onHistory:onReview:onDrill:)`** (#101) — the
-  game-over takeover content (the scrim lives in `GameView`, see above): a serif verdict
-  (`title` is pre-formatted by `GameView.verdict(_:)` — "You win!" when the human won, else
-  "`<Name>` wins"), the `StatsPanelView(stats:)` (so the human's record is **auto-shown
-  after every game**, #64), a solid `primary` "Play Again" button calling the injected
-  `onNewGame` closure (provided by `RootView` to replace the finished session with a fresh
-  one — see `RootView.swift`), and a row of `scrim`-role icon buttons — "Review game"
-  (#62), "Drill blunders" (#63), "History" — so the log stays reachable after the game.
-  The just-finished game is already counted: `session.onGameOver` records into `RootView`'s
-  store, whose `@Published` change re-renders `RootView` → passes fresh `stats` down before
-  the overlay paints.
+- **`GameOverCard`** (`GameOverCard.swift`) — the one game-over surface: a single centred
+  solid card (`.chromeCard()`, padding 28 / 16 compact, `frame(maxWidth: 440)`, full width minus
+  a 16 pt gutter on a phone) over `GameView`'s scrim, so its ink text never collides with the
+  status text / dice / checkers behind. Top to bottom: `TavTavAvatar` (96 pt, **iPad only**),
+  the serif verdict (`ChromeType.winTitle`, ink, ≤ 2 lines, scales to 0.6), an optional
+  subtitle (points / draw reason, `inkSecondary`), an optional `GameOverScore` block styled
+  like the in-game scoreboard (names in callout, digits `title3.bold().monospacedDigit()` on an
+  `ink.opacity(0.06)` inset, caption beneath), optional extra content, the full-width
+  `.primary` action, "Review game" / "History" as `.secondary` full-width buttons side by side
+  (stacked when they can't fit; Review omitted when `onReview == nil`), then an optional exit
+  ("Back to menu") as `.quiet`. Wrapped in `FitOrScroll(enabled: compact)` so it scrolls only
+  if a phone can't fit it. `GameOverAction` / `GameOverScore` are the plain value inputs.
+  `WinnerNaming` (same file) is the shared winner wording.
+- **`WinOverlayView`** (#101) — single-game win/draw on the `GameOverCard`: the verdict
+  (`GameView.verdict(_:)` → `naming.title`), subtitle, the human's record as an embedded
+  `StatsPanelView(stats:embedded:true)` (auto-shown after every vs-AI game, #64; condensed to
+  the overall line in iPhone landscape so the card fits), primary "Play Again" (or "Back to
+  lobby" online / the tournament exit), Review (hidden online or with nothing reviewable) and
+  History. The just-finished game is already counted: `session.onGameOver` records into
+  `RootView`'s store, whose `@Published` change re-renders `RootView` → passes fresh `stats`
+  down before the overlay paints.
+- **`MatchOverlayView`** (#145) — best-of-three on the `GameOverCard`: per-game verdict (or the
+  match verdict once decided), score block "You 0 – 1 TavTav" with the caption "Game N of M"
+  where **N is the game that just finished** (`state.results.count`, not `currentGameNumber`,
+  which already points at the next game) or "Final", primary "Next game" / "Rematch" / "Back to
+  lobby", Review / History, and "Back to menu".
 - **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
   button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
   one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
@@ -461,7 +487,8 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   larger than the SwiftUI text styles the chrome originally used (the app targets older
   players reading at arm's length). System-style mirrors: `title2` 26, `title3` 24,
   `headline` 22 semibold, `body` 20, `callout` 19, `subheadline` 18, `caption` 16,
-  `caption2` 14. Display faces: `winTitle` 54 bold serif, `statsTitle` Cormorant 38,
+  `caption2` 14. Display faces: `winTitle` 54 bold serif, `statsTitle` Cormorant 38 (never
+  for digits — `scoreDisplay` 34 bold system is the big-score face),
   `wordmark` Cormorant 96. Debug pane: `debugMono` 12 monospaced, `debugLabel` 13.
   Weight/design variants are applied at the use site (`.bold()`, `.monospaced()`,
   `.weight(:)`). Dynamic Type is a deliberate non-goal for now. Used by **all** chrome
@@ -491,8 +518,8 @@ never drops below 0.72 ink opacity.
   hit area. Roles map to **intent, not screen**: `.primary` solid amber fill + white label
   (the single most important action on a surface — e.g. Done, Play Again); `.secondary`
   flat caramel tint + ink (everyday actions); `.destructive` flat brick tint + brick label
-  (Resign); `.quiet` no fill + secondary ink; `.scrim` white tint + white label (secondary
-  actions on the dark game-over scrim). Pressed states deepen the fill. On a compact
+  (Resign); `.quiet` no fill + secondary ink. (Game-over overlays use the normal roles on
+  their solid `GameOverCard`; there is no on-scrim role.) Pressed states deepen the fill. On a compact
   screen (#109) the insets drop to 14 × 10 with an explicit 44 pt minimum height.
 
 ### Compact (iPhone) layout — #109
@@ -529,8 +556,9 @@ Per screen (compact only):
   turn status + one-line scoreboard + win bar + manual dice (32 pt faces) + Undo/Done
   right above the board, all in `FitOrScroll`. Landscape: the same pieces in the rail
   beside a full-height board. The debug pane floats over the board (by design); its
-  ladybug closes it. Win / match / Full Tavli leg overlays: spacing 14, secondary buttons
-  via `AdaptiveRow`, `FitOrScroll`.
+  ladybug closes it. Win / match / Full Tavli leg overlays: the `GameOverCard` at full
+  width minus a 16 pt gutter, spacing 12, padding 16, in `FitOrScroll`; in landscape the
+  vs-AI record is condensed to its overall line so the card fits a 13 mini without scrolling.
 - **OpeningRollView** — same arrangement (Back, status, manual choice, board).
 - **GameReviewView** — portrait: Close + "Drill blunders" bar, edge-to-edge board,
   Prev/Next pinned under it, move detail + chart in a scrollable card; landscape: board
@@ -726,8 +754,11 @@ too), and `match.recordGame(winner:points:)`.
   `variant.startingPlayer(default: .white)`. `onGameFinished` records the leg (game log + W/L as
   for any game) and immediately autosaves the finished leg with the updated session.
 - **Screens.** During play `GameView.FullTavli` shows `FullTavliScoreboardView`; at game over
-  `FullTavliLegOverlayView` (verdict + points, score, Continue / Review if the leg's model is
-  bundled / History / Back to menu). Continue sets `fullTavliScreen` to `.transition`
+  `FullTavliLegOverlayView` on the shared `GameOverCard` (verdict + points, score, Continue /
+  Review if the leg's model is bundled and the leg has moves / History / Back to menu). The
+  between-legs and result screens' score card sets the digits in `ChromeType.scoreDisplay`
+  (system face, bold, monospaced — lining figures like the in-game scoreboard; the Cormorant
+  display face's old-style numerals read "o — ɪ"). Continue sets `fullTavliScreen` to `.transition`
   (`FullTavliTransitionView`) or `.result` (`FullTavliResultView`, "New Full Tavli").
 - **Persistence.** `persist(session:fullTavli:name:store:)` writes `snapshot(name:fullTavli:)`;
   a terminal game is cleared only when there is no unfinished session. Manual saves carry the
@@ -741,8 +772,10 @@ too), and `match.recordGame(winner:points:)`.
 
 The iPad analogue of the CLI's post-game summary box. A **pure** view of a
 `HumanGameStats` (from `TavliEngine`) — no persistence or game logic; the store lives in
-`RootView`. Hosted in two places: inside `WinOverlayView` (auto-shown after every game) and
-from the mode picker's "My Record" sheet.
+`RootView`. Hosted in two places: inside `WinOverlayView` (auto-shown after every game,
+`embedded: true` — a tinted inset instead of a second card; `condensed: true` in iPhone
+landscape shows only a caption header + the overall line) and from the mode picker's
+"My Record" sheet.
 
 - **`StatsPanelView(stats:)`** — a flat `.chromeCard` (#101; max content width 352) with a
   Cormorant Garamond "Human vs AI" header. When `stats.total == 0` it shows a "No games yet"
@@ -757,10 +790,14 @@ from the mode picker's "My Record" sheet.
   bare `Color` stays unambiguous against `TavliEngine.Color`); a small private `Palette`
   enum holds the panel-local colors. Carries `accessibilityIdentifier("statsPanel")`.
 - `#Preview`s: a mixed record over the light picker background, and the empty state over the
-  dark win-overlay scrim (the card reads on both).
+  dark scrim.
 
 ## App.swift
 
-`@main`. Minimal — `WindowGroup { RootView() }`; `init` sets `ChromeType.scale` from the
-screen size (#109, compact type on a phone). (Earlier the T7 sign-off bootstrap
+`@main`. Minimal — `WindowGroup { RootView().preferredColorScheme(.light) }`; `init` sets
+`ChromeType.scale` from the screen size (#109, compact type on a phone). **Light only:** the
+app has one caramel design, so it never follows system dark mode — `.preferredColorScheme(.light)`
+at the root plus `UIUserInterfaceStyle = Light` in `Info.plist` (which also covers sheets,
+alerts and Game Center's own controllers); otherwise system segmented pickers turn
+dark-styled and unreadable on the light cards. (Earlier the T7 sign-off bootstrap
 hosted `PlayableBoardView` on a fixed scenario here; T10 moved the entry to `RootView`.)

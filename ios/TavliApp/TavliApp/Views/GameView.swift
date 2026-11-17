@@ -125,13 +125,11 @@ struct GameView: View {
     /// inside review (#130), so it has no separate trigger here.
     @State private var showReview = false
 
-    /// Surrender flow (#74). `showWinProbWarning` is the preliminary "you can still
-    /// win" alert (shown only when the human's win probability exceeds the threshold);
-    /// `showSurrenderConfirm` is the standard confirmation; `surrenderWinPct` is the
-    /// rounded percentage captured for the warning copy.
-    @State private var showWinProbWarning = false
+    /// Surrender flow (#74): one confirmation. `surrenderChanceLine` is the
+    /// "you still have a 34% chance of winning" line captured when it opens — `nil`
+    /// (no line) when the win chance is unknown or at/below the threshold.
     @State private var showSurrenderConfirm = false
-    @State private var surrenderWinPct = 0
+    @State private var surrenderChanceLine: String? = nil
 
     /// Drives the settings sheet (#77).
     @State private var showSettings = false
@@ -144,8 +142,8 @@ struct GameView: View {
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
     @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
 
-    /// Above this human win probability, resigning first shows the preliminary
-    /// "you can still win" alert before the standard confirmation (#74).
+    /// Above this human win probability, the resign confirmation also says how
+    /// much chance is being given up (#74).
     private let surrenderWarningThreshold = 0.10
 
     private var flipped: Bool { humanColor == .black }
@@ -192,7 +190,7 @@ struct GameView: View {
             if let online, !online.isLocalTurn, !session.isTerminal {
                 OnlineWaitingView(opponentName: online.opponentName)
             } else {
-                TurnIndicatorView(session: session)
+                TurnIndicatorView(session: session, naming: naming)
             }
             if let banner = online?.banner {
                 Text(banner)
@@ -321,7 +319,8 @@ struct GameView: View {
                         variant: session.game.variant,
                         onContinue: fullTavli.onContinue,
                         onExit: fullTavli.onExit,
-                        onReview: ModelCatalog.main.isAvailable(session.game.variant)
+                        naming: naming,
+                        onReview: ModelCatalog.main.isAvailable(session.game.variant) && hasReviewableMoves
                             ? { showReview = true } : nil,
                         onHistory: { showHistory = true })
                 } else if let match, showMatchOverlay {
@@ -332,7 +331,9 @@ struct GameView: View {
                                      lastGameResult: lastGameResult,
                                      variant: session.game.variant,
                                      aiColor: session.aiColor,
-                                     onReview: session.aiColor != nil ? { showReview = true } : nil,
+                                     naming: naming,
+                                     onReview: session.aiColor != nil && hasReviewableMoves
+                                         ? { showReview = true } : nil,
                                      onHistory: { showHistory = true })
                 } else if case .gameOver(let winner) = session.phase {
                     // The scrim is a direct ZStack child (like the page background)
@@ -348,7 +349,7 @@ struct GameView: View {
                                                                    variant: session.game.variant),
                                    stats: stats, onNewGame: onNewGame,
                                    onHistory: { showHistory = true },
-                                   onReview: { showReview = true },
+                                   onReview: hasReviewableMoves ? { showReview = true } : nil,
                                    tournamentExit: tournamentExit,
                                    onlineExit: online?.onLeave,
                                    showsStats: session.aiColor != nil,
@@ -385,27 +386,14 @@ struct GameView: View {
             } message: {
                 Text("Name this save so you can find it on the start screen.")
             }
-            // Preliminary "you can still win" alert (#74), shown only when the human's
-            // win probability is above the threshold. Confirming here advances to the
-            // standard confirmation. The second alert is flipped on via `async` so it
-            // presents only after this one has fully dismissed (chained alerts on the
-            // same view otherwise race and the second can fail to appear).
-            .alert("Are you sure you want to give up?", isPresented: $showWinProbWarning) {
-                Button("I'm sure") { DispatchQueue.main.async { showSurrenderConfirm = true } }
+            // The one resign confirmation (#74). Its message carries the human's
+            // remaining win chance (or equity, #143) only when that is known and above
+            // the warning threshold. The default ends the game in place (AI recorded as
+            // winner) and clears the auto-save slot via `onAutosave`. In the tournament
+            // `onGiveUp` takes over: it concedes the match but keeps the in-progress
+            // game saved (resumable) and returns to the tournament.
+            .alert("Give up this game?", isPresented: $showSurrenderConfirm) {
                 Button("Keep playing", role: .cancel) {}
-            } message: {
-                if session.game.variant.reportsEquity {
-                    // 2-point variants (#143): the network value is equity, not a win chance.
-                    Text("TavTav still rates your position at \(EvalScale(variant: session.game.variant).value(session.humanWinProbability ?? 0.5)) points. Are you sure you want to give up?")
-                } else {
-                    Text("You still have a \(surrenderWinPct)% chance of winning. Are you sure you want to give up?")
-                }
-            }
-            // Standard confirmation (#74). The default ends the game in place (AI
-            // recorded as winner) and clears the auto-save slot via `onAutosave`. In
-            // the tournament `onGiveUp` takes over: it concedes the match but keeps
-            // the in-progress game saved (resumable) and returns to the tournament.
-            .alert("Are you sure you want to give up?", isPresented: $showSurrenderConfirm) {
                 Button("Give up", role: .destructive) {
                     if let onGiveUp {
                         onGiveUp()
@@ -414,7 +402,10 @@ struct GameView: View {
                         onAutosave()
                     }
                 }
-                Button("Keep playing", role: .cancel) {}
+            } message: {
+                if let line = surrenderChanceLine {
+                    Text(line)
+                }
             }
             // Auto-save after every move (#61): `history` grows by one per finished
             // turn — human, AI, or forced pass — so this fires once per ply. The
@@ -478,7 +469,25 @@ struct GameView: View {
             if humanWon { return "Sensationell!" }
             return "\(tournamentOpponentName ?? "TavTav") war stärker."
         }
-        return humanWon ? String(localized: "You win!") : String(localized: "\(ChromeTheme.displayName(winner)) wins")
+        return naming.title(winner)
+    }
+
+    /// Winner wording for every verdict (#overlays): "You win" / "TavTav wins" vs the
+    /// AI, the opponent's name online, "White wins" / "Red wins" two-player.
+    private var naming: WinnerNaming {
+        if let online {
+            return WinnerNaming(localColor: online.localColor, opponentName: online.opponentName)
+        }
+        if let ai = session.aiColor {
+            return WinnerNaming(localColor: ai.opponent, opponentName: String(localized: "TavTav"))
+        }
+        return WinnerNaming(localColor: nil, opponentName: "")
+    }
+
+    /// Whether the finished game has anything to review: at least one ply that
+    /// actually moved (a game resigned before any move has none).
+    private var hasReviewableMoves: Bool {
+        session.history.contains { !$0.halfMoves.isEmpty }
     }
 
     /// Seed the field with a timestamped default and open the naming dialog.
@@ -487,17 +496,21 @@ struct GameView: View {
         showingSaveDialog = true
     }
 
-    /// Begin the surrender flow (#74). Above the win-probability threshold the
-    /// player is warned they can still win before the standard confirmation; at or
-    /// below it, the standard confirmation is shown directly.
+    /// Begin the surrender flow (#74): a single confirmation, mentioning the
+    /// remaining win chance (equity for 2-point variants, #143) only above the
+    /// threshold.
     private func onSurrenderTapped() {
-        let p = session.humanWinProbability ?? 0
-        if p > surrenderWarningThreshold {
-            surrenderWinPct = Int((p * 100).rounded())
-            showWinProbWarning = true
-        } else {
-            showSurrenderConfirm = true
+        surrenderChanceLine = nil
+        if let p = session.humanWinProbability, p > surrenderWarningThreshold {
+            if session.game.variant.reportsEquity {
+                let equity = EvalScale(variant: session.game.variant).value(p)
+                surrenderChanceLine = String(localized: "TavTav still rates your position at \(equity) points.")
+            } else {
+                let pct = Int((p * 100).rounded())
+                surrenderChanceLine = String(localized: "You still have a \(pct)% chance of winning.")
+            }
         }
+        showSurrenderConfirm = true
     }
 
     /// A timestamped fallback name (e.g. "Game · Jun 2, 3:04 PM") used when the
@@ -934,6 +947,8 @@ private struct WinProbabilityBar: View {
 /// `session.currentPlayer`.
 private struct TurnIndicatorView: View {
     @ObservedObject var session: GameSession
+    /// Winner wording shared with the game-over overlays.
+    let naming: WinnerNaming
     @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
     @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
 
@@ -965,9 +980,9 @@ private struct TurnIndicatorView: View {
         case .gameOver(let w?):
             // A 2-point result (#143) says so.
             if (session.record.points ?? 1) >= 2 {
-                return String(localized: "\(ChromeTheme.displayName(w)) wins a double game!")
+                return naming.doubleTitle(w)
             }
-            return String(localized: "\(ChromeTheme.displayName(w)) wins!")
+            return naming.title(w)
         case .gameOver(nil):     return String(localized: "Draw")
         }
     }
@@ -1087,13 +1102,12 @@ private struct ControlsView: View {
     }
 }
 
-/// Full-screen game-over takeover (#101): a scrim strong enough to retire the
-/// chrome behind it, a personalized serif verdict, the stats card, a solid
-/// primary Play Again, and real secondary buttons (icons + labels) for the
-/// post-game tools.
+/// Game-over overlay for a single game (#101): the verdict (or draw) on the shared
+/// `GameOverCard`, the vs-AI record, Play Again (or the tournament / lobby exit),
+/// and Review / History. Sits over `GameView`'s dim scrim.
 private struct WinOverlayView: View {
-    /// Pre-formatted verdict ("You win!" / "Red wins") — the caller knows which
-    /// side the human played; this view stays presentation-only.
+    /// Pre-formatted verdict ("You win" / "TavTav wins" / "Red wins") — the caller
+    /// knows which side the human played; this view stays presentation-only.
     let title: String
     /// A line under the verdict: the points a 2-point-variant result was worth, or
     /// why a game was drawn (#143). `nil` = none.
@@ -1101,7 +1115,8 @@ private struct WinOverlayView: View {
     let stats: HumanGameStats
     let onNewGame: () -> Void
     let onHistory: () -> Void
-    let onReview: () -> Void
+    /// Open the review; `nil` hides it (nothing reviewable).
+    let onReview: (() -> Void)?
     /// Tournament mode (#weltsensation): when set, the primary action returns to
     /// the tournament instead of replaying the game.
     var tournamentExit: (() -> Void)? = nil
@@ -1117,80 +1132,30 @@ private struct WinOverlayView: View {
     /// The vs-AI record is the main app's, never written from tournament or online
     /// games — hide it there so it doesn't read "No games yet".
     private var showsRecord: Bool { showsStats && tournamentExit == nil && onlineExit == nil }
-    /// Review needs the bundled model the online session deliberately omits.
-    private var showsReview: Bool { onlineExit == nil }
-
-    private var primaryIcon: String {
-        if onlineExit != nil { return "arrow.left" }
-        return tournamentExit == nil ? "arrow.clockwise" : "trophy.fill"
-    }
-    private var primaryLabel: String {
-        if onlineExit != nil { return String(localized: "Back to lobby") }
-        return tournamentExit == nil ? String(localized: "Play Again") : "Zurück zum Turnier"
-    }
 
     @Environment(\.chromeMode) private var chromeMode
 
-    var body: some View {
-        FitOrScroll(enabled: chromeMode.isCompact) {
-            content
-                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
-                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
+    private var primary: GameOverAction {
+        if let onlineExit {
+            return .init(label: String(localized: "Back to lobby"), icon: "arrow.left", action: onlineExit)
         }
+        if let tournamentExit {
+            return .init(label: "Zurück zum Turnier", icon: "trophy.fill", action: tournamentExit)
+        }
+        return .init(label: String(localized: "Play Again"), icon: "arrow.clockwise", action: onNewGame)
     }
 
-    private var content: some View {
-        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, !chromeMode.isCompact {
-                TavTavAvatar(persona: mascot, size: 108)
-            }
-            Text(title)
-                .font(ChromeType.winTitle)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            if let subtitle {
-                Text(subtitle)
-                    .font(ChromeType.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-            }
+    var body: some View {
+        GameOverCard(title: title,
+                     subtitle: subtitle,
+                     mascot: mascot,
+                     primary: primary,
+                     // Review needs the bundled model the online session deliberately omits.
+                     onReview: onlineExit == nil ? onReview : nil,
+                     onHistory: onHistory) {
             if showsRecord {
-                StatsPanelView(stats: stats)
-            }
-            Button {
-                if let onlineExit { onlineExit() }
-                else if let tournamentExit { tournamentExit() }
-                else { onNewGame() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: primaryIcon)
-                    Text(primaryLabel)
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(ChromeButton(role: .primary))
-            AdaptiveRow(spacing: 14) {
-                if showsReview {
-                    Button {
-                        onReview()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                            Text("Review game")
-                        }
-                    }
-                    .buttonStyle(ChromeButton(role: .scrim))
-                }
-                Button {
-                    onHistory()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text("History")
-                    }
-                }
-                .buttonStyle(ChromeButton(role: .scrim))
+                StatsPanelView(stats: stats, embedded: true,
+                               condensed: chromeMode == .compactLandscape)
             }
         }
     }
@@ -1268,9 +1233,9 @@ private struct MatchScoreboardView: View {
     }
 }
 
-/// Match-mode game-over takeover (#145): the per-game result plus the running score
+/// Match-mode game-over overlay (#145): the per-game result plus the running score
 /// while the match continues ("Next game"), or the match verdict and a rematch / exit
-/// once a side reaches the target. Mirrors `WinOverlayView`'s styling; presentation
+/// once a side reaches the target. Built on the shared `GameOverCard`; presentation
 /// only — every action is a closure supplied by the match context.
 private struct MatchOverlayView: View {
     let match: GameView.Match
@@ -1281,16 +1246,16 @@ private struct MatchOverlayView: View {
     var variant: any GameVariant = GameVariants.plakoto
     /// The AI's colour offline (drives the mascot); `nil` online (no mascot).
     let aiColor: TavliEngine.Color?
-    /// Open the just-finished game's review — offline only (review needs the model the
-    /// online session lacks), so `nil` online.
+    /// Winner wording ("You win" / "TavTav wins" / "Red wins").
+    let naming: WinnerNaming
+    /// Open the just-finished game's review — `nil` hides it (online: no model;
+    /// nothing reviewable).
     var onReview: (() -> Void)? = nil
     /// Open the just-finished game's move history.
     var onHistory: () -> Void = {}
 
     private var state: MatchState { match.state }
     private var localColor: TavliEngine.Color { match.localColor }
-    private var localWins: Int { state.score(for: localColor) }
-    private var opponentWins: Int { state.score(for: localColor.opponent) }
     private var lastGameWinner: TavliEngine.Color? { lastGameResult?.winner }
     private var isComplete: Bool { state.isComplete }
     private var localWonMatch: Bool { state.matchWinner == localColor }
@@ -1311,9 +1276,7 @@ private struct MatchOverlayView: View {
         }
         guard let result = lastGameResult else { return String(localized: "Game over") }
         guard let w = result.winner else { return ResultCopy.drawTitle }
-        return w == localColor
-            ? String(localized: "You win!")
-            : String(localized: "\(ChromeTheme.displayName(w)) wins")
+        return naming.title(w)
     }
 
     /// Points / draw line for the just-finished game (#143), `nil` for Plakoto wins.
@@ -1323,105 +1286,42 @@ private struct MatchOverlayView: View {
         return ResultCopy.pointsSubtitle(points: result.points, variant: variant)
     }
 
+    /// The game that just finished — the score already counts it, so it is the
+    /// number of recorded results (not `currentGameNumber`, which is the next game).
     private var progressCaption: String {
         isComplete
             ? String(localized: "Final")
-            : String(localized: "Game \(min(state.currentGameNumber, state.maxGames)) of \(state.maxGames)")
+            : String(localized: "Game \(max(1, state.results.count)) of \(state.maxGames)")
     }
-
-    @Environment(\.chromeMode) private var chromeMode
 
     var body: some View {
-        FitOrScroll(enabled: chromeMode.isCompact) {
-            content
-                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
-                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
+        GameOverCard(
+            title: title,
+            subtitle: resultSubtitle,
+            score: .init(leftName: String(localized: "You"),
+                         left: state.score(for: localColor),
+                         right: state.score(for: localColor.opponent),
+                         rightName: match.opponentName,
+                         caption: progressCaption),
+            mascot: mascot,
+            primary: primary,
+            onReview: onReview,
+            onHistory: onHistory,
+            exit: .init(label: String(localized: "Back to menu"), icon: "house",
+                        action: match.onExit))
+    }
+
+    private var primary: GameOverAction {
+        if !isComplete {
+            return .init(label: String(localized: "Next game"), icon: "arrow.right",
+                         action: match.onNextGame)
         }
-    }
-
-    private var content: some View {
-        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, !chromeMode.isCompact {
-                TavTavAvatar(persona: mascot, size: 108)
-            }
-            Text(title)
-                .font(ChromeType.winTitle)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            if let sub = resultSubtitle {
-                Text(sub)
-                    .font(ChromeType.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-            }
-
-            VStack(spacing: 6) {
-                Text("You \(localWins) – \(opponentWins) \(match.opponentName)")
-                    .font(ChromeType.title2.bold().monospacedDigit())
-                    .foregroundStyle(.white)
-                Text(progressCaption)
-                    .font(ChromeType.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-
-            primaryButton
-
-            AdaptiveRow(spacing: 14) {
-                if let onReview {
-                    Button(action: onReview) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                            Text("Review game")
-                        }
-                    }
-                    .buttonStyle(ChromeButton(role: .scrim))
-                }
-                Button(action: onHistory) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text("History")
-                    }
-                }
-                .buttonStyle(ChromeButton(role: .scrim))
-            }
-
-            Button { match.onExit() } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "house")
-                    Text("Back to menu")
-                }
-            }
-            .buttonStyle(ChromeButton(role: .scrim))
+        if let onRematch = match.onRematch {
+            return .init(label: String(localized: "Rematch"), icon: "arrow.clockwise",
+                         action: onRematch)
         }
-    }
-
-    @ViewBuilder
-    private var primaryButton: some View {
-        Button {
-            if !isComplete { match.onNextGame() }
-            else if let onRematch = match.onRematch { onRematch() }
-            else { match.onExit() }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: primaryIcon)
-                Text(primaryLabel)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(ChromeButton(role: .primary))
-    }
-
-    private var primaryIcon: String {
-        if !isComplete { return "arrow.right" }
-        return match.onRematch != nil ? "arrow.clockwise" : "arrow.left"
-    }
-
-    private var primaryLabel: String {
-        if !isComplete { return String(localized: "Next game") }
-        return match.onRematch != nil
-            ? String(localized: "Rematch")
-            : String(localized: "Back to lobby")
+        return .init(label: String(localized: "Back to lobby"), icon: "arrow.left",
+                     action: match.onExit)
     }
 }
 
@@ -1567,6 +1467,9 @@ enum ChromeType {
     // Display faces with bespoke sizes.
     static var winTitle: Font { .system(size: pt(54), weight: .bold, design: .serif) }
     static var statsTitle: Font { .custom("Cormorant Garamond", size: pt(38)) }
+    /// Big score digits (Full Tavli score card): the chrome face, bold, so digits are
+    /// lining figures like the in-game scoreboard — never the display serif.
+    static var scoreDisplay: Font { .system(size: pt(34), weight: .bold) }
     static var wordmark: Font { .custom("Cormorant Garamond", size: pt(96)) }
 
     // Debug overlay (developer chrome, but it was 9–10 pt — illegible on device).

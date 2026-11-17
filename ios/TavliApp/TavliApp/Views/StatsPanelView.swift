@@ -10,8 +10,48 @@ private typealias SColor = SwiftUI.Color
 /// mode picker (`RootView`). No persistence or game logic lives here.
 struct StatsPanelView: View {
     let stats: HumanGameStats
+    /// Inside another card (the game-over card): a tinted inset instead of a second
+    /// floating card.
+    var embedded = false
+    /// Embedded on a short screen (iPhone landscape game-over card): only the
+    /// overall record, so the card fits without scrolling.
+    var condensed = false
 
     var body: some View {
+        if embedded {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(ChromeType.isCompact ? 12 : 16)
+                .background(ChromeTheme.ink.opacity(0.06))
+                .cornerRadius(ChromeKit.buttonRadius)
+                .accessibilityIdentifier("statsPanel")
+        } else {
+            content
+                .frame(maxWidth: 352)
+                .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
+                .accessibilityIdentifier("statsPanel")
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if condensed {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Human vs TavTav")
+                    .font(ChromeType.caption.weight(.semibold))
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                if stats.total == 0 {
+                    emptyState
+                } else {
+                    overall
+                }
+            }
+        } else {
+            fullContent
+        }
+    }
+
+    private var fullContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Human vs TavTav")
                 .font(ChromeType.statsTitle)
@@ -25,9 +65,6 @@ struct StatsPanelView: View {
                 streak
             }
         }
-        .frame(maxWidth: 352)
-        .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
-        .accessibilityIdentifier("statsPanel")
     }
 
     // ── Sections ──────────────────────────────────────────────────────────────

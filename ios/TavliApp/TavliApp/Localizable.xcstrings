@@ -228,23 +228,6 @@
         }
       }
     },
-    "%@ wins!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ gewinnt!"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ wint!"
-          }
-        }
-      }
-    },
     "%@-ply" : {
 
     },
@@ -508,23 +491,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "AI-zetten animeren"
-          }
-        }
-      }
-    },
-    "Are you sure you want to give up?" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Möchtest du wirklich aufgeben?"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Weet je zeker dat je wilt opgeven?"
           }
         }
       }
@@ -1261,23 +1227,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ik begin"
-          }
-        }
-      }
-    },
-    "I'm sure" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ja, aufgeben"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ja, opgeven"
           }
         }
       }
@@ -2644,23 +2593,6 @@
         }
       }
     },
-    "You still have a %lld%% chance of winning. Are you sure you want to give up?" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du hast noch eine Gewinnchance von %lld%%. Möchtest du wirklich aufgeben?"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Je hebt nog %lld%% kans om te winnen. Weet je zeker dat je wilt opgeven?"
-          }
-        }
-      }
-    },
     "You tried" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2674,23 +2606,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Jij probeerde"
-          }
-        }
-      }
-    },
-    "You win!" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Du gewinnst!"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Jij wint!"
           }
         }
       }
@@ -3093,38 +3008,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ · twee spelers"
-          }
-        }
-      }
-    },
-    "%@ wins a double game!" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ gewinnt doppelt!"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ wint dubbel!"
-          }
-        }
-      }
-    },
-    "TavTav still rates your position at %@ points. Are you sure you want to give up?" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TavTav bewertet deine Stellung noch mit %@ Punkten. Willst du wirklich aufgeben?"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TavTav waardeert je stelling nog op %@ punten. Weet je zeker dat je wilt opgeven?"
           }
         }
       }
@@ -3573,6 +3456,182 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Beide kanten racen dezelfde kant op; één steen houdt een punt bezet en er wordt nooit geslagen."
+          }
+        }
+      }
+    },
+    "You win" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du gewinnst"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jij wint"
+          }
+        }
+      }
+    },
+    "You win a double game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du gewinnst doppelt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jij wint dubbel"
+          }
+        }
+      }
+    },
+    "%@ wins a double game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ gewinnt doppelt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ wint dubbel"
+          }
+        }
+      }
+    },
+    "Give up this game?" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Partie aufgeben?"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze partij opgeven?"
+          }
+        }
+      }
+    },
+    "You still have a %lld%% chance of winning." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Du hast noch eine Gewinnchance von %lld%%."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je hebt nog %lld%% kans om te winnen."
+          }
+        }
+      }
+    },
+    "TavTav still rates your position at %@ points." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav bewertet deine Stellung noch mit %@ Punkten."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TavTav waardeert je stelling nog op %@ punten."
+          }
+        }
+      }
+    },
+    "Game %lld of %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partie %lld von %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partij %lld van %lld"
+          }
+        }
+      }
+    },
+    "Final" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Endstand"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eindstand"
+          }
+        }
+      }
+    },
+    "Next game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nächste Partie"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volgende partij"
+          }
+        }
+      }
+    },
+    "Rematch" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revanche"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revanche"
+          }
+        }
+      }
+    },
+    "Back to lobby" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurück zur Lobby"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terug naar de lobby"
           }
         }
       }

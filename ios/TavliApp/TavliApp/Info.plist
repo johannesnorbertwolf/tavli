@@ -31,6 +31,10 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <!-- One caramel (light) design: never follow system dark mode, so system
+         controls (segmented pickers, alerts, sheets, Game Center) stay light. -->
+    <key>UIUserInterfaceStyle</key>
+    <string>Light</string>
     <key>UIAppFonts</key>
     <array>
         <string>CormorantGaramond.ttf</string>
