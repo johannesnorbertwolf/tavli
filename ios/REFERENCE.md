@@ -186,7 +186,7 @@ so the game flow is validated without a simulator.
   analysis *while the game is played*, into `analysisByPly` (exposed sorted as
   `inPlayAnalysis: [AnalysisEntry]`). The app logs it with the finished game so the review opens
   instantly (see *Save & load*). **Both sides are ranked the same way** (#108): the AI's *play*
-  search can be weakened (1-ply + selection noise, see *AI strength*), so its plies must be graded by
+  search can be weakened (1-ply + selection noise, see *AI level*), so its plies must be graded by
   the same full-strength yardstick as the human's rather than reusing the play search.
   - **Background ranking, both sides.** Each turn's chokepoint — `beginTurn` for the human,
     `playAITurn` for the AI — calls `startMoveAnalysis`: off the main actor, on an **isolated board
@@ -220,17 +220,30 @@ so the game flow is validated without a simulator.
   `SearchConfig(maxDepth: 1)` forces pure 1-ply (used by headless game tests to stay fast). Three
   knobs have **no CLI equivalent**: `maxRootBranches` (5) caps the root candidate set at every depth;
   `rootSoftBudget` (8s) and `minRootBranches` (2) only matter for the `maxDepth >= 3` deepening.
-  `selectionNoise` (σ, default 0) is the **AI-strength dial** (see *AI strength*).
+  `selectionNoise` (σ, default 0) is the **AI-strength dial** (see *AI level*).
 
-- **AI strength (#108).** The settings slider tunes how strongly the AI plays by mapping `aiStrength`
-  (0…1, default 1.0) onto two `SearchConfig` knobs (`AppSettings.searchConfig`): **full strength**
-  (slider max) is the unchanged 2-ply argmax (`maxDepth: 2`, `selectionNoise: 0`); **below max** the
-  *play* search drops to `maxDepth: 1` and `selectionNoise` rises linearly to `aiSigmaMax` at the
-  weakest, so a weaker opponent occasionally — and, at the weakest, only seldom blunders — passes up
-  its best 1-ply move. The noise is applied **only** in `getBestMove`'s 1-ply selection (below), so
-  leaf scoring and the in-play/review analysis stay full-strength and noise-free. `GameSession.searchConfig`
-  is mutable and the view keeps it in sync (`GameView`), so the slider takes effect on the AI's next
-  move mid-game. Online matches have no AI side and ignore it.
+- **AI level (#108, #189).** The player picks a **level 1–8** in the new-game sheet (it replaced
+  #108's 0…1 strength slider). `AILevel.searchConfig(for:)` (engine, `AILevel.swift`) maps it onto
+  two `SearchConfig` knobs, leaving every other field standard:
+
+  | Level | Play search | `selectionNoise` σ |
+  |---|---|---|
+  | 8 (default) | 2-ply argmax (full strength) | 0 |
+  | 7 | 1-ply argmax | 0 |
+  | 6 / 5 / 4 / 3 / 2 | 1-ply | 0.010 / 0.020 / 0.035 / 0.050 / 0.070 |
+  | 1 | 1-ply | 0.100 (= the old slider's weakest, `legacySigmaMax`) |
+
+  The σ curve is **convex**: σ is Gaussian noise on win-probability move scores, so a small σ only
+  swaps near-equal moves while a larger one passes up clearly better ones; wider steps toward
+  level 1 keep each level a noticeable change. The noise is applied **only** in `getBestMove`'s
+  1-ply selection (below), so leaf scoring and the in-play/review analysis stay full-strength and
+  noise-free. `AppSettings.searchConfig` reads the stored level (`settings.aiLevel`, `AILevel.load`,
+  default 8); `GameSession.searchConfig` is mutable and `GameView` re-applies it on entry and when
+  the stored level changes (offline only — online matches have no AI side).
+  **Migration:** `AILevel.migrate` (run once from `App.init` via `AppSettings.migrateLegacySettings`)
+  maps a stored slider value to the nearest level — 1.0 → 8, else the 1-ply level whose σ is
+  closest to the slider's `0.10·(1 − s)` (ties → stronger) — and deletes the old key; an existing
+  level wins. `PlayAsPreference.migrate` rewrites Play as `ask` → `random` in the same pass.
 
 - **`Agent` search (#58).** Three layers on top of the parity-validated
   1-ply primitive (`evaluateMoves`, which scores each candidate as `1 - opponentValue` and a `defer`
@@ -250,7 +263,7 @@ so the game flow is validated without a simulator.
   - `getBestMove(…timeBudget:…maxDepth:rootSoftBudget:minRootBranches:maxRootBranches:selectionNoise:noiseSeed:)`
     — **2-ply baseline + anytime deepening** under a wall-clock `DispatchTime` deadline (this replaced
     the earlier iterative-deepening loop). Single move → fast path (depth 1, index 0). When
-    `maxDepth <= 1` (the strength slider's weakened mode, #108): score every move 1-ply and select over
+    `maxDepth <= 1` (AI levels 1–7, #108/#189): score every move 1-ply and select over
     **all** of them via `selectIndex` — plain argmax at `selectionNoise == 0`, else argmax of the
     scores perturbed by iid Gaussian(0, σ) (Box–Muller, seedable via `noiseSeed`/`SplitMix64` for
     tests), returning that pick at depth 1. Otherwise (full strength): (1) score every root move 1-ply

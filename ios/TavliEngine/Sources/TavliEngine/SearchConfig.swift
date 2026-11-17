@@ -21,7 +21,7 @@ import Foundation
 /// 3-ply worst case (a huge-branching doubles roll) can take the full `timeBudget`.
 ///
 /// **Difficulty (#108).** Two of these knobs double as the AI-strength dial driven by the
-/// settings slider: full strength is the default 2-ply argmax (`maxDepth: 2`,
+/// AI level (`AILevel`, #189): full strength is the default 2-ply argmax (`maxDepth: 2`,
 /// `selectionNoise: 0`); a weaker opponent drops to `maxDepth: 1` and raises
 /// `selectionNoise` so the 1-ply move pick is perturbed (see `Agent.getBestMove`). The
 /// noise lives *only* in the final root selection, so the leaf scoring used by analysis
@@ -52,7 +52,7 @@ public struct SearchConfig: Sendable, Hashable {
     /// Std-dev of the Gaussian noise added to the **root move scores before the final pick**
     /// (#108 difficulty). `0` (the default) is full-strength argmax — identical to the old
     /// behaviour. A positive value makes a weaker opponent occasionally play a non-best move;
-    /// `getBestMove` applies it only in the 1-ply path the slider drops to below full strength.
+    /// `getBestMove` applies it only in the 1-ply path (AI levels 1–7).
     public var selectionNoise: Float
 
     public init(timeBudget: TimeInterval = 20.0,

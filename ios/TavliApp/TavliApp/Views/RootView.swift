@@ -89,12 +89,13 @@ struct RootView: View {
                     onNewGame: {
                         // "Play Again" keeps the same color, mode and variant, and re-runs
                         // the starting-player flow: the opening-roll ceremony, or a forced
-                        // starter per Settings (#77).
+                        // starter per Settings (#77). Play as Random (#189) draws a side
+                        // for each new game.
                         let variant = GameVariantSetting(variant: session.game.variant)
                         let vsAI = session.aiColor != nil
                         self.session = nil
                         if vsAI {
-                            self.beginGame(humanColor: self.humanColor, variant: variant)
+                            self.beginGame(humanColor: self.newGameColor, variant: variant)
                         } else {
                             self.beginTwoPlayer(variant: variant)
                         }
@@ -177,7 +178,10 @@ struct RootView: View {
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
-                               onSelect: { color in
+                               onPlay: {
+                                   // The remembered setup (#189): colour (Random draws a
+                                   // side now), variant and length from the new-game sheet.
+                                   let color = AppSettings.preferredColor.resolve()
                                    if AppSettings.matchLength == .fullTavli {
                                        beginFullTavli(humanColor: color)
                                    } else {
@@ -382,7 +386,13 @@ struct RootView: View {
         let variant = currentVariant
         session = nil
         match = nil
-        beginGame(humanColor: humanColor, variant: variant)
+        beginGame(humanColor: newGameColor, variant: variant)
+    }
+
+    /// The colour for a "Play again"/"Rematch": the same colour, unless Play as is
+    /// Random (#189), which draws a side for every new game.
+    private var newGameColor: EngineColor {
+        AppSettings.preferredColor == .random ? AppSettings.preferredColor.resolve() : humanColor
     }
 
     /// The agent for resuming `save` (its own variant's model), or `.unavailable` when
@@ -520,19 +530,21 @@ private enum FullTavliScreen: Equatable {
     case transition, result
 }
 
-/// Caramel start screen (#101, slimmed down in #174). Top to bottom: an icon bar
-/// (Settings · My Record · Saved games), the "Tavli" wordmark, a "Continue last game"
-/// card (only while an autosave exists), the primary "Play vs TavTav" (colour from
-/// Settings; a small White/Red choice only when Settings says Ask), the match-length
-/// pill (Single · Best of 3 · Full Tavli), the secondary modes (two players, online)
-/// and a quiet current-variant line that opens Settings. The variant itself is chosen
-/// in Settings; Full Tavli ignores it. One column on a phone (fits a 13 mini without
-/// scrolling; `FitOrScroll` for big Dynamic Type / landscape), two on iPad (Continue +
-/// Play left; match length + other modes right).
+/// Caramel start screen (#101, slimmed down in #174, quick play in #189). Top to bottom:
+/// an icon bar (My Record · Saved games · Settings), the "Tavli" wordmark, a "Continue
+/// last game" card (only while an autosave exists), the play pair — a big "Play the
+/// computer" button that starts the remembered setup at once (subtitle "Level 6 ·
+/// Plakoto · Best of 3") beside a small square adjust button opening `NewGameSheet` —
+/// then Two players / Play Online (same remembered variant + length). Without the model
+/// the play button becomes an explanation card; the adjust button stays so another
+/// variant can be picked. One column on a phone (fits a 13 mini without scrolling;
+/// `FitOrScroll` for big Dynamic Type / landscape), two on iPad (Continue + Play left;
+/// the other modes right).
 private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
-    let onSelect: (EngineColor) -> Void
+    /// Start a vs-AI game with the remembered setup (#189).
+    let onPlay: () -> Void
     /// Start a two-player (pass-and-play) game of the selected variant (#143).
     let onTwoPlayer: () -> Void
     let onResume: (SaveMetadata) -> Void
@@ -544,25 +556,21 @@ private struct ModePickerView: View {
     @State private var showStats = false
     @State private var showSettings = false
     @State private var showSaves = false
+    @State private var showNewGame = false
+    /// Set by the sheet's Play: the game starts once the sheet has gone (#189).
+    @State private var playAfterSheet = false
 
-    /// The colour to play (#77); default White (#174). `.ask` shows a small choice.
+    // The remembered new-game setup (#189), edited in `NewGameSheet`. Defaults equal
+    // the `AppSettings` accessors.
     @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .white
-    /// Single game / best-of-three match (#145) / Full Tavli (#144). Default best-of-three.
     @AppStorage(SettingsKey.matchLength) private var matchLength: MatchLengthSetting = .bestOfThree
-    /// The variant new games use (#143), chosen in Settings.
     @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
+    @AppStorage(SettingsKey.aiLevel) private var aiLevel = AILevel.max
 
     private var isCompact: Bool { ChromeType.isCompact }
 
-    /// Full Tavli mode (#144): the fixed Portes → Fevga → Plakoto session.
-    private var isFullTavli: Bool { matchLength == .fullTavli }
-
-    /// Whether vs-AI play is possible: the selected variant's model is bundled, or in
-    /// Full Tavli mode every leg's model (#144; its Plakoto leg follows the variant).
-    private var aiAvailable: Bool {
-        isFullTavli
-            ? FullTavliSession(preferredVariantID: variant.rawValue, aiColor: .black).isAIAvailable()
-            : AppSettings.aiAvailable(variant)
+    private var setup: NewGameSetup {
+        NewGameSetup(variant: variant, level: aiLevel, playAs: preferredColor, length: matchLength)
     }
 
     private var autosave: SaveMetadata? { saves.first(where: \.isAutosave) }
@@ -611,6 +619,19 @@ private struct ModePickerView: View {
                 onResume(meta)
             })
         }
+        .sheet(isPresented: $showNewGame, onDismiss: {
+            // Start only after the sheet is gone, so it isn't torn down mid-dismissal.
+            if playAfterSheet {
+                playAfterSheet = false
+                onPlay()
+            }
+        }) {
+            NewGameSheet(onPlay: {
+                playAfterSheet = true
+                showNewGame = false
+            })
+            .modifier(FormSheetSizing())
+        }
     }
 
     // MARK: - Sections
@@ -622,12 +643,12 @@ private struct ModePickerView: View {
                 ContinueCard(meta: autosave) { onResume(autosave) }
             }
             if isCompact {
-                playCard
+                playPair
             } else {
                 // iPad: TavTav himself heads the play card (no mascot on a phone, #109).
                 VStack(spacing: 12) {
                     TavTavLoco(persona: .friendly, height: 128)
-                    playCard
+                    playPair
                 }
                 .frame(maxWidth: .infinity)
                 .chromeCard(padding: 20)
@@ -635,18 +656,11 @@ private struct ModePickerView: View {
         }
     }
 
-    /// Match length + the other modes + the variant line (the right column on iPad).
+    /// The other modes (the right column on iPad).
     private var trailColumn: some View {
         VStack(spacing: stackSpacing) {
-            matchLengthPicker
             twoPlayerButton
             onlineButton
-            // Full Tavli ignores the variant: hide the line but keep its room, so
-            // switching the pill never shifts the layout.
-            variantLine
-                .opacity(isFullTavli ? 0 : 1)
-                .disabled(isFullTavli)
-                .accessibilityHidden(isFullTavli)
         }
     }
 
@@ -675,85 +689,67 @@ private struct ModePickerView: View {
         .accessibilityLabel(label)
     }
 
-    /// The primary action. A fixed colour (the default, White) is one solid "Play vs
-    /// TavTav" button carrying that colour's swatch; `.ask` shows a small White/Red
-    /// choice instead. Without the model, an explanation in its place (#143) — never a
-    /// silently random opponent.
+    /// The play button (or, without the model, its explanation) + the adjust button,
+    /// both the same height.
+    private var playPair: some View {
+        HStack(spacing: isCompact ? 10 : 12) {
+            playCard
+            adjustButton
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// "Play the computer" + the remembered setup as a subtitle (#189); starts at once.
+    /// Without the model, an explanation in its place (#143) — never a silently random
+    /// opponent.
     @ViewBuilder
     private var playCard: some View {
-        if !aiAvailable {
-            VStack(spacing: 8) {
-                Text("Play vs TavTav")
+        if !setup.aiAvailable {
+            VStack(spacing: 6) {
+                Text("Play the computer")
                     .font(ChromeType.headline)
                     .foregroundStyle(ChromeKit.inkSecondary)
-                Text(isFullTavli
-                     ? String(localized: "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now.")
-                     : String(localized: "TavTav is still learning \(variant.name). Play it with two players for now."))
+                Text(setup.unavailableMessage)
                     .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .modifier(CompactCard())
-        } else if let fixed = preferredColor.engineColor {
-            Button { onSelect(fixed) } label: {
-                HStack(spacing: 10) {
-                    Text("Play vs TavTav")
-                    swatch(fixed, size: 18)
+        } else {
+            Button(action: onPlay) {
+                VStack(spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text("Play the computer")
+                            .font(ChromeType.headline.bold())
+                        PlayAsChecker(setting: preferredColor, size: isCompact ? 16 : 18)
+                    }
+                    Text(setup.summary)
+                        .font(ChromeType.subheadline.weight(.medium))
+                        .opacity(0.92)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
-                .padding(.vertical, isCompact ? 4 : 6)
+                .padding(.vertical, isCompact ? 6 : 8)
+                .frame(maxHeight: .infinity)
             }
             .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
-            .accessibilityIdentifier("playVsTavTav")
-        } else {
-            VStack(spacing: 8) {
-                Text("Play vs TavTav as")
-                    .font(ChromeType.callout.weight(.semibold))
-                    .foregroundStyle(ChromeTheme.ink)
-                HStack(spacing: 10) {
-                    colorButton(.white)
-                    colorButton(.black)
-                }
-            }
+            .accessibilityIdentifier("playVsComputer")
         }
     }
 
-    private func colorButton(_ color: EngineColor) -> some View {
-        Button { onSelect(color) } label: {
-            HStack(spacing: 8) {
-                swatch(color, size: 18)
-                Text(ChromeTheme.displayName(color))
-            }
-            .padding(.vertical, isCompact ? 4 : 6)
+    /// Opens the new-game sheet (#189).
+    private var adjustButton: some View {
+        Button { showNewGame = true } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(ChromeType.title3.weight(.semibold))
+                .frame(width: isCompact ? 36 : 40)
+                .frame(maxHeight: .infinity)
         }
-        .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
-    }
-
-    private func swatch(_ color: EngineColor, size: CGFloat) -> some View {
-        Circle()
-            .fill(ChromeTheme.checkerColor(color))
-            .overlay(Circle().stroke(SColor.white.opacity(0.7), lineWidth: 1.5))
-            .frame(width: size, height: size)
-    }
-
-    /// Single · Best of 3 · Full Tavli (#145, #144), with a one-line caption that keeps
-    /// the height stable; Full Tavli names its fixed leg order.
-    private var matchLengthPicker: some View {
-        VStack(spacing: 6) {
-            Picker("Match length", selection: $matchLength) {
-                ForEach(MatchLengthSetting.allCases) { option in
-                    Text(option.shortLabel).tag(option)
-                }
-            }
-            .pickerStyle(.segmented)
-            .tint(ChromeTheme.undoTint)
-            Text(matchLength.caption)
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
+        .buttonStyle(ChromeButton(role: .secondary))
+        .accessibilityLabel("Game setup")
+        .accessibilityIdentifier("newGameSetup")
     }
 
     /// Two players on this device (#143) — works for every variant, model or not.
@@ -786,19 +782,6 @@ private struct ModePickerView: View {
         .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
     }
 
-    /// The current variant, quietly, with a shortcut into Settings where it's chosen.
-    private var variantLine: some View {
-        Button { showSettings = true } label: {
-            Text("\(variant.name) · change in Settings")
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
-                .multilineTextAlignment(.center)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     /// Fitted stats sheet (#101): explicit Done affordance, sized to the card
     /// rather than the near-fullscreen system default.
     private var statsSheet: some View {
@@ -829,6 +812,19 @@ private struct ModePickerView: View {
     }
 
     private func reload() { saves = store.list() }
+}
+
+/// The new-game sheet's iPad size (#189): a form-width sheet as tall as its content (so
+/// Play is never below the fold) where the system offers
+/// it (iOS 18+); the iOS 17 default sheet otherwise. No effect on a phone.
+private struct FormSheetSizing: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.presentationSizing(.form.fitted(horizontal: false, vertical: true))
+        } else {
+            content
+        }
+    }
 }
 
 /// A `.chromeCard()` on a phone only — on iPad the play section is already a card.

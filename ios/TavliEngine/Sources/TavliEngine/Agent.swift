@@ -293,11 +293,11 @@ public final class Agent: @unchecked Sendable {
     /// Returns the chosen move, its score, its index into `moves`, and the depth reached.
     ///
     /// **Difficulty (#108).** `selectionNoise` (σ) only takes effect in the 1-ply path the
-    /// strength slider drops to below full strength: it adds iid Gaussian(0, σ) to every
+    /// AI levels 1–7 play (`AILevel`, #189): it adds iid Gaussian(0, σ) to every
     /// move's 1-ply score before the argmax, so a weaker opponent sometimes plays a
     /// non-best move. σ = 0 is the unchanged full-strength argmax. `noiseSeed` makes the
     /// perturbation reproducible for tests (nil → the system RNG in real play). The 2-ply+
-    /// path is unaffected — the slider only ever pairs deeper search with σ = 0.
+    /// path is unaffected — `AILevel` only ever pairs deeper search with σ = 0.
     public func getBestMove(
         _ board: GameBoard,
         _ moves: [Move],
@@ -338,7 +338,7 @@ public final class Agent: @unchecked Sendable {
 
         let targetDepth = maxDepth ?? 3
         guard targetDepth > 1 else {
-            // 1-ply play — the strength the slider drops to below full strength (#108).
+            // 1-ply play — AI levels 1–7 (#108, #189).
             // Select over **all** moves (not the pruned candidate set) so the noise can
             // reach any legal reply; σ = 0 is the plain global 1-ply argmax (unchanged).
             let idx = Self.selectIndex(rootScores, noise: selectionNoise, seed: noiseSeed)

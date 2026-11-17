@@ -17,22 +17,6 @@
         }
       }
     },
-    "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wie stark TavTav spielt. Ganz rechts ist die volle Spielstärke; weiter links schaut TavTav weniger weit voraus und vertut sich öfter. Wird beim nächsten Zug von TavTav wirksam."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hoe sterk TavTav speelt. Helemaal rechts is de volledige speelsterkte; verder naar links kijkt TavTav minder ver vooruit en vergist zich vaker. Gaat in bij de volgende zet van TavTav."
-          }
-        }
-      }
-    },
     "More" : {
       "localizations" : {
         "de" : {
@@ -49,22 +33,6 @@
         }
       }
     },
-    "Relaxed" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Entspannt"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ontspannen"
-          }
-        }
-      }
-    },
     "Show debug pane" : {
       "localizations" : {
         "de" : {
@@ -77,22 +45,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Debugpaneel tonen"
-          }
-        }
-      }
-    },
-    "TavTav's strength" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TavTavs Stärke"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TavTavs sterkte"
           }
         }
       }
@@ -495,23 +447,6 @@
         }
       }
     },
-    "Ask" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fragen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vragen"
-          }
-        }
-      }
-    },
     "Auto-roll" : {
       "localizations" : {
         "de" : {
@@ -557,23 +492,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "beste"
-          }
-        }
-      }
-    },
-    "Best" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bester"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Beste"
           }
         }
       }
@@ -712,7 +630,6 @@
       }
     },
     "Close" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1645,7 +1562,6 @@
       }
     },
     "Play as" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -1712,7 +1628,6 @@
       }
     },
     "Red" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -2242,7 +2157,6 @@
       }
     },
     "White" : {
-      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -2742,22 +2656,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Beide moedersstenen staan vast – niemand scoort."
-          }
-        }
-      }
-    },
-    "Applies to the next new game; a game in progress keeps its rules." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gilt ab dem nächsten neuen Spiel; ein laufendes Spiel behält seine Regeln."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Geldt vanaf het volgende nieuwe spel; een lopend spel houdt zijn regels."
           }
         }
       }
@@ -3418,22 +3316,6 @@
         }
       }
     },
-    "The colour you play against TavTav. Ask lets you choose on the start screen." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Farbe, mit der du gegen TavTav spielst. Bei „Fragen“ wählst du sie auf dem Startbildschirm."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "De kleur waarmee je tegen TavTav speelt. Bij ‘Vragen’ kies je die op het startscherm."
-          }
-        }
-      }
-    },
     "Advanced" : {
       "localizations" : {
         "de" : {
@@ -3446,22 +3328,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Geavanceerd"
-          }
-        }
-      }
-    },
-    "Single" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Einzeln"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enkel"
           }
         }
       }
@@ -3526,54 +3392,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Portes → Fevga → Plakoto"
-          }
-        }
-      }
-    },
-    "Play vs TavTav" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gegen TavTav spielen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen tegen TavTav"
-          }
-        }
-      }
-    },
-    "Play vs TavTav as" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gegen TavTav spielen als"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen tegen TavTav als"
-          }
-        }
-      }
-    },
-    "%@ · change in Settings" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · in den Einstellungen ändern"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ · wijzigen in Instellingen"
           }
         }
       }
@@ -3734,6 +3552,310 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Moeder vastgezet"
+          }
+        }
+      }
+    },
+    "Random" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zufällig"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willekeurig"
+          }
+        }
+      }
+    },
+    "Play the computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gegen den Computer spielen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelen tegen de computer"
+          }
+        }
+      }
+    },
+    "Level %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stufe %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niveau %lld"
+          }
+        }
+      }
+    },
+    "Level" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stufe"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niveau"
+          }
+        }
+      }
+    },
+    "Length" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Länge"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lengte"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spielen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelen"
+          }
+        }
+      }
+    },
+    "Game setup" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spiel einrichten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelinstellingen"
+          }
+        }
+      }
+    },
+    "Single game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einzelspiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enkel spel"
+          }
+        }
+      }
+    },
+    "Standard Plakoto" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard-Plakoto"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standaard Plakoto"
+          }
+        }
+      }
+    },
+    "Full Tavli plays all three variants in turn." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli spielt alle drei Varianten nacheinander."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Tavli speelt alle drie varianten na elkaar."
+          }
+        }
+      }
+    },
+    "The colour you play against the computer. Random picks a side for each new game." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Farbe, mit der du gegen den Computer spielst. Bei „Zufällig“ wird für jedes neue Spiel eine Seite gelost."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De kleur waarmee je tegen de computer speelt. Bij ‘Willekeurig’ wordt voor elk nieuw spel een kant geloot."
+          }
+        }
+      }
+    },
+    "Beginner: often misses the best move." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anfänger: verpasst oft den besten Zug."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beginner: mist vaak de beste zet."
+          }
+        }
+      }
+    },
+    "Casual: still slips up a lot." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gelegenheitsspieler: patzt noch oft."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recreatief: vergist zich nog vaak."
+          }
+        }
+      }
+    },
+    "Relaxed: playable, with frequent slips." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entspannt: spielbar, mit häufigen Patzern."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ontspannen: speelbaar, met geregeld een misser."
+          }
+        }
+      }
+    },
+    "Solid: slips now and then." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solide: patzt hin und wieder."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Degelijk: vergist zich af en toe."
+          }
+        }
+      }
+    },
+    "Steady: rarely far from its best move." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicher: selten weit vom besten Zug entfernt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stabiel: zelden ver van de beste zet."
+          }
+        }
+      }
+    },
+    "Strong: only occasional slips." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stark: nur gelegentliche Patzer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sterk: slechts af en toe een misser."
+          }
+        }
+      }
+    },
+    "Sharp: always its best move, without looking ahead." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scharf: immer der beste Zug, ohne vorauszuschauen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scherp: altijd de beste zet, zonder vooruit te kijken."
+          }
+        }
+      }
+    },
+    "Full strength: looks ahead to your reply." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volle Stärke: denkt deine Antwort voraus."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volle sterkte: kijkt vooruit naar jouw antwoord."
           }
         }
       }

@@ -20,6 +20,11 @@ enum ChromeKit {
     /// Secondary ink: the single allowed "dimmed" text color (contrast floor
     /// for captions; replaces the scattered 0.5/0.6 opacities).
     static let inkSecondary = ChromeTheme.ink.opacity(0.72)
+
+    /// Choice controls (#189 new-game sheet): the recessed track behind a segmented
+    /// choice / unselected chip, and the raised fill of the selected segment.
+    static let trackColor = SwiftUI.Color(hex: 0xe6dccb)
+    static let selectedSegmentColor = SwiftUI.Color(hex: 0xfdf9f1)
 }
 
 // ── Cards ───────────────────────────────────────────────────────────────────

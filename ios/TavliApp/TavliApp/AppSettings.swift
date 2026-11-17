@@ -7,34 +7,65 @@ import TavliEngine
 /// auto-resume, which runs in `init` before `@AppStorage` is live).
 ///
 /// Defaults: play as White, opening-roll ceremony, auto-roll on, AI animation on,
-/// win-probability bar off, in-play analysis off, full AI strength (#174 moved the
-/// colour and auto-roll defaults). Each `@AppStorage` declaration in a view must carry
+/// win-probability bar off, in-play analysis off, AI level 8 = full strength (#189),
+/// best-of-three, Plakoto (#174 moved the colour and auto-roll defaults). Each `@AppStorage` declaration in a view must carry
 /// the same default as the matching accessor here so view bindings and these reads
 /// agree. Manual dice entry was removed in #174; an old stored `settings.diceMode`
-/// value is simply never read.
+/// value is simply never read. The variant, match length, AI level and Play as are
+/// chosen in the new-game sheet (#189, `NewGameSheet`); Play as also stays in Settings.
 
-/// Which color the human plays. A fixed color is used for every new game (default
-/// White, #174); `.ask` shows a small White/Red choice on the start screen instead.
+/// Which color the human plays (#189: White · Random · Red). A fixed colour is used for
+/// every new game (default White, #174); `.random` draws a side per new game. Replaces
+/// #77's `ask` — a stored `ask` is rewritten to `random` once at launch
+/// (`PlayAsPreference.migrate`, run from `AppSettings.migrateLegacySettings`).
 enum PreferredColorSetting: String, CaseIterable, Identifiable {
-    case ask, white, black
+    case white, random, black
 
     var id: String { rawValue }
 
-    /// The engine color to play, or `nil` when the player still chooses per game.
+    /// The engine colour to play, or `nil` for `.random` (see `resolve()`).
     var engineColor: TavliEngine.Color? {
         switch self {
-        case .ask:   return nil
-        case .white: return .white
-        case .black: return .black
+        case .white:  return .white
+        case .random: return nil
+        case .black:  return .black
         }
+    }
+
+    /// The colour for one new game: the fixed colour, or a coin flip for `.random`.
+    func resolve() -> TavliEngine.Color {
+        engineColor ?? (Bool.random() ? .white : .black)
     }
 
     var label: String {
         switch self {
-        case .ask:   return String(localized: "Ask")
-        case .white: return String(localized: "White")
-        case .black: return String(localized: "Red")
+        case .white:  return String(localized: "White")
+        case .random: return String(localized: "Random")
+        case .black:  return String(localized: "Red")
         }
+    }
+}
+
+/// Display copy for the AI levels (#189); the level -> search mapping is the engine's
+/// `AILevel` (unit-tested there).
+enum AILevelCopy {
+    /// One line describing `level`.
+    static func description(_ level: Int) -> String {
+        switch AILevel.clamped(level) {
+        case 1:  return String(localized: "Beginner: often misses the best move.")
+        case 2:  return String(localized: "Casual: still slips up a lot.")
+        case 3:  return String(localized: "Relaxed: playable, with frequent slips.")
+        case 4:  return String(localized: "Solid: slips now and then.")
+        case 5:  return String(localized: "Steady: rarely far from its best move.")
+        case 6:  return String(localized: "Strong: only occasional slips.")
+        case 7:  return String(localized: "Sharp: always its best move, without looking ahead.")
+        default: return String(localized: "Full strength: looks ahead to your reply.")
+        }
+    }
+
+    /// "Level 6".
+    static func name(_ level: Int) -> String {
+        String(localized: "Level \(AILevel.clamped(level))")
     }
 }
 
@@ -85,16 +116,8 @@ enum MatchLengthSetting: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The start screen's pill segment (#174): "Single · Best of 3 · Full Tavli".
-    var shortLabel: String {
-        switch self {
-        case .single:      return String(localized: "Single")
-        case .bestOfThree: return String(localized: "Best of 3")
-        case .fullTavli:   return String(localized: "Full Tavli")
-        }
-    }
-
-    /// One line under the start screen's pill (#174); Full Tavli names its leg order.
+    /// One line under the new-game sheet's length picker (#174, #189); Full Tavli
+    /// names its leg order.
     var caption: String {
         switch self {
         case .single:      return String(localized: "One game")
@@ -150,6 +173,12 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Name for the play button's setup line (#189): the short label, except standard
+    /// Plakoto, whose short label ("Standard") needs the game's name beside it.
+    var setupLabel: String {
+        self == .plakotoStandard ? String(localized: "Standard Plakoto") : shortLabel
+    }
+
     /// Full display name (game chrome, settings, saves).
     var name: String {
         switch self {
@@ -191,13 +220,14 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
 
 /// `UserDefaults` keys for the persisted settings.
 enum SettingsKey {
-    static let preferredColor     = "settings.preferredColor"
+    static let preferredColor     = PlayAsPreference.storageKey
     static let startingPlayer     = "settings.startingPlayer"
     static let autoRoll           = "settings.autoRoll"
     static let aiAnimation        = "settings.aiAnimationEnabled"
     static let showWinProbability = "settings.showWinProbability"
     static let inPlayAnalysis      = "settings.inPlayAnalysis"
-    static let aiStrength          = "settings.aiStrength"
+    /// The AI level 1...8 (#189; replaced the #108 `settings.aiStrength` slider).
+    static let aiLevel             = AILevel.storageKey
     static let matchLength         = "settings.matchLength"
     static let onlineMatchLength   = "settings.onlineMatchLength"
     /// The selected variant's id (#143) — the engine's `VariantPreference.key`.
@@ -241,29 +271,19 @@ enum AppSettings {
         UserDefaults.standard.object(forKey: SettingsKey.inPlayAnalysis) as? Bool ?? false
     }
 
-    /// AI-strength dial (#108), 0…1: **1.0 (default) = full strength** (unchanged 2-ply
-    /// argmax), lower = weaker. Anything below 1.0 drops the *play* search to 1-ply and
-    /// adds selection noise that grows toward 0 (see `searchConfig`).
-    static var aiStrength: Double {
-        UserDefaults.standard.object(forKey: SettingsKey.aiStrength) as? Double ?? 1.0
-    }
+    /// The AI level (#189), 1...8, default **8 = full strength**. See `AILevel`.
+    static var aiLevel: Int { AILevel.load() }
 
-    /// Largest selection-noise σ, reached at the weakest setting. Tuned so even the
-    /// weakest opponent only seldom passes up its best 1-ply move (#108); raise to make
-    /// the weak end weaker.
-    static let aiSigmaMax: Float = 0.10
+    /// The search configuration a new or resumed session should use: `aiLevel` mapped
+    /// onto `maxDepth`/`selectionNoise` (`AILevel.searchConfig`). The analysis ranking
+    /// reads the other (standard) fields and stays full-strength regardless.
+    static var searchConfig: SearchConfig { AILevel.searchConfig(for: aiLevel) }
 
-    /// The search configuration a new or resumed session should use, mapping `aiStrength`
-    /// onto the engine knobs: full strength is the unchanged 2-ply argmax; below that the
-    /// search drops to 1-ply and `selectionNoise` rises linearly to `aiSigmaMax` at the
-    /// weakest. Only `maxDepth`/`selectionNoise` change — the analysis ranking reads the
-    /// other (standard) fields and stays full-strength regardless.
-    static var searchConfig: SearchConfig {
-        var c = SearchConfig.standard
-        let best = aiStrength >= 1.0
-        c.maxDepth = best ? 2 : 1
-        c.selectionNoise = best ? 0 : aiSigmaMax * Float(1.0 - aiStrength)
-        return c
+    /// One-time rewrites of retired settings (#189), run at launch before any read:
+    /// the strength slider -> its nearest level, Play as `ask` -> `random`.
+    static func migrateLegacySettings() {
+        AILevel.migrate()
+        PlayAsPreference.migrate()
     }
 
     /// How many games an offline (vs-AI) session plays (#145). Default `.bestOfThree`.
