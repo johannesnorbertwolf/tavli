@@ -1300,11 +1300,15 @@ private struct MatchOverlayView: View {
     }
 }
 
-/// Scrollable turn-by-turn move log (#60), presented as a sheet. One row per turn:
-/// number, mover ("You" / "TavTav" / online name / "White" / "Red"), the dice as two
-/// small die faces, and the move in readable notation (#178, `MoveNotation`:
-/// `13/7^ 8/4`, `bar/22`, `6/off`, "No move"). Binds to the session so a freshly
-/// committed move appears immediately, and auto-scrolls to the newest turn.
+/// Scrollable two-column move sheet (#60, #190), presented as a sheet. One numbered row
+/// per full turn: the local player (vs AI / online; White in a two-player game) on the
+/// left, the opponent on the right, headed by checker dot + name ("You" / "TavTav" /
+/// online name / "White" / "Red", via `WinnerNaming`). Each cell is the roll as two small
+/// die faces + the move in readable notation (#178, `MoveNotation`). Thin separators
+/// instead of row cards; the newest turn is highlighted and the side still to move shows
+/// "…". When the right-hand player started, the first row's left cell is empty. Binds to
+/// the session so a freshly committed move appears immediately, and auto-scrolls to the
+/// newest turn.
 ///
 /// `PlyRecord` (the persistence format) stores only dice + half-moves; the notation
 /// (hits, pins, mother) comes from replaying the game from its start
@@ -1314,10 +1318,48 @@ private struct HistoryView: View {
     let naming: WinnerNaming
     @Environment(\.dismiss) private var dismiss
 
+    private var compact: Bool { ChromeType.isCompact }
+    private var leftColor: TavliEngine.Color { naming.localColor ?? .white }
+    private var rightColor: TavliEngine.Color { leftColor.opponent }
+
+    /// One full turn: at most one cell per side; `pending*` marks the side still to move.
+    struct Turn {
+        var left: MoveNotation?
+        var right: MoveNotation?
+        var pendingLeft = false
+        var pendingRight = false
+    }
+
+    private var turns: [Turn] {
+        let notations = MoveNotation.game(session.history,
+                                          startingPlayer: session.startingPlayer,
+                                          config: session.game.board.config)
+        var rows: [Turn] = []
+        var mover = session.startingPlayer
+        for n in notations {
+            if mover == leftColor {
+                rows.append(Turn(left: n))
+            } else if rows.isEmpty || rows[rows.count - 1].right != nil {
+                rows.append(Turn(right: n))          // opponent started: empty left cell
+            } else {
+                rows[rows.count - 1].right = n
+            }
+            mover = mover.opponent
+        }
+        if case .gameOver = session.phase { return rows }
+        if mover == leftColor {
+            rows.append(Turn(pendingLeft: true))
+        } else if rows.isEmpty {
+            rows.append(Turn(pendingRight: true))
+        } else {
+            rows[rows.count - 1].pendingRight = true
+        }
+        return rows
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
+            titleBar
             if session.history.isEmpty {
                 Spacer()
                 Text("No moves yet")
@@ -1325,91 +1367,130 @@ private struct HistoryView: View {
                     .foregroundStyle(ChromeKit.inkSecondary)
                 Spacer()
             } else {
-                let notations = MoveNotation.game(session.history,
-                                                  startingPlayer: session.startingPlayer,
-                                                  config: session.game.board.config)
+                let rows = turns
+                columnHeader
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(notations.enumerated()), id: \.offset) { offset, notation in
-                                let mover = offset % 2 == 0
-                                    ? session.startingPlayer
-                                    : session.startingPlayer.opponent
-                                HistoryRow(index: offset + 1, mover: mover,
-                                           moverName: naming.name(mover), notation: notation)
-                                    .background(offset % 2 == 1
-                                        ? ChromeTheme.ink.opacity(0.04)
-                                        : SColor.clear)
-                                    .cornerRadius(8)
+                            ForEach(Array(rows.enumerated()), id: \.offset) { offset, turn in
+                                HistoryRow(index: offset + 1, turn: turn,
+                                           current: offset == rows.count - 1)
                                     .id(offset)
+                                if offset < rows.count - 1 {
+                                    Rectangle().fill(ChromeTheme.ink.opacity(0.12)).frame(height: 1)
+                                }
                             }
                         }
-                        .padding(.horizontal, ChromeType.isCompact ? 12 : 20)
-                        .padding(.vertical, 8)
+                        .padding(.bottom, 8)
                     }
-                    .onAppear { scrollToLast(proxy) }
-                    .onChange(of: session.history.count) { _, _ in scrollToLast(proxy) }
+                    .onAppear { scrollToLast(proxy, count: rows.count) }
+                    .onChange(of: session.history.count) { _, _ in scrollToLast(proxy, count: turns.count) }
                 }
             }
         }
         .background(SColor(hex: 0xece6dc))
     }
 
-    private var header: some View {
+    private var titleBar: some View {
         HStack {
-            Text("Move history")
+            Text("Moves")
                 .font(ChromeType.title3.bold())
                 .foregroundStyle(ChromeTheme.ink)
             Spacer()
-            Button("Done") { dismiss() }
-                .buttonStyle(ChromeButton(role: .secondary))
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: compact ? 15 : 17, weight: .semibold))
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    .frame(width: 44, height: 44)
+                    .background(ChromeTheme.ink.opacity(0.07), in: Circle())
+            }
+            .accessibilityLabel(Text("Done"))
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, HistoryRow.sidePadding)
+        .padding(.vertical, 8)
     }
 
-    private func scrollToLast(_ proxy: ScrollViewProxy) {
-        guard !session.history.isEmpty else { return }
-        withAnimation { proxy.scrollTo(session.history.count - 1, anchor: .bottom) }
+    private var columnHeader: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
+                Spacer().frame(width: HistoryRow.numberWidth)
+                playerHeader(leftColor)
+                playerHeader(rightColor)
+            }
+            .padding(.horizontal, HistoryRow.sidePadding)
+            .padding(.bottom, 8)
+            Rectangle().fill(ChromeTheme.ink.opacity(0.25)).frame(height: 1)
+        }
+    }
+
+    private func playerHeader(_ color: TavliEngine.Color) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(ChromeTheme.checkerColor(color))
+                .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
+                .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
+            Text(naming.name(color))
+                .font(ChromeType.subheadline)
+                .foregroundStyle(ChromeTheme.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func scrollToLast(_ proxy: ScrollViewProxy, count: Int) {
+        guard count > 0 else { return }
+        withAnimation { proxy.scrollTo(count - 1, anchor: .bottom) }
     }
 }
 
-/// One turn: 1-based number, a mover-coloured disc + the mover's name, the dice as
-/// die faces, and the notation (with the "Mother pinned" tag when it applies). The
-/// notation wraps under itself on a narrow phone rather than truncating.
+/// One numbered turn: the left and right cells. The current (newest) turn gets a tinted
+/// full-width background.
 private struct HistoryRow: View {
+    static var sidePadding: CGFloat { ChromeType.isCompact ? 16 : 24 }
+    static var numberWidth: CGFloat { ChromeType.isCompact ? 34 : 44 }
+
     let index: Int
-    let mover: TavliEngine.Color
-    let moverName: String
-    let notation: MoveNotation
+    let turn: HistoryView.Turn
+    let current: Bool
 
     private var compact: Bool { ChromeType.isCompact }
 
     var body: some View {
-        HStack(alignment: .center, spacing: compact ? 8 : 12) {
+        HStack(alignment: .top, spacing: 0) {
             Text("\(index).")
-                .font(ChromeType.callout.monospacedDigit())
+                .font(ChromeType.subheadline.monospacedDigit())
                 .foregroundStyle(ChromeKit.inkSecondary)
-                .frame(width: compact ? 30 : 44, alignment: .trailing)
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(ChromeTheme.checkerColor(mover))
-                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
-                    .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
-                Text(moverName)
-                    .font(ChromeType.subheadline)
-                    .foregroundStyle(ChromeTheme.ink)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(width: compact ? 76 : 120, alignment: .leading)
-            NotationDice(notation: notation, size: compact ? 18 : 22)
-            MoveNotationLine(notation: notation)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: Self.numberWidth, alignment: .leading)
+            cell(turn.left, pending: turn.pendingLeft)
+            cell(turn.right, pending: turn.pendingRight)
         }
-        .padding(.vertical, compact ? 8 : 10)
-        .padding(.horizontal, 8)
+        .padding(.vertical, compact ? 9 : 12)
+        .padding(.horizontal, Self.sidePadding)
+        .background(current ? ChromeTheme.ink.opacity(0.08) : SColor.clear)
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func cell(_ notation: MoveNotation?, pending: Bool) -> some View {
+        Group {
+            if let notation {
+                HStack(alignment: .top, spacing: compact ? 6 : 10) {
+                    NotationDice(notation: notation, size: compact ? 15 : 20)
+                        .padding(.top, 2)
+                    MoveNotationLine(notation: notation,
+                                     font: compact ? ChromeType.subheadline : ChromeType.callout)
+                }
+            } else if pending {
+                Text(verbatim: "…")
+                    .font(ChromeType.callout)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+            } else {
+                SColor.clear
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(.trailing, compact ? 8 : 10)
     }
 }
 

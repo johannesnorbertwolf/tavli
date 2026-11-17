@@ -461,23 +461,23 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   where **N is the game that just finished** (`state.results.count`, not `currentGameNumber`,
   which already points at the next game) or "Final", primary "Next game" / "Rematch" / "Back to
   lobby", Review / History, and "Back to menu".
-- **`HistoryView(session:naming:)`** (#60, #178) — the move-log sheet: a header ("Move history" +
-  a Done button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView`
-  listing one `HistoryRow` per turn, auto-scrolling to the newest on appear and on
-  `history.count` change. Empty history shows "No moves yet". Bound via `@ObservedObject`, so a
-  freshly committed ply appears immediately. `#ece6dc` background. `PlyRecord` is the
-  persistence format (dice + `[from, to]` pairs only), so the view computes every row's
-  notation with `MoveNotation.game(session.history, startingPlayer:, config:)` (replays the
-  game from its start — hits/pins/mother need the position) and derives the mover from
-  `session.startingPlayer` alternating every ply. `naming` is `GameView`'s `WinnerNaming`, whose
-  `name(_:)` labels the mover "You" / "TavTav" / the online opponent / "White" / "Red".
-  `ForEach` uses `id: \.offset`; `scrollToLast` targets `session.history.count - 1`. Phone:
-  12 pt side padding instead of 20.
-  - **`HistoryRow(index:mover:moverName:notation:)`** — the 1-based `index`, a
-    `ChromeTheme.checkerColor(mover)` disc + mover name (fixed 120 / 76 pt column, truncating),
-    the roll as `NotationDice` (22 / 18 pt die faces, high die first), and a `MoveNotationLine`
-    that takes the remaining width and wraps rather than truncating. Rows zebra-stripe (#101):
-    odd offsets get an `ink.opacity(0.04)` rounded background instead of divider lines.
+- **`HistoryView(session:naming:)`** (#60, #178, #190) — the two-column "Moves" sheet: a title bar
+  ("Moves" + a round xmark close button calling `@Environment(\.dismiss)`, 44 pt), a column
+  header (checker dot + `naming.name(color)` per player), then a `ScrollViewReader` +
+  `ScrollView` listing one `HistoryRow` per **full turn** separated by 1 pt ink hairlines (no row
+  cards), auto-scrolling to the newest on appear and on `history.count` change. Empty history
+  shows "No moves yet". Bound via `@ObservedObject`. `#ece6dc` background. Left column = the local
+  player (`naming.localColor`, vs AI / online), else White; right = the opponent. `turns` builds
+  `[Turn]` (`left`/`right: MoveNotation?` + `pendingLeft`/`pendingRight`): notation comes from
+  `MoveNotation.game(session.history, startingPlayer:, config:)` (hits/pins/mother need the
+  replay), the mover alternates from `session.startingPlayer`; if the right-hand player started,
+  row 1's left cell is empty. Unless `session.phase` is `.gameOver`, the side still to move gets a
+  "…" cell (a new row when it is the left player), and the last row is the "current" one.
+  - **`HistoryRow(index:turn:current:)`** — number column (34 pt phone / 44 iPad) + two equal
+    flexible cells; a cell = `NotationDice` (15 / 20 pt, high die first) + `MoveNotationLine`
+    (subheadline on a phone, callout on iPad) that wraps inside the cell instead of truncating
+    (fits iPhone 13 mini; "Mother pinned" tag stacks below the move). Current row has an
+    `ink.opacity(0.08)` full-width background; side padding 16 / 24 pt.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),

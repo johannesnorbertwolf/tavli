@@ -1282,6 +1282,22 @@
         }
       }
     },
+    "Moves" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Züge"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zetten"
+          }
+        }
+      }
+    },
     "My blunders" : {
       "extractionState" : "manual",
       "localizations" : {
