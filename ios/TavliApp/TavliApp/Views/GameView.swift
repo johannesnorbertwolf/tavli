@@ -351,7 +351,7 @@ struct GameView: View {
             }
             .environment(\.chromeMode, layout.mode)
             .sheet(isPresented: $showHistory) {
-                HistoryView(session: session)
+                HistoryView(session: session, naming: naming)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
@@ -1300,15 +1300,18 @@ private struct MatchOverlayView: View {
     }
 }
 
-/// Scrollable ply-by-ply move log (#60), presented as a sheet. Mirrors the CLI
-/// `h`/`history` command: one row per ply with its number, mover, dice, and the
-/// half-moves played (or "pass"). Binds to the session so a freshly committed
-/// move appears immediately, and auto-scrolls to the newest ply.
+/// Scrollable turn-by-turn move log (#60), presented as a sheet. One row per turn:
+/// number, mover ("You" / "TavTav" / online name / "White" / "Red"), the dice as two
+/// small die faces, and the move in readable notation (#178, `MoveNotation`:
+/// `13/7^ 8/4`, `bar/22`, `6/off`, "No move"). Binds to the session so a freshly
+/// committed move appears immediately, and auto-scrolls to the newest turn.
 ///
-/// `PlyRecord` (the persistence format) stores only dice + half-moves; the 1-based
-/// index and mover are derived here from array position and `session.startingPlayer`.
+/// `PlyRecord` (the persistence format) stores only dice + half-moves; the notation
+/// (hits, pins, mother) comes from replaying the game from its start
+/// (`MoveNotation.game`), and the mover alternates from `session.startingPlayer`.
 private struct HistoryView: View {
     @ObservedObject var session: GameSession
+    let naming: WinnerNaming
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1322,15 +1325,18 @@ private struct HistoryView: View {
                     .foregroundStyle(ChromeKit.inkSecondary)
                 Spacer()
             } else {
+                let notations = MoveNotation.game(session.history,
+                                                  startingPlayer: session.startingPlayer,
+                                                  config: session.game.board.config)
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(session.history.enumerated()), id: \.offset) { offset, ply in
-                                let index = offset + 1
-                                let mover = index % 2 == 1
+                            ForEach(Array(notations.enumerated()), id: \.offset) { offset, notation in
+                                let mover = offset % 2 == 0
                                     ? session.startingPlayer
                                     : session.startingPlayer.opponent
-                                HistoryRow(index: index, mover: mover, ply: ply)
+                                HistoryRow(index: offset + 1, mover: mover,
+                                           moverName: naming.name(mover), notation: notation)
                                     .background(offset % 2 == 1
                                         ? ChromeTheme.ink.opacity(0.04)
                                         : SColor.clear)
@@ -1338,7 +1344,7 @@ private struct HistoryView: View {
                                     .id(offset)
                             }
                         }
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, ChromeType.isCompact ? 12 : 20)
                         .padding(.vertical, 8)
                     }
                     .onAppear { scrollToLast(proxy) }
@@ -1368,43 +1374,42 @@ private struct HistoryView: View {
     }
 }
 
-/// One ply row: 1-based number, a mover-colored disc, the dice, and the move text.
-/// The caller derives `index` and `mover` from array position + `startingPlayer`
-/// (neither is stored in `PlyRecord`, which is the persistence format).
+/// One turn: 1-based number, a mover-coloured disc + the mover's name, the dice as
+/// die faces, and the notation (with the "Mother pinned" tag when it applies). The
+/// notation wraps under itself on a narrow phone rather than truncating.
 private struct HistoryRow: View {
     let index: Int
     let mover: TavliEngine.Color
-    let ply: PlyRecord
+    let moverName: String
+    let notation: MoveNotation
+
+    private var compact: Bool { ChromeType.isCompact }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .center, spacing: compact ? 8 : 12) {
             Text("\(index).")
                 .font(ChromeType.callout.monospacedDigit())
                 .foregroundStyle(ChromeKit.inkSecondary)
-                .frame(width: 48, alignment: .trailing)
-            Circle()
-                .fill(ChromeTheme.checkerColor(mover))
-                .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
-                .frame(width: 18, height: 18)
-            Text("d=\(ply.die1) \(ply.die2)")
-                .font(ChromeType.callout.monospaced())
-                .foregroundStyle(ChromeKit.inkSecondary)
-                .frame(width: 78, alignment: .leading)
-            Text(moveText)
-                .font(ChromeType.callout.monospaced())
-                .foregroundStyle(ply.halfMoves.isEmpty ? ChromeKit.inkSecondary : ChromeTheme.ink)
-            Spacer(minLength: 0)
+                .frame(width: compact ? 30 : 44, alignment: .trailing)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(ChromeTheme.checkerColor(mover))
+                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.35), lineWidth: 1))
+                    .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
+                Text(moverName)
+                    .font(ChromeType.subheadline)
+                    .foregroundStyle(ChromeTheme.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(width: compact ? 76 : 120, alignment: .leading)
+            NotationDice(notation: notation, size: compact ? 18 : 22)
+            MoveNotationLine(notation: notation)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, compact ? 8 : 10)
         .padding(.horizontal, 8)
-    }
-
-    private var moveText: String {
-        guard !ply.halfMoves.isEmpty else { return "(pass)" }
-        return ply.halfMoves.map { pair in
-            guard pair.count == 2 else { return "?" }
-            return "\(pair[0])→\(pair[1])"
-        }.joined(separator: ", ")
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -1503,5 +1508,5 @@ enum ChromeTheme {
             session.commitHalfMove(from: src, to: dst)
         }
     }
-    return HistoryView(session: session)
+    return HistoryView(session: session, naming: WinnerNaming(localColor: .white, opponentName: "TavTav"))
 }

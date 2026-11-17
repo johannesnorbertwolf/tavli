@@ -461,20 +461,23 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   where **N is the game that just finished** (`state.results.count`, not `currentGameNumber`,
   which already points at the next game) or "Final", primary "Next game" / "Rematch" / "Back to
   lobby", Review / History, and "Back to menu".
-- **`HistoryView(session:)`** (#60) — the move-log sheet: a header ("Move history" + a Done
-  button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView` listing
-  one `HistoryRow` per ply, auto-scrolling to the newest on appear and on `history.count` change.
-  Empty history shows "No moves yet". Bound via `@ObservedObject`, so a freshly committed ply
-  appears immediately. `#ece6dc` background. `PlyRecord` is the persistence format (no `index` /
-  `mover` fields), so the view derives the 1-based index from `enumerated()` offset and the mover
-  from `session.startingPlayer` alternating every ply (`index % 2 == 1 → startingPlayer`, else
-  `startingPlayer.opponent`). `ForEach` uses `id: \.offset`; `scrollToLast` targets
-  `session.history.count - 1`.
-  - **`HistoryRow(index:mover:ply:)`** — a row showing the 1-based `index`, a
-    `ChromeTheme.checkerColor(mover)` disc, the dice (`d=<d1> <d2>`), and the move text
-    (`ply.halfMoves` formatted as `from→to` pairs joined by `, `; or a dimmed "(pass)" when
-    `halfMoves` is empty). Monospaced so the columns align. Rows zebra-stripe (#101): odd
-    offsets get an `ink.opacity(0.04)` rounded background instead of divider lines.
+- **`HistoryView(session:naming:)`** (#60, #178) — the move-log sheet: a header ("Move history" +
+  a Done button calling `@Environment(\.dismiss)`), then a `ScrollViewReader` + `ScrollView`
+  listing one `HistoryRow` per turn, auto-scrolling to the newest on appear and on
+  `history.count` change. Empty history shows "No moves yet". Bound via `@ObservedObject`, so a
+  freshly committed ply appears immediately. `#ece6dc` background. `PlyRecord` is the
+  persistence format (dice + `[from, to]` pairs only), so the view computes every row's
+  notation with `MoveNotation.game(session.history, startingPlayer:, config:)` (replays the
+  game from its start — hits/pins/mother need the position) and derives the mover from
+  `session.startingPlayer` alternating every ply. `naming` is `GameView`'s `WinnerNaming`, whose
+  `name(_:)` labels the mover "You" / "TavTav" / the online opponent / "White" / "Red".
+  `ForEach` uses `id: \.offset`; `scrollToLast` targets `session.history.count - 1`. Phone:
+  12 pt side padding instead of 20.
+  - **`HistoryRow(index:mover:moverName:notation:)`** — the 1-based `index`, a
+    `ChromeTheme.checkerColor(mover)` disc + mover name (fixed 120 / 76 pt column, truncating),
+    the roll as `NotationDice` (22 / 18 pt die faces, high die first), and a `MoveNotationLine`
+    that takes the remaining width and wraps rather than truncating. Rows zebra-stripe (#101):
+    odd offsets get an `ink.opacity(0.04)` rounded background instead of divider lines.
 - **`ChromeTheme`** — centralizes the engine-`Color` → display mappings so a future
   visual style swaps them in one place: `displayName` (`.white` → "White", `.black` →
   **"Red"**) and `checkerColor` (white → ivory `#fbeed1`, black → deep red `#a83a2a`),
@@ -494,6 +497,31 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   which scripts a half-move (`setDice` → `commitHalfMove`) to surface the
   contextual buttons without T7, and `"History"` which scripts a ply and shows
   `HistoryView` directly.
+
+## MoveNotationViews.swift (#178 — move notation rendering)
+
+Presentation of the engine's `MoveNotation` (see the engine reference), shared by the history
+sheet, the review panel and the drill panel. Notation tokens (`bar`, `off`, point numbers,
+`*`, `^`, `(n)`) are never translated; only "No move" and "Mother pinned" are localized
+(DE/NL in `Localizable.xcstrings`).
+
+- **`MoveNotationText(notation:font:color:accent:)`** — one concatenated `Text` built from the
+  structured segments (`from` + `/stop` per stop + `(count)`), monospaced in `font`/`color`; a
+  pin `^` is `.heavy` in `accent` (default `ChromeTheme.undoTint`, the app tint), a hit `*` is
+  bold in the text colour. A pass renders "No move" italic in `ChromeKit.inkSecondary`. Wraps
+  vertically (`fixedSize(horizontal: false, vertical: true)`).
+- **`NotationDice(notation:size:)`** — the roll as two `DieFace`s, high die first (a double
+  shows two equal faces); one accessibility element reading the two numbers.
+- **`MotherPinnedLabel`** — small amber capsule "Mother pinned" (`caption2` bold, undo-tint
+  text on a 14% fill + 45% stroke).
+- **`MoveNotationLine(notation:font:color:)`** — `MoveNotationText` with the
+  `MotherPinnedLabel` stacked under it when `notation.motherPinned`.
+- **Use sites:** `HistoryRow` (whole game via `MoveNotation.game`); the review's "You
+  played"/"Best move" lines and its dice row (`NotationDice`, replacing "Dice a · b") and the
+  drill's "You played"/"You tried"/"Best move" rows, both via `MoveNotation.describe(_:die1:
+  die2:mover:stacks:config:)` on the evaluation's pre-move `boardStacks` — so played and best
+  moves read identically however their halves were ordered.
+- **Preview** `"Notation"`: a standard-Plakoto mother pin + a pass.
 
 ## ChromeKit.swift (#101 — chrome component kit)
 

@@ -421,6 +421,47 @@ by generated parity fixtures.
   `legalMoves` per call over mid-game samples: Plakoto ≈36 µs, standard Plakoto ≈19 µs, Fevga
   ≈35 µs, Portes ≈37 µs (`VariantPlayTests.testLegalMoveTiming`).
 
+## Move notation (#178)
+
+`MoveNotation.swift` turns one turn — dice + recorded `[from, to]` pairs + the mover — into
+readable backgammon-style notation, shared by the history sheet, review and drill. Pure; it
+copies the given position and replays the pairs on the copy, because hits, pins and the mother
+are not stored in `PlyRecord`.
+
+**API.** `describe(_ pairs:die1:die2:mover:before:)` (a `GameBoard`, untouched) or
+`describe(...stacks:config:)` (e.g. `PlyEvaluation.boardStacks`); `game(_ plies:startingPlayer:
+config:)` replays a record from the variant's starting position, movers alternating (as
+`GameSession.replay`). Result: `highDie`/`lowDie`, `segments: [Segment]` (each `from: Place`,
+`stops: [Stop]` (place + optional `Mark`), `count`), `motherPinned`, `noMove`, and the plain
+renderings `diceText` (`64`), `moveText` (`13/7^ 8/4` / `No move`), `text`
+(`64: 13/7^ 8/4`, ` (mother pinned)` appended when set).
+
+**Rules.**
+- **Numbering** from the mover's side: `number = boardSize + 1 − variant.pathIndex(point,
+  mover)`; `≥ 25` → `bar` (Portes path index 0), `≤ 0` → `off`. Via the path hooks, so Fevga's
+  wrapped Black path and Portes' bar/off ends (index 0/25 swap meaning with the mover) need no
+  special cases. White's start is its 24 point; Black's physical numbering in Plakoto/Portes
+  already equals its notation.
+- **Segments**: each half is chained onto the segment whose checker just arrived at its source
+  (`lastIndex` of a segment ending there), so Plakoto/Fevga doubles (one half per die) and
+  Portes (one half per die, never merged) read as one checker path; an intermediate stop is
+  kept only when it was a **hit** (`13/7*/5`). A merged Plakoto/Fevga half is already one
+  segment. Sorted by `from` descending (bar = 25, off = 0), ties by the farther landing first;
+  identical paths group to `(n)` with their marks merged.
+- **Hit** (`*`): the opponent had checkers on the landing point before the half and none after,
+  on a board point (Portes only in practice; a Plakoto pin keeps the opponent underneath).
+- **Pin** (`^`): Plakoto house + standard — a point the mover has captured in the **final**
+  position but not before (`Point.isCaptured(by:)`), so a blot landed on and left mid-double
+  is not marked and adding to an existing pin is not a new pin. Never for Portes/Fevga.
+- A landing mark goes on the **first** segment (display order) landing on that point.
+- **Mother** (standard Plakoto only): `StandardPlakotoVariant.motherPinned(opponent)` false
+  before and true after — the engine's own mother rule, so it is exactly the pin that decides
+  the game. House Plakoto never sets it.
+- **No move**: empty pairs → `noMove`, no segments.
+
+Tests: `MoveNotationTests` (all four rule sets, both colours, off/bar, doubles, hit chains,
+pins, mother, pass, ordering, whole-game replay).
+
 ## Save & load (#61, replay-based)
 
 Persist and resume in-progress games the same way the CLI does: **store only the move
