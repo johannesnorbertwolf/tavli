@@ -387,6 +387,10 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
     ply — `history` grows by one per finished turn (human, AI, or forced pass) — so the
     in-progress game is persisted after **every move**, not just on background. `RootView`'s
     `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
+    #171: a second `.onChange(of: session.rollRevision) { onAutosave() }` also writes it as soon
+    as a roll exists (human tap / auto-roll / manual entry, and the AI's roll), so the save
+    carries `pendingRoll` and a crash mid-turn resumes with the same dice. Online passes no
+    `onAutosave`, so both are no-ops there.
   - **Surrender / resign (#74):** one confirmation everywhere (iPad Resign button and the
     iPhone "⋯" menu both call `onSurrenderTapped`). It captures `surrenderChanceLine` — "You still
     have a X% chance of winning." (or "TavTav still rates your position at +0.52 points." for a
@@ -683,7 +687,9 @@ too), and `match.recordGame(winner:points:)`.
   passes `startingPlayer: .black` explicitly.
 - **Save/load lifecycle (#61).**
   - **Auto-save** (`persistAutosave`) fires after **every move** (`GameView`'s
-    `.onChange(of: session.history.count)`), as well as on `scenePhase == .background`
+    `.onChange(of: session.history.count)`) and **every roll** (#171, `.onChange(of:
+    session.rollRevision)` — the snapshot then carries the turn's `pendingRoll`, and the resume
+    paths' `start()` re-enter that turn with the same dice instead of rolling), as well as on `scenePhase == .background`
     (`@Environment(\.scenePhase)` + `.onChange`) and on Back. It writes the in-progress game to
     the single reserved autosave slot under the game's stable `autosaveName`
     (`store.writeAutosave(session.snapshot(name:))`), overwriting it each time so only the

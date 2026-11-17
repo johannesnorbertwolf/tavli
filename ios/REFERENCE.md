@@ -86,6 +86,14 @@ so the game flow is validated without a simulator.
   applies the half-move to the board and auto-finishes when the move is complete or the only
   continuation is itself legal. Win detection uses `game.getWinner()`; `finishTurn` records the
   ply, switches turn, and returns to `awaitingRoll`.
+  **Pending roll (#171).** `pendingRoll: PendingRoll?` (published) is set by `markRolled()` the
+  moment dice exist for the side on move — `rollDice()` (tap, auto-roll, the AI's roll, replayed
+  dice), `setManualDice`, `undoLastDecision` — and cleared by `recordTurn` (the roll became a
+  ply), `enterManualRoll` (manual unroll), `surrender`, `newGame` and `replay`. `rollRevision`
+  (published `Int`) is bumped on every set and on the unroll clear; `GameView` observes it to
+  write the autosave as soon as a roll exists (alongside the existing per-ply
+  `history.count` trigger). Half-moves already picked are **not** tracked: a resumed turn
+  restarts with the full roll.
   Published read-state (`phase`, `legalMoves`, `selectedPoint`, `validTargets`, `selectableSources`,
   `winProbability`, plus `aiDiceRolling`/`aiHopInFlight` for the AI-turn animation, #93) is the
   view contract. No rendering lives here.
@@ -453,8 +461,9 @@ tests, no model/fixtures needed):
   to `undoHistory` for decision-point undo): the two human finish paths (`commitHalfMove`
   auto-finish and `confirm()`), the AI move (`applyAIMove`), and the two forced-pass paths (human
   `beginTurn`, AI `takeAITurn`) which record an **empty** half-move list. Saves are therefore only
-  ever taken at clean turn boundaries — there is no partial/pending move state to serialize (a
-  deliberate simplification). `newGame` resets the whole `record` (preserving `aiColor`).
+  ever taken at clean turn boundaries for the *history* — partially built half-moves are never
+  serialized (a deliberate simplification); only the turn's rolled dice are, as `pendingRoll`
+  (#171, see `GameSave.swift` below). `newGame` resets the whole `record` (preserving `aiColor`).
   `isTerminal` is the public "game over?" predicate the app uses to decide whether a save is
   worth keeping.
 - **Resume — `GameSession.resume(from:config:agent:)` + private `replay(_:)`.** Builds a fresh
@@ -467,6 +476,17 @@ tests, no model/fixtures needed):
   color needs storing. Replay logic lives in `GameSession.swift` (not the model file) so it can
   reach file-private state; Swift `private` is file-scoped. Call `start()` after `resume` (as
   for a new game) so the AI moves if it owns the turn.
+  **Pending roll (#171).** When the save carries a valid `pendingRoll` and the replayed game is
+  not over, `resume` sets those dice, publishes them as the session's `pendingRoll` (so an
+  immediate re-snapshot keeps them) and arms a private `restoreRollOnStart`; the session still
+  sits at `.awaitingRoll`. `start()` (or a stray `roll()`) then consumes it via
+  `resumePendingRoll()` **instead of** rolling: human mover → `beginTurn` (→ `.picking`, or the
+  ordinary forced-pass path when the roll has no legal move — incl. the auto-roll 0.5 s pass
+  beat); AI mover → `playAITurn(animateDiceRoll: false)` (searches and plays those dice, no
+  tumble). This bypasses the auto-roll and manual-dice gates, so it holds with auto-roll on, in
+  manual-dice mode (an explicit `setManualDice` before `start()` supersedes it), in two-player
+  games, in every variant and inside a Full Tavli leg. Online sessions never carry one (their
+  state is the Game Center payload, unchanged; their `GameView` has no autosave hook).
 - **`GameSave.swift`** — the `GameRecord` value type (now with a stable `gameId: UUID`, #104) plus
   the Codable wire format. `PlyRecord { die1, die2, halfMoves: [[Int]] }` and `GameSave {
   schemaVersion, gameId?, name, savedAt, startingPlayer, aiColor?, outcome?, history, analysis? }`.
@@ -474,7 +494,13 @@ tests, no model/fixtures needed):
   decoding treats `gameId`/`outcome`/`analysis` as optional (a v1 file has none), and **encoding
   derives the version from content**: a save *without* analysis is written at `schemaVersion: 1`
   (byte-compatible with a v1 reader), gaining the `2` marker only once an `analysis` block is
-  attached. `AnalysisEntry { plyNumber, playedMove, playedScore, bestMove, bestScore, depth }` is the
+  attached. **`pendingRoll` (#171)** — `PendingRoll { die1, die2 }`, the dice of the turn in
+  progress (a double is two equal values), mover implied by the history parity. Written only when
+  present (like `fullTavli`, it never changes `schemaVersion`), so a save between turns is
+  byte-identical to the pre-#171 format and an older reader just ignores the key. Decoding is
+  tolerant: a malformed value or dice outside 1…6 decode as `nil` (the save still loads, awaiting
+  a roll). `snapshot(name:)` / `snapshot(name:fullTavli:)` copy the session's `pendingRoll`;
+  `GameSave(record:…)` (the game log) never sets it. `AnalysisEntry { plyNumber, playedMove, playedScore, bestMove, bestScore, depth }` is the
   durable per-ply analysis (no `boardStacks` — reconstructed by replay; scores as `Double`; field
   names match the Python schema). `[AnalysisEntry](reviewResult:)` projects a `GameReviewResult`.
   Bridges: `GameSave(record:name:savedAt:analysis:)` flattens (carrying `gameId`/`outcome`), and
@@ -482,7 +508,7 @@ tests, no model/fixtures needed):
 - **`SaveStore.swift`** — file-backed store, one pretty-printed JSON file per game under
   `directory` (the app uses `Documents/SavedGames`), `.iso8601` dates. One reserved **autosave**
   slot (`autosave.json`) plus any number of named manual saves (`save-<uuid8>.json`, so repeated
-  names never clobber). The single autosave slot is overwritten on every move, so only the
+  names never clobber). The single autosave slot is overwritten on every move and every roll (#171), so only the
   **last** in-progress game is ever kept. All IO is **synchronous** so the autosave completes
   before the app suspends. `list()` returns `SaveMetadata` (filename, name, savedAt, plyCount, isAutosave)
   newest-first, **skipping** unreadable or wrong-`schemaVersion` files; `load(filename:)` instead
@@ -503,7 +529,7 @@ tests, no model/fixtures needed):
   the logged game (`GameSave(record:name:analysis:)`, empty ⇒ stays v1), so the **first** review of a
   game played with analysis on already loads cached and only refines (see *Post-game blunder review*).
 
-The app wiring (autosave after every move and on background, auto-resume on launch, the
+The app wiring (autosave after every move, every roll (#171) and on background, auto-resume on launch, the
 saved-games list, and the in-game manual save) lives in `RootView`/`GameView` — see
 `Views/CLAUDE.md`.
 
@@ -742,7 +768,8 @@ ios/
 │   └── Tests/TavliEngineTests/  ParityTests, AgentParityTests, AgentSearchTests,
 │                                FixtureSupport, MoveBuilderTests, GameSessionTests,
 │                                GameSessionAITests, GameSessionAnimationTests,
-│                                GameSessionAnalysisTests, GameSavePersistenceTests
+│                                GameSessionAnalysisTests, GameSavePersistenceTests,
+│                                PendingRollPersistenceTests (#171)
 │       └── Fixtures/            fixtures.json + PlakotoValue.mlpackage (generated; see below)
 ├── TavliApp/                    SwiftUI iPad + iPhone app (xcodegen project; .xcodeproj is generated)
 │   ├── project.yml              xcodegen spec — iPhone + iPad (device family 1,2, #109), iOS 17, Swift-5 mode,

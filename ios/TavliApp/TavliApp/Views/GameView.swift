@@ -412,6 +412,9 @@ struct GameView: View {
             // handler overwrites the single autosave slot (or clears it once the
             // game is over), so only the last in-progress game is ever kept.
             .onChange(of: session.history.count) { _, _ in onAutosave() }
+            // …and as soon as a roll exists (#171): the human's (tap, auto-roll,
+            // manual entry) and the AI's, so a crash mid-turn resumes the same dice.
+            .onChange(of: session.rollRevision) { _, _ in onAutosave() }
             // Keep the live session in sync with the AI-animation setting (#77):
             // apply it on entry and whenever it's toggled, so the change lands on
             // the next AI turn without restarting the game.

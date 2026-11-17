@@ -146,6 +146,21 @@ public final class GameSession: ObservableObject {
     @Published public private(set) var phase: TurnPhase = .awaitingRoll
     @Published public private(set) var legalMoves: [Move] = []
 
+    /// The roll of the turn in progress (#171): set the moment dice exist for the
+    /// side on move (tap, auto-roll, manual entry, the AI's roll, a decision rewind)
+    /// and cleared when that turn is recorded as a ply (or abandoned). `snapshot`
+    /// persists it so a crash/relaunch mid-turn resumes with the same dice.
+    @Published public private(set) var pendingRoll: PendingRoll? = nil
+
+    /// Bumped whenever `pendingRoll` is set — and when it is dropped without a ply
+    /// being recorded (manual-mode unroll) — so the app can write its autosave as soon
+    /// as a roll exists (#171), not only after a move (`history.count`).
+    @Published public private(set) var rollRevision = 0
+
+    /// A resumed save carried a pending roll (#171): `start()` (or a stray `roll()`)
+    /// re-enters that turn with the restored dice instead of rolling.
+    private var restoreRollOnStart = false
+
     /// True while the AI's dice visibly tumble (#93). The dice values are
     /// already set (the engine needs them to pick a move); the view masks them
     /// until this flips back to false.
@@ -323,6 +338,7 @@ public final class GameSession: ObservableObject {
     /// Kick off the first move. If the AI owns the turn it thinks immediately;
     /// if auto-roll is on and the human is first, the dice fire automatically.
     public func start() {
+        if restoreRollOnStart { resumePendingRoll(); return }
         maybeStartAITurn()
         maybeAutoRoll()
     }
@@ -336,6 +352,7 @@ public final class GameSession: ObservableObject {
     /// Roll the dice for the current turn and compute legal moves.
     public func roll() {
         guard phase == .awaitingRoll, !autoRollPassing, !humanDiceRolling else { return }
+        if restoreRollOnStart { resumePendingRoll(); return }
         rollDice()
         beginTurn()
     }
@@ -349,7 +366,9 @@ public final class GameSession: ObservableObject {
     public func setManualDice(_ d1: Int, _ d2: Int) {
         guard phase == .awaitingRoll else { return }
         diceReplays.removeAll()
+        restoreRollOnStart = false   // explicitly entered dice supersede a restored roll
         game.dice.set(d1, d2)
+        markRolled()
         if isAITurn {
             playAITurn(animateDiceRoll: false)
         } else {
@@ -507,6 +526,11 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
         diceReplays.removeAll()
+        if pendingRoll != nil {
+            // Unrolled without recording a ply: persist the "awaiting roll" state too.
+            pendingRoll = nil
+            rollRevision += 1
+        }
         phase = .awaitingRoll
         refreshEvaluation()
     }
@@ -567,6 +591,7 @@ public final class GameSession: ObservableObject {
         clearSelection()
         selectableSources = []
         legalMoves = []
+        pendingRoll = nil
         record.outcome = aiColor
         if game.variant.maxPoints > 1 { record.points = 1 }
         phase = .gameOver(winner: aiColor)
@@ -587,6 +612,8 @@ public final class GameSession: ObservableObject {
         autoRollTask = nil
         autoRollPassing = false
         humanDiceRolling = false
+        pendingRoll = nil
+        restoreRollOnStart = false
         cancelHumanAnalysis()
         analysisByPly = [:]
         game.variant.setUpInitialPosition(on: game.board)
@@ -767,6 +794,7 @@ public final class GameSession: ObservableObject {
 
         game.setPlayer(restoredColor)
         game.dice.set(d1, d2)
+        markRolled()
         // The target was a real move, so the restored position has legal moves —
         // `beginTurn` lands in `picking` rather than auto-passing.
         beginTurn()
@@ -1128,6 +1156,27 @@ public final class GameSession: ObservableObject {
             let (d1, d2) = diceReplays.removeFirst()
             game.dice.set(d1, d2)
         }
+        markRolled()
+    }
+
+    /// Publish the dice now on the board as the current turn's pending roll (#171).
+    private func markRolled() {
+        pendingRoll = PendingRoll(die1: game.dice.die1.value, die2: game.dice.die2.value)
+        rollRevision += 1
+    }
+
+    /// Re-enter the turn a save was taken in (#171) with its restored dice — no new
+    /// roll, no tumble: the human lands in `.picking` (or the forced-pass path runs as
+    /// it would have live); the AI searches and plays those dice.
+    private func resumePendingRoll() {
+        restoreRollOnStart = false
+        guard phase == .awaitingRoll, let roll = pendingRoll else { return }
+        game.dice.set(roll.die1, roll.die2)
+        if isAITurn {
+            playAITurn(animateDiceRoll: false)
+        } else {
+            beginTurn()
+        }
     }
 
     // ── History recording ─────────────────────────────────────────────────────
@@ -1136,6 +1185,7 @@ public final class GameSession: ObservableObject {
     /// `undoHistory` (for decision-point undo). Must be called before `finishTurn`
     /// switches the turn, while the dice still hold this ply's values.
     private func recordTurn(mover: Color, move: Move?) {
+        pendingRoll = nil   // the roll is now part of the ply (#171)
         record.plies.append(PlyRecord(
             die1: game.dice.die1.value,
             die2: game.dice.die2.value,
@@ -1290,6 +1340,10 @@ public final class GameSession: ObservableObject {
     /// position. The returned session sits at the resumed player's `awaitingRoll`
     /// (or `gameOver` if the recorded game already ended). Call `start()` afterward
     /// — exactly as for a new game — so the AI takes its turn if it owns the move.
+    /// A save taken mid-turn carries that turn's `pendingRoll` (#171): the session is
+    /// returned at `.awaitingRoll` with those dice set and published, and `start()`
+    /// re-enters the turn with them (human → `.picking`, AI → plays them) instead of
+    /// rolling — regardless of auto-roll / manual-dice mode.
     /// `config` defaults to the save's own variant (#136; Plakoto for pre-variant saves).
     public static func resume(from save: GameSave,
                               config: GameConfig? = nil,
@@ -1311,6 +1365,14 @@ public final class GameSession: ObservableObject {
                                   autoRoll: autoRoll,
                                   inPlayAnalysis: inPlayAnalysis)
         session.replay(save.history)
+        // Restore the roll of the turn in progress (#171); `start()` re-enters that
+        // turn with it. Invalid dice (already dropped on decode) or a finished game
+        // fall back to awaiting a roll, as before.
+        if let roll = save.pendingRoll, roll.isValid, !session.isTerminal {
+            session.game.dice.set(roll.die1, roll.die2)
+            session.pendingRoll = roll
+            session.restoreRollOnStart = true
+        }
         return session
     }
 
@@ -1327,6 +1389,8 @@ public final class GameSession: ObservableObject {
         record.plies = []
         undoHistory = []
         diceReplays = []
+        pendingRoll = nil
+        restoreRollOnStart = false
 
         for ply in plies {
             for pair in ply.halfMoves where pair.count == 2 {
