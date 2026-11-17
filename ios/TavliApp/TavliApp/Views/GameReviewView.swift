@@ -319,9 +319,7 @@ struct GameReviewView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Text("Dice \(eval.die1) · \(eval.die2)")
-                        .font(.callout.monospaced())
-                        .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    NotationDice(notation: notation(eval, eval.playedMove), size: 22)
                     // Which look-ahead depth this score is from (#103) — refines live
                     // 1→2→3-ply, so you can see what you're looking at.
                     DepthChip(depth: eval.depth)
@@ -336,10 +334,11 @@ struct GameReviewView: View {
             let playedIsBest = sameMove(eval.playedMove, eval.bestMove)
             VStack(alignment: .leading, spacing: 10) {
                 // Distinct literal labels (not "\(mover) played") so they localize.
-                moveLine(label: isHuman ? "You played" : "TavTav played", move: eval.playedMove,
+                moveLine(label: isHuman ? "You played" : "TavTav played",
+                         move: notation(eval, eval.playedMove),
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
                 if eval.hadChoice {
-                    moveLine(label: "Best move", move: eval.bestMove,
+                    moveLine(label: "Best move", move: notation(eval, eval.bestMove),
                              pct: Double(eval.bestScore), tint: ReviewTint.best)
                     if playedIsBest {
                         Text(isHuman ? "Best move played ✓" : "TavTav played the best ✓")
@@ -390,11 +389,11 @@ struct GameReviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func moveLine(label: LocalizedStringKey, move: [[Int]], pct: Double, tint: SColor) -> some View {
+    private func moveLine(label: LocalizedStringKey, move: MoveNotation, pct: Double, tint: SColor) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
-            HStack(spacing: 8) {
-                Text(moveText(move)).font(.body.monospaced().bold()).foregroundStyle(tint)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                MoveNotationLine(notation: move, font: .body.bold(), color: tint)
                 Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeTheme.ink.opacity(0.55))
             }
         }
@@ -451,20 +450,11 @@ struct GameReviewView: View {
         }
         return norm(a) == norm(b)
     }
-    /// Render a move's half-moves, always **sorted by start point then end point**, so
-    /// the same move reads identically however its half-moves were ordered when played
-    /// (e.g. a Pasch 1→4, 4→7, 1→4, 6→9 always shows as 1→4, 1→4, 4→7, 6→9).
-    private func moveText(_ pairs: [[Int]]) -> String {
-        guard !pairs.isEmpty else { return String(localized: "(pass)") }
-        let ordered = pairs.sorted { a, b in
-            let a0 = a.first ?? 0, b0 = b.first ?? 0
-            if a0 != b0 { return a0 < b0 }
-            return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
-        }
-        // A source on an end index is a Portes bar entry (#143); nothing else ever
-        // moves *from* 0 / 25.
-        func label(_ p: Int) -> String { p == 0 || p == 25 ? String(localized: "bar") : "\(p)" }
-        return ordered.map { $0.count == 2 ? "\(label($0[0]))→\($0[1])" : "?" }.joined(separator: ", ")
+    /// A move from this ply's position in readable notation (#178): mover-relative
+    /// points, hits/pins derived from the pre-move board, highest point first.
+    private func notation(_ eval: PlyEvaluation, _ move: [[Int]]) -> MoveNotation {
+        MoveNotation.describe(move, die1: eval.die1, die2: eval.die2, mover: eval.mover,
+                              stacks: eval.boardStacks, config: GameConfig(variant: variant))
     }
 }
 

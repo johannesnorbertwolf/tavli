@@ -490,14 +490,14 @@ private struct DrillCard: View {
     @ViewBuilder
     private var movesPanel: some View {
         VStack(alignment: .leading, spacing: 6) {
-            moveRow(label: "You played", move: eval.playedMove,
+            moveRow(label: "You played", move: notation(eval.playedMove),
                     pct: Double(eval.playedScore), tint: CaramelPalette.hl)
             if let lastAttempt, let s = lastAttemptScore {
-                moveRow(label: "You tried", move: lastAttempt,
+                moveRow(label: "You tried", move: notation(lastAttempt),
                         pct: Double(s), tint: ChromeTheme.ink)
             }
             if showingSolution {
-                moveRow(label: "Best move", move: eval.bestMove,
+                moveRow(label: "Best move", move: notation(eval.bestMove),
                         pct: Double(eval.bestScore), tint: CaramelPalette.hlBest)
                 let gap = scale.gap(Double(eval.bestScore - eval.playedScore))
                 Group {
@@ -512,10 +512,10 @@ private struct DrillCard: View {
         }
     }
 
-    private func moveRow(label: LocalizedStringKey, move: [[Int]], pct: Double, tint: SColor) -> some View {
-        HStack(spacing: 8) {
+    private func moveRow(label: LocalizedStringKey, move: MoveNotation, pct: Double, tint: SColor) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
-            Text(moveText(move)).font(.callout.monospaced().bold()).foregroundStyle(tint)
+            MoveNotationLine(notation: move, font: .callout.bold(), color: tint)
             Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeTheme.ink.opacity(0.5))
         }
     }
@@ -524,18 +524,10 @@ private struct DrillCard: View {
     private var scale: EvalScale { EvalScale(variant: session.game.variant) }
     private func percent(_ p: Double) -> String { scale.value(p) }
 
-    /// Half-moves sorted by start point then end point, so the same move always reads
-    /// identically however its half-moves were ordered when played.
-    private func moveText(_ pairs: [[Int]]) -> String {
-        guard !pairs.isEmpty else { return String(localized: "(pass)") }
-        let ordered = pairs.sorted { a, b in
-            let a0 = a.first ?? 0, b0 = b.first ?? 0
-            if a0 != b0 { return a0 < b0 }
-            return (a.count > 1 ? a[1] : 0) < (b.count > 1 ? b[1] : 0)
-        }
-        // A source on an end index is a Portes bar entry (#143).
-        func label(_ p: Int) -> String { p == 0 || p == 25 ? String(localized: "bar") : "\(p)" }
-        return ordered.map { $0.count == 2 ? "\(label($0[0]))→\($0[1])" : "?" }.joined(separator: ", ")
+    /// A move from the drilled position in readable notation (#178).
+    private func notation(_ move: [[Int]]) -> MoveNotation {
+        MoveNotation.describe(move, die1: eval.die1, die2: eval.die2, mover: eval.mover,
+                              stacks: eval.boardStacks, config: session.game.board.config)
     }
 
     @ViewBuilder

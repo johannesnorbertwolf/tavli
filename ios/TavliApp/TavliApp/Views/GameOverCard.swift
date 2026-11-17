@@ -202,6 +202,13 @@ struct WinnerNaming {
                                     : String(localized: "\(opponentName) wins")
     }
 
+    /// Who a side is, for per-move labels (#178): "You" / "TavTav" / the online
+    /// opponent's name, or "White" / "Red" in a two-player game.
+    func name(_ color: TavliEngine.Color) -> String {
+        guard let localColor else { return ChromeTheme.displayName(color) }
+        return color == localColor ? String(localized: "You") : opponentName
+    }
+
     /// "You win a double game" / "TavTav wins a double game" / "Red wins a double game".
     func doubleTitle(_ winner: TavliEngine.Color) -> String {
         guard let localColor else {

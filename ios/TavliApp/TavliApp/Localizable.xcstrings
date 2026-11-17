@@ -3689,6 +3689,38 @@
           }
         }
       }
+    },
+    "No move" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kein Zug"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geen zet"
+          }
+        }
+      }
+    },
+    "Mother pinned" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mutter festgesetzt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moeder vastgezet"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
