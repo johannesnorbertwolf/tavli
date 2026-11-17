@@ -60,6 +60,24 @@ public struct PlyRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// The dice of the turn in progress (#171): rolled for the side on move but not yet
+/// played into a committed ply. Persisted in `GameSave.pendingRoll` so a crash or
+/// relaunch mid-turn resumes with the **same** roll instead of re-rolling. A double
+/// is still two equal values. Only valid when both values are standard die faces.
+public struct PendingRoll: Codable, Equatable, Sendable {
+    public let die1: Int
+    public let die2: Int
+
+    public init(die1: Int, die2: Int) {
+        self.die1 = die1
+        self.die2 = die2
+    }
+
+    /// Both values are faces of a six-sided die (1…6). An invalid stored roll is
+    /// ignored on load rather than failing it.
+    public var isValid: Bool { (1...6).contains(die1) && (1...6).contains(die2) }
+}
+
 /// One re-evaluated ply, persisted alongside a game so post-game analysis (review /
 /// drill) never has to recompute (#104). The on-disk analogue of `PlyEvaluation`,
 /// trimmed to the durable fields — the large pre-move `boardStacks` are intentionally
@@ -141,6 +159,14 @@ public struct GameSave: Codable, Equatable {
     /// game. Written only when present (older readers ignore the key; older files decode
     /// as `nil`), so it never changes the schema version.
     public var fullTavli: FullTavliSession?
+    /// The roll of the turn in progress (#171), or `nil` when no roll is pending (the
+    /// mover is awaiting a roll, or the game is over). The mover is implied by the
+    /// history (turns alternate from `startingPlayer`). Written only when present —
+    /// like `fullTavli` it never changes the schema version, so a save without a
+    /// pending roll is byte-identical to the pre-#171 format and an older reader just
+    /// ignores the key (and asks for a roll). An invalid or malformed stored value
+    /// decodes as `nil`.
+    public var pendingRoll: PendingRoll?
 
     public init(schemaVersion: Int = GameSave.currentSchemaVersion,
                 gameId: UUID? = nil,
@@ -153,8 +179,10 @@ public struct GameSave: Codable, Equatable {
                 analysis: [AnalysisEntry]? = nil,
                 variant: String = GameVariants.defaultID,
                 points: Int? = nil,
-                fullTavli: FullTavliSession? = nil) {
+                fullTavli: FullTavliSession? = nil,
+                pendingRoll: PendingRoll? = nil) {
         self.schemaVersion = schemaVersion
+        self.pendingRoll = pendingRoll
         self.fullTavli = fullTavli
         self.points = points
         self.gameId = gameId
@@ -170,7 +198,7 @@ public struct GameSave: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis, variant
-        case points, fullTavli
+        case points, fullTavli, pendingRoll
     }
 
     /// The `outcome` string a drawn game is saved with.
@@ -192,6 +220,9 @@ public struct GameSave: Codable, Equatable {
         variant = try c.decodeIfPresent(String.self, forKey: .variant) ?? GameVariants.defaultID
         points = try c.decodeIfPresent(Int.self, forKey: .points)
         fullTavli = try c.decodeIfPresent(FullTavliSession.self, forKey: .fullTavli)
+        // Tolerant (#171): a malformed or out-of-range roll is dropped, never fatal.
+        let roll = (try? c.decodeIfPresent(PendingRoll.self, forKey: .pendingRoll)) ?? nil
+        pendingRoll = roll?.isValid == true ? roll : nil
     }
 
     /// Encode the version the on-disk shape actually warrants: `2` only when an
@@ -212,6 +243,7 @@ public struct GameSave: Codable, Equatable {
         try c.encode(variant, forKey: .variant)
         try c.encodeIfPresent(points, forKey: .points)
         try c.encodeIfPresent(fullTavli, forKey: .fullTavli)
+        try c.encodeIfPresent(pendingRoll, forKey: .pendingRoll)
     }
 }
 
@@ -269,8 +301,11 @@ public extension Array where Element == AnalysisEntry {
 
 public extension GameSession {
     /// Capture the current game as a `GameSave` for persistence.
+    /// Includes the roll of the turn in progress (`pendingRoll`, #171) when one exists.
     func snapshot(name: String, savedAt: Date = Date()) -> GameSave {
-        GameSave(record: record, name: name, savedAt: savedAt)
+        var save = GameSave(record: record, name: name, savedAt: savedAt)
+        save.pendingRoll = pendingRoll
+        return save
     }
 
     /// Capture the current game as a leg of a Full Tavli session (#144): the save
@@ -279,6 +314,7 @@ public extension GameSession {
     func snapshot(name: String, fullTavli: FullTavliSession?, savedAt: Date = Date()) -> GameSave {
         var save = GameSave(record: record, name: name, savedAt: savedAt)
         save.fullTavli = fullTavli
+        save.pendingRoll = pendingRoll
         return save
     }
 }
