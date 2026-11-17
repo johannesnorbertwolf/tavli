@@ -168,11 +168,6 @@ struct DiceView: View {
 struct BoardDiceView: View {
     @ObservedObject var session: GameSession
 
-    /// When true (manual-dice mode, #77), tap-to-roll is suppressed — the human
-    /// enters the dice via `ManualDiceControl` instead. Under #110 this covers the
-    /// AI's roll too: the human enters the AI's dice and the engine plays them.
-    var manualEntry: Bool = false
-
     @State private var tumbling = false
     @State private var spin: Double = 0
 
@@ -195,7 +190,7 @@ struct BoardDiceView: View {
     private var used: [Bool] { usedDiceFlags(values: values, built: session.moveBuilder.built) }
 
     private var canRoll: Bool {
-        session.phase == .awaitingRoll && !manualEntry
+        session.phase == .awaitingRoll
             && !session.humanDiceRolling && !session.aiDiceRolling
     }
 
@@ -284,72 +279,6 @@ struct BoardDiceView: View {
     }
 }
 
-/// A tap-grid to enter specific dice (#110), replacing the old +/- steppers.
-/// Two rows of six `DieFace`s — top = first die, bottom = second die — sized to
-/// fit the landscape side panel and iPhone widths. Tapping a face selects that
-/// die's value (caramel highlight ring). As soon as *both* dice carry a
-/// selection the pair is submitted via `session.setManualDice`, so entering a
-/// roll is two taps (one per die) with no separate confirm button — selection
-/// is order-independent and re-tapping a row before the other is chosen just
-/// changes that die. Active only while the human awaits a roll; dimmed and
-/// non-interactive otherwise, with any half-finished pick cleared on the way out.
-struct ManualDiceControl: View {
-    @ObservedObject var session: GameSession
-
-    /// Per-die selection; `nil` until the player taps a face in that row. Submit
-    /// fires when both become non-nil.
-    @State private var d1: Int? = nil
-    @State private var d2: Int? = nil
-
-    private var enabled: Bool { session.phase == .awaitingRoll }
-
-    /// Die edge — 36 on iPad; the compact chrome (#109) passes 32.
-    var faceSize: CGFloat = 36
-    private let spacing: CGFloat = 6
-
-    var body: some View {
-        VStack(spacing: 10) {
-            dieRow("First die", selection: d1) { select(die: 1, value: $0) }
-            dieRow("Second die", selection: d2) { select(die: 2, value: $0) }
-        }
-        .opacity(enabled ? 1.0 : 0.4)
-        .allowsHitTesting(enabled)
-        .animation(.easeInOut(duration: 0.15), value: enabled)
-        // Drop a half-finished pick when it stops being the human's roll, so the
-        // next turn opens on a blank grid rather than a stale highlight.
-        .onChange(of: enabled) { _, isEnabled in
-            if !isEnabled { d1 = nil; d2 = nil }
-        }
-    }
-
-    private func dieRow(_ label: String, selection: Int?,
-                        onTap: @escaping (Int) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(ChromeType.caption2)
-                .foregroundStyle(ChromeKit.inkSecondary)
-            HStack(spacing: spacing) {
-                ForEach(1...6, id: \.self) { v in
-                    DieFace(value: v, isHighlighted: selection == v, size: faceSize)
-                        .contentShape(Rectangle())
-                        .onTapGesture { onTap(v) }
-                }
-            }
-        }
-    }
-
-    /// Record a die's value; once both dice are chosen, submit and reset.
-    private func select(die: Int, value: Int) {
-        guard enabled else { return }
-        if die == 1 { d1 = value } else { d2 = value }
-        if let a = d1, let b = d2 {
-            session.setManualDice(a, b)
-            d1 = nil
-            d2 = nil
-        }
-    }
-}
-
 // MARK: - Previews
 
 #Preview("Dice — states") {
@@ -363,9 +292,4 @@ struct ManualDiceControl: View {
     }
     .padding(40)
     .background(SColor(red: 138 / 255, green: 74 / 255, blue: 34 / 255))
-}
-
-#Preview("Manual control") {
-    ManualDiceControl(session: GameSession())
-        .padding(40)
 }

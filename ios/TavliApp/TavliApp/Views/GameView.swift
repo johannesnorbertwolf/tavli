@@ -135,8 +135,7 @@ struct GameView: View {
     @State private var showSettings = false
 
     /// Live settings (#77), bound here so the chrome reacts immediately to changes.
-    @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
-    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
@@ -147,14 +146,6 @@ struct GameView: View {
     private let surrenderWarningThreshold = 0.10
 
     private var flipped: Bool { humanColor == .black }
-
-    /// Manual dice entry is offered whenever a roll is awaited (#77). In manual
-    /// mode the session also pauses on the AI's turn (#110), so this is true for
-    /// both players' rolls — the human enters the AI's dice too. Suppressed online
-    /// (#134): each side rolls its own dice; the opponent's arrive over the wire.
-    private var manualDiceActive: Bool {
-        online == nil && diceMode == .manual && session.phase == .awaitingRoll
-    }
 
     /// Whether the local player may touch the board: always offline, only on the
     /// local player's turn online (#134).
@@ -229,7 +220,6 @@ struct GameView: View {
                     // nothing floats over the board's frame.
                     HStack(spacing: 0) {
                         PlayableBoardView(session: session, flipped: flipped,
-                                          manualDiceEntry: diceMode == .manual,
                                           interactive: boardInteractive)
                             .padding(8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -266,16 +256,12 @@ struct GameView: View {
                             if online == nil && showWinProbability && !session.isTerminal {
                                 WinProbabilityBar(session: session)
                             }
-                            if manualDiceActive {
-                                ManualDiceControl(session: session)
-                            }
                             if !session.isTerminal && boardInteractive {
                                 ControlsView(session: session)
                             }
                         }
                         .padding(.horizontal, 16)
                         PlayableBoardView(session: session, flipped: flipped,
-                                          manualDiceEntry: diceMode == .manual,
                                           interactive: boardInteractive)
                             .padding(.horizontal, 8)
                             .layoutPriority(1)
@@ -412,8 +398,8 @@ struct GameView: View {
             // handler overwrites the single autosave slot (or clears it once the
             // game is over), so only the last in-progress game is ever kept.
             .onChange(of: session.history.count) { _, _ in onAutosave() }
-            // …and as soon as a roll exists (#171): the human's (tap, auto-roll,
-            // manual entry) and the AI's, so a crash mid-turn resumes the same dice.
+            // …and as soon as a roll exists (#171): the human's (tap or auto-roll)
+            // and the AI's, so a crash mid-turn resumes the same dice.
             .onChange(of: session.rollRevision) { _, _ in onAutosave() }
             // Keep the live session in sync with the AI-animation setting (#77):
             // apply it on entry and whenever it's toggled, so the change lands on
@@ -422,22 +408,10 @@ struct GameView: View {
             .onChange(of: aiAnimation) { _, on in
                 session.animationTimings = on ? .standard : .off
             }
-            // Manual-dice mode (#110) applies to both players: keep the session's
-            // flag in sync so it pauses for the human to enter the AI's dice too.
-            // Applied on entry and whenever the setting is toggled mid-game.
-            // Manual-dice and auto-roll are offline-only (#134): online players each
-            // roll their own dice and the opponent's arrive over the wire, so the
-            // online session keeps its plain tap-to-roll regardless of these settings.
-            .onAppear { if online == nil { session.manualDiceEntry = diceMode == .manual } }
-            .onChange(of: diceMode) { _, mode in
-                guard online == nil else { return }
-                session.manualDiceEntry = mode == .manual
-                // Leaving manual mode while the AI sits paused for its dice:
-                // let it roll automatically again (no-op on the human's turn).
-                if mode != .manual { session.start() }
-            }
             // Auto-roll (#116): keep the session in sync. When enabled mid-game
             // while awaiting a human roll, `start()` fires the roll immediately.
+            // Offline only (#134): online players tap to roll their own dice and the
+            // opponent's arrive over the wire, so the online session ignores it.
             .onAppear { if online == nil { session.autoRoll = autoRoll } }
             .onChange(of: autoRoll) { _, on in
                 guard online == nil else { return }
@@ -570,9 +544,6 @@ struct GameView: View {
                 WinProbabilityBar(session: session)
             }
             Spacer(minLength: 0)
-            if manualDiceActive {
-                ManualDiceControl(session: session)
-            }
             if !session.isTerminal {
                 if let online {
                     // Online (#134): one "Leave match" action; in-turn controls only
@@ -625,7 +596,6 @@ struct GameView: View {
     /// the safe area, no padding.
     private func compactBoard(_ layout: ChromeLayout) -> some View {
         PlayableBoardView(session: session, flipped: flipped,
-                          manualDiceEntry: diceMode == .manual,
                           interactive: boardInteractive)
             .frame(width: layout.boardSide, height: layout.boardSide)
     }
@@ -662,7 +632,7 @@ struct GameView: View {
 
     /// Landscape: the board takes the full safe height on the leading edge; every
     /// control lives in the rail to its right (scrolls only if an unusually tall
-    /// combination — manual dice + win bar + match score — overflows a short phone).
+    /// combination — win bar + match score — overflows a short phone).
     private func compactLandscapeLayout(_ layout: ChromeLayout) -> some View {
         ZStack(alignment: .topLeading) {
             HStack(spacing: ChromeLayout.compactRailGap) {
@@ -731,7 +701,7 @@ struct GameView: View {
         .accessibilityIdentifier("gameMenu")
     }
 
-    /// Turn status, score, win bar, manual dice and Undo/Done for portrait.
+    /// Turn status, score, win bar and Undo/Done for portrait.
     private var compactStatusStack: some View {
         VStack(spacing: 8) {
             turnStatus
@@ -739,17 +709,14 @@ struct GameView: View {
             if online == nil && showWinProbability && !session.isTerminal {
                 WinProbabilityBar(session: session)
             }
-            if manualDiceActive {
-                ManualDiceControl(session: session, faceSize: 32)
-            }
             if !session.isTerminal && boardInteractive {
                 ControlsView(session: session)
             }
         }
     }
 
-    /// The landscape rail: nav bar, status card (with the score), win bar, then the
-    /// manual dice and Undo/Done anchored at the bottom.
+    /// The landscape rail: nav bar, status card (with the score), win bar, then
+    /// Undo/Done anchored at the bottom.
     private var compactRail: some View {
         VStack(spacing: 8) {
             compactNavBar
@@ -763,9 +730,6 @@ struct GameView: View {
                 WinProbabilityBar(session: session)
             }
             Spacer(minLength: 0)
-            if manualDiceActive {
-                ManualDiceControl(session: session, faceSize: 32)
-            }
             if !session.isTerminal && boardInteractive {
                 ControlsView(session: session)
             }
@@ -952,8 +916,7 @@ private struct TurnIndicatorView: View {
     @ObservedObject var session: GameSession
     /// Winner wording shared with the game-over overlays.
     let naming: WinnerNaming
-    @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
-    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = true
 
     var body: some View {
         VStack(spacing: 4) {
@@ -991,14 +954,12 @@ private struct TurnIndicatorView: View {
     }
 
     /// Subtitle while a roll is awaited. `nil` suppresses the label (auto-roll:
-    /// dice fire immediately so a "tap" prompt would flash misleadingly). In
-    /// manual mode the hint names which side's dice to enter (#110).
+    /// dice fire immediately so a "tap" prompt would flash misleadingly). Reads the
+    /// session's own flag — an online session never auto-rolls (#134); the
+    /// `@AppStorage` binding just re-renders this when the setting flips.
     private var diceSubtitle: String? {
-        if diceMode == .manual {
-            let isAITurn = session.aiColor != nil && session.currentPlayer == session.aiColor
-            return isAITurn ? String(localized: "Enter TavTav's dice") : String(localized: "Enter your dice")
-        }
-        return autoRoll ? nil : String(localized: "Tap dice to roll")
+        _ = autoRoll
+        return session.autoRoll ? nil : String(localized: "Tap dice to roll")
     }
 }
 

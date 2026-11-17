@@ -13,7 +13,6 @@ private typealias SColor = SwiftUI.Color
 /// - `FullTavliLegOverlayView` — the win overlay for a finished leg ("Continue").
 /// - `FullTavliTransitionView` — between legs: running score + next game + rules line.
 /// - `FullTavliResultView` — the session verdict with a per-leg breakdown.
-/// - `FullTavliInfoCard` — the start-screen card describing the sequence.
 
 /// Labels shared by the Full Tavli views: "You"/opponent vs AI, "White"/"Red" two-player.
 struct FullTavliNames {
@@ -370,42 +369,5 @@ struct FullTavliResultView: View {
             }
         }
         .accessibilityIdentifier("fullTavliResult")
-    }
-}
-
-/// Start-screen card for Full Tavli mode (in place of the variant picker): the three
-/// legs in order, each flagged "AI not available yet" when its model isn't bundled.
-struct FullTavliInfoCard: View {
-    /// The session the start buttons would create (its Plakoto leg per the preference).
-    let preview: FullTavliSession
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Full Tavli")
-                .font(ChromeType.body.weight(.semibold))
-                .foregroundStyle(ChromeTheme.ink)
-            Text("The traditional session: three games in a row, points add up across all three. The higher total wins; equal totals are a draw.")
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            ForEach(Array(preview.legVariantIDs.enumerated()), id: \.offset) { i, id in
-                let setting = GameVariantSetting(variantID: id)
-                HStack(spacing: 8) {
-                    Text("\(i + 1).")
-                        .font(ChromeType.callout.monospacedDigit())
-                        .foregroundStyle(ChromeKit.inkSecondary)
-                    Text(setting.name)
-                        .font(ChromeType.callout)
-                        .foregroundStyle(ChromeTheme.ink)
-                    if !AppSettings.aiAvailable(setting) {
-                        AIUnavailableBadge()
-                    }
-                }
-            }
-            Text("The Plakoto rules follow your game choice in Settings.")
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 }

@@ -81,7 +81,6 @@ smirk (opponent / win), a good-natured "you got me" (loss), and a thoughtful fac
 |---|---|---|
 | **Turn indicator** | `Views/GameView.swift:508` ("TavTav thinking…") | **Animated loco** — steam while the expectimax search runs. The single best slot. |
 | **Opening roll** | `Views/OpeningRollView.swift:167,183` ("TavTav goes first!" / "TavTav starts") | Face avatar beside the verdict; mono glyph on the button. |
-| **Manual dice** | `Views/GameView.swift:520` ("Enter TavTav's dice") | Face avatar so the player knows whose dice they're keying in. |
 | **Win / loss overlay** | `Views/GameView.swift:279` ("… war stärker.") | Face avatar; smirk on a TavTav win, good-natured on a loss. |
 
 ### P1 — Identity & the tournament shell (TavTav is a *ranked player*)
