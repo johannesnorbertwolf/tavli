@@ -4,8 +4,8 @@ import Foundation
 /// Where each variant's Core ML value model lives (#143), and whether it is there at
 /// all. Every variant names its model via `GameVariant.modelResourceName`
 /// (`PlakotoValue`, `PlakotoStandardValue`, `FevgaValue`, `PortesValue`); a model that
-/// is not bundled means **no AI for that variant** — the app shows it as "AI not
-/// available yet" for vs-AI play instead of silently playing random moves. Dropping
+/// is not bundled means **no AI for that variant** — the app shows it as "Computer
+/// not available yet" for vs-AI play instead of silently playing random moves. Dropping
 /// the `.mlpackage` into the app's resources is all it takes to enable it.
 public struct ModelCatalog: Sendable {
     private let locate: @Sendable (_ name: String, _ ext: String) -> URL?

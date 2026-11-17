@@ -50,13 +50,13 @@ struct SettingsView: View {
                                   caption: "The opening roll decides who starts, unless you force a side.")
                         toggleRow("Analyze during play",
                                   isOn: $inPlayAnalysis,
-                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery.")
+                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the computer's processing power, so the computer can be slower to move. Uses a little more battery.")
                     }
 
                     section("Display") {
-                        toggleRow("Animate AI moves",
+                        toggleRow("Animate computer moves",
                                   isOn: $aiAnimation,
-                                  caption: "Slow dice roll and one-by-one checker hops on the AI's turn.")
+                                  caption: "Slow dice roll and one-by-one checker hops on the computer's turn.")
                         toggleRow("Win-probability bar",
                                   isOn: $showWinProbability,
                                   caption: "Show your live chance of winning during the game.")

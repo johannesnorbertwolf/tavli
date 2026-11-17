@@ -387,7 +387,7 @@ by generated parity fixtures.
 - **Models + gating (#143, `ModelCatalog.swift`).** `ModelCatalog` resolves a variant's model
   (`.mlmodelc`, else `.mlpackage` compiled at load) from a bundle / directory / custom lookup;
   `isAvailable(variant)` is the vs-AI gate — the app never builds a vs-AI session (new, resumed
-  or auto-resumed) for a variant without its model; it shows "AI not available yet" and offers
+  or auto-resumed) for a variant without its model; it shows "Computer not available yet" and offers
   two-player play instead. The new variants' models (`PlakotoStandardValue`, `FevgaValue`,
   `PortesValue`) are optional: `setup.sh` converts each from its config's `gold_model_path`
   once that checkpoint exists, and any `<Name>Value.mlpackage` dropped into
@@ -753,7 +753,7 @@ small spinner by the move counter shows until all passes finish). The screen is 
 board-centric** mode (a `fullScreenCover` from the win overlay): the position the player faced fills
 the screen, with a panel (played→best + win-prob gap, the Your-move/Compare overlay) and
 Prev/Next/swipe to page through moves. Both sides' moves are shown (#132): each card is tagged You
-or **TavTav** (the AI persona), opponent cards annotate TavTav's played/best, and an "All moves /
+or **Computer**, opponent cards annotate the computer's played/best, and an "All moves /
 My blunders" toggle jumps navigation only between your own blunders. Blunder flagging, the chart
 rings, and the drill stay scoped to the human's plies (filtered by `mover == humanColor`). The drill
 is launched the same way, with the current `GameReviewResult` handed over as a precomputed result.

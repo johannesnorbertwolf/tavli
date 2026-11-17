@@ -37,7 +37,7 @@ struct StatsPanelView: View {
     private var content: some View {
         if condensed {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Human vs TavTav")
+                Text("Human vs Computer")
                     .font(ChromeType.caption.weight(.semibold))
                     .foregroundStyle(ChromeKit.inkSecondary)
                 if stats.total == 0 {
@@ -53,7 +53,7 @@ struct StatsPanelView: View {
 
     private var fullContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Human vs TavTav")
+            Text("Human vs Computer")
                 .font(ChromeType.statsTitle)
                 .foregroundStyle(Palette.ink)
 

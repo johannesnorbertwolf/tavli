@@ -71,7 +71,7 @@ struct GameView: View {
         var state: MatchState
         /// The local player's colour (the human offline; the local side online).
         var localColor: TavliEngine.Color
-        /// Display name for the opponent in the scoreboard ("TavTav" offline, the Game
+        /// Display name for the opponent in the scoreboard ("Computer" offline, the Game
         /// Center display name online).
         var opponentName: String
         /// The just-finished game's result (winner + points, or a draw, #143). Online
@@ -276,8 +276,7 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.vertical, 12)
 
-                    // The TavTav logo gets the top-right as its own tile; the debug
-                    // toggle (and its pane) move to the top-LEFT band to clear it.
+                    // The debug toggle (and its pane) sit in the top-left band.
                     VStack(alignment: .leading, spacing: 8) {
                         DebugToggleButton(isOn: $showDebugPane)
                         if showDebugPane {
@@ -289,15 +288,6 @@ struct GameView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.horizontal, 16)
                     .padding(.top, 64)
-
-                    // Logo tile, top-right corner — floats over the empty band so it
-                    // never pushes the board down.
-                    TavTavLogo()
-                        .frame(width: 180)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                        .padding(.top, 8)
-                        .padding(.trailing, 16)
-                        .allowsHitTesting(false)
                 }
 
                 if let fullTavli, case .gameOver = session.phase {
@@ -323,7 +313,6 @@ struct GameView: View {
                     MatchOverlayView(match: match,
                                      lastGameResult: lastGameResult,
                                      variant: session.game.variant,
-                                     aiColor: session.aiColor,
                                      naming: naming,
                                      onReview: session.aiColor != nil && hasReviewableMoves
                                          ? { showReview = true } : nil,
@@ -345,8 +334,7 @@ struct GameView: View {
                                    onReview: hasReviewableMoves ? { showReview = true } : nil,
                                    tournamentExit: tournamentExit,
                                    onlineExit: online?.onLeave,
-                                   showsStats: session.aiColor != nil,
-                                   mascot: session.aiColor.map { winner == $0 ? .smirk : .friendly })
+                                   showsStats: session.aiColor != nil)
                 }
             }
             .environment(\.chromeMode, layout.mode)
@@ -451,19 +439,19 @@ struct GameView: View {
         let humanWon = winner == humanColor
         if tournamentExit != nil {
             if humanWon { return "Sensationell!" }
-            return "\(tournamentOpponentName ?? "TavTav") war stärker."
+            return "\(tournamentOpponentName ?? "Computer") war stärker."
         }
         return naming.title(winner)
     }
 
-    /// Winner wording for every verdict (#overlays): "You win" / "TavTav wins" vs the
+    /// Winner wording for every verdict (#overlays): "You win" / "Computer wins" vs the
     /// AI, the opponent's name online, "White wins" / "Red wins" two-player.
     private var naming: WinnerNaming {
         if let online {
             return WinnerNaming(localColor: online.localColor, opponentName: online.opponentName)
         }
         if let ai = session.aiColor {
-            return WinnerNaming(localColor: ai.opponent, opponentName: String(localized: "TavTav"))
+            return WinnerNaming(localColor: ai.opponent, opponentName: String(localized: "Computer"))
         }
         return WinnerNaming(localColor: nil, opponentName: "")
     }
@@ -488,7 +476,7 @@ struct GameView: View {
         if let p = session.humanWinProbability, p > surrenderWarningThreshold {
             if session.game.variant.reportsEquity {
                 let equity = EvalScale(variant: session.game.variant).value(p)
-                surrenderChanceLine = String(localized: "TavTav still rates your position at \(equity) points.")
+                surrenderChanceLine = String(localized: "The computer still rates your position at \(equity) points.")
             } else {
                 let pct = Int((p * 100).rounded())
                 surrenderChanceLine = String(localized: "You still have a \(pct)% chance of winning.")
@@ -516,7 +504,6 @@ struct GameView: View {
     // Resign live here (not floating over the board), with Undo/Done beneath them.
     private var sidePanel: some View {
         VStack(spacing: 14) {
-            TavTavLogoTile()
             HStack {
                 if showsBackButton {
                     BackButton(action: onBack)
@@ -609,7 +596,7 @@ struct GameView: View {
     }
 
     /// Portrait: one icon bar on top (Back · Settings · ⋯ menu, borne-off counts
-    /// trailing), free space (no mascot on iPhone), the turn status +
+    /// trailing), free space, the turn status +
     /// contextual controls just above the board, and the board on the safe bottom.
     /// The controls sit above the board (never under the home indicator), with a gap
     /// so a near-miss lands on chrome padding, not a point.
@@ -619,8 +606,8 @@ struct GameView: View {
                 compactNavBar
                     .padding(.horizontal, 12)
                     .padding(.top, 4)
-                // No mascot on iPhone (owner's call, #109): the slack pools here so
-                // the status + controls stay right above the board.
+                // The slack pools here so the status + controls stay right
+                // above the board.
                 Spacer(minLength: 8)
                 FitOrScroll {
                     compactStatusStack
@@ -950,8 +937,10 @@ private struct TurnIndicatorView: View {
             // Pending two-dice route choice (#169).
             if session.routeChoice != nil { return String(localized: "Choose where to land in between") }
             return String(localized: "Choose destination")
-        case .aiThinking:        return String(localized: "TavTav thinking…")
-        case .animating:         return String(localized: "\(name) moving…")
+        case .aiThinking:        return String(localized: "Computer is thinking…")
+        case .animating:
+            if session.aiColor == session.currentPlayer { return String(localized: "Computer is moving…") }
+            return String(localized: "\(name) moving…")
         case .gameOver(let w?):
             // A 2-point result (#143) says so.
             if (session.record.points ?? 1) >= 2 {
@@ -1079,7 +1068,7 @@ private struct ControlsView: View {
 /// `GameOverCard`, the vs-AI record, Play Again (or the tournament / lobby exit),
 /// and Review / History. Sits over `GameView`'s dim scrim.
 private struct WinOverlayView: View {
-    /// Pre-formatted verdict ("You win" / "TavTav wins" / "Red wins") — the caller
+    /// Pre-formatted verdict ("You win" / "Computer wins" / "Red wins") — the caller
     /// knows which side the human played; this view stays presentation-only.
     let title: String
     /// A line under the verdict: the points a 2-point-variant result was worth, or
@@ -1098,9 +1087,6 @@ private struct WinOverlayView: View {
     var onlineExit: (() -> Void)? = nil
     /// Whether this game counts toward the vs-AI record (`false` for two-player, #143).
     var showsStats: Bool = true
-    /// TavTav's persona for the verdict — smirk if it won, friendly if it lost.
-    /// `nil` in human-vs-human games (no mascot shown).
-    var mascot: TavTavPersona? = nil
 
     /// The vs-AI record is the main app's, never written from tournament or online
     /// games — hide it there so it doesn't read "No games yet".
@@ -1121,7 +1107,6 @@ private struct WinOverlayView: View {
     var body: some View {
         GameOverCard(title: title,
                      subtitle: subtitle,
-                     mascot: mascot,
                      primary: primary,
                      // Review needs the bundled model the online session deliberately omits.
                      onReview: onlineExit == nil ? onReview : nil,
@@ -1142,7 +1127,7 @@ private struct MatchScoreboardView: View {
     let opponentName: String
     /// A finished game's result card is up: keep showing that game's number (#179).
     var gameOver = false
-    /// One line — "You 1 – 0 TavTav · Game 2 of 3" — when it fits (#109).
+    /// One line — "You 1 – 0 Computer · Game 2 of 3" — when it fits (#109).
     var compact = false
 
     // The score in points (#143): games for Plakoto, a double game counts 2.
@@ -1219,9 +1204,7 @@ private struct MatchOverlayView: View {
     let lastGameResult: MatchGameResult?
     /// The match's rules, for the points subtitle (#143).
     var variant: any GameVariant = GameVariants.plakoto
-    /// The AI's colour offline (drives the mascot); `nil` online (no mascot).
-    let aiColor: TavliEngine.Color?
-    /// Winner wording ("You win" / "TavTav wins" / "Red wins").
+    /// Winner wording ("You win" / "Computer wins" / "Red wins").
     let naming: WinnerNaming
     /// Open the just-finished game's review — `nil` hides it (online: no model;
     /// nothing reviewable).
@@ -1231,17 +1214,8 @@ private struct MatchOverlayView: View {
 
     private var state: MatchState { match.state }
     private var localColor: TavliEngine.Color { match.localColor }
-    private var lastGameWinner: TavliEngine.Color? { lastGameResult?.winner }
     private var isComplete: Bool { state.isComplete }
     private var localWonMatch: Bool { state.matchWinner == localColor }
-
-    /// Smirk if TavTav is on the winning side, friendly otherwise; nothing online.
-    private var mascot: TavTavPersona? {
-        guard let aiColor else { return nil }
-        let decider = isComplete ? state.matchWinner : lastGameWinner
-        guard let decider else { return nil }
-        return decider == aiColor ? .smirk : .friendly
-    }
 
     private var title: String {
         if isComplete {
@@ -1278,7 +1252,6 @@ private struct MatchOverlayView: View {
                          right: state.score(for: localColor.opponent),
                          rightName: match.opponentName,
                          caption: progressCaption),
-            mascot: mascot,
             primary: primary,
             onReview: onReview,
             onHistory: onHistory,
@@ -1302,7 +1275,7 @@ private struct MatchOverlayView: View {
 
 /// Scrollable two-column move sheet (#60, #190), presented as a sheet. One numbered row
 /// per full turn: the local player (vs AI / online; White in a two-player game) on the
-/// left, the opponent on the right, headed by checker dot + name ("You" / "TavTav" /
+/// left, the opponent on the right, headed by checker dot + name ("You" / "Computer" /
 /// online name / "White" / "Red", via `WinnerNaming`). Each cell is the roll as two small
 /// die faces + the move in readable notation (#178, `MoveNotation`). Thin separators
 /// instead of row cards; the newest turn is highlighted and the side still to move shows
@@ -1589,5 +1562,5 @@ enum ChromeTheme {
             session.commitHalfMove(from: src, to: dst)
         }
     }
-    return HistoryView(session: session, naming: WinnerNaming(localColor: .white, opponentName: "TavTav"))
+    return HistoryView(session: session, naming: WinnerNaming(localColor: .white, opponentName: "Computer"))
 }

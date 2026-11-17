@@ -66,8 +66,6 @@ struct OpeningRollView: View {
 
     private var portraitLayout: some View {
         VStack(spacing: 16) {
-            TavTavLogoTile()
-                .padding(.horizontal, 16)
             ZStack {
                 statusBlock
                 HStack {
@@ -89,7 +87,7 @@ struct OpeningRollView: View {
 
     // iPhone (#109): the same pieces as `GameView`'s compact layouts — the board
     // edge-to-edge (full safe width in portrait, full safe height in landscape) and
-    // the chrome above it / in a rail beside it. No mascot on iPhone (owner's call).
+    // the chrome above it / in a rail beside it.
     private func compactPortraitLayout(_ layout: ChromeLayout) -> some View {
         VStack(spacing: 12) {
             HStack {
@@ -98,7 +96,7 @@ struct OpeningRollView: View {
             }
             .padding(.horizontal, 12)
             .padding(.top, 4)
-            // No mascot on iPhone (#109): the slack pools above the status.
+            // The slack pools above the status.
             Spacer(minLength: 0)
             statusBlock
                 .padding(.horizontal, 12)
@@ -184,7 +182,6 @@ struct OpeningRollView: View {
 
     private var sidePanel: some View {
         VStack(spacing: 14) {
-            TavTavLogoTile()
             HStack {
                 backButton
                 Spacer(minLength: 0)
@@ -217,7 +214,7 @@ struct OpeningRollView: View {
         case .idle:                     return String(localized: "Tap the board to roll")
         case .rolling:                  return String(localized: "Rolling…")
         case .tied(let h, let a):       return String(localized: "Tie (\(h) vs \(a)) — rolling again…")
-        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "TavTav goes first!")
+        case .resolved(_, _, let w):    return w == humanColor ? String(localized: "You go first!") : String(localized: "Computer goes first!")
         }
     }
 
@@ -233,7 +230,7 @@ struct OpeningRollView: View {
                 AdaptiveRow(spacing: 12) {
                     Button("You start") { startGame(humanColor) }
                         .buttonStyle(ChromeButton(role: .secondary))
-                    Button("TavTav starts") { startGame(humanColor.opponent) }
+                    Button("Computer starts") { startGame(humanColor.opponent) }
                         .buttonStyle(ChromeButton(role: .secondary))
                 }
             }

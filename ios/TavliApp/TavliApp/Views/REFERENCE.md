@@ -10,7 +10,7 @@ lives in the `BoardGeometry` package (engine-free) and game logic in
 
 Renders the **empty** Caramel board: beechwood frame, mahogany play surface, 24
 ivory triangles with tip pips, the slim center bar line, two diamond ornaments,
-the italic `TAVLI` wordmark, and (since #31) the two persistent bear-off tray
+and (since #31) the two persistent bear-off tray
 recesses. No checkers, dice, highlights, or interactivity — those land in later
 tickets.
 
@@ -22,7 +22,7 @@ tickets.
   *inside* the tray. The Caramel reference has no bear-off art — this is the
   project's tray chrome, giving borne-off checkers and the gold cue a tray to sit
   in. Drawn right after the play surface (below the triangles); it does not
-  overlap the diamonds or wordmark.
+  overlap the diamonds.
 
 - **Single `Canvas`.** `body` is one `Canvas { context, size in … }` with
   `.aspectRatio(1, .fit)`. It builds `BoardGeometry(rect: CGRect(origin: .zero,
@@ -38,7 +38,8 @@ tickets.
   24 triangles (`baselineLeft → baselineRight → tip`, ivory fill, 2.6pt dark
   round-join stroke) → tip pips (9pt ivory circles, thin dark stroke) at each
   `point(n).tip` → center bar line (`barTop`→`barBottom`, dark, 0.55 opacity) →
-  two diamonds at `leftDiamondCenter`/`rightDiamondCenter` → wordmark.
+  two diamonds at `leftDiamondCenter`/`rightDiamondCenter`. (The italic "TAVLI"
+  frame engraving was dropped in #192 with the app's rename to Tavlo.)
 - **`drawDiamond`** ports the reference `Diamond` component: dark backing
   diamond, a tessellated tile border (4 sides × 8 tiles; each tile is a 6.8u
   square translated along the edge and rotated `edgeAngle + 45°` via a copied
@@ -386,7 +387,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
     `onAutosave`, so both are no-ops there.
   - **Surrender / resign (#74):** one confirmation everywhere (iPad Resign button and the
     iPhone "⋯" menu both call `onSurrenderTapped`). It captures `surrenderChanceLine` — "You still
-    have a X% chance of winning." (or "TavTav still rates your position at +0.52 points." for a
+    have a X% chance of winning." (or "The computer still rates your position at +0.52 points." for a
     2-point variant via `EvalScale`) only when `session.humanWinProbability` is known **and** above
     `surrenderWarningThreshold` (10%), else `nil` — then flips `showSurrenderConfirm`. A single
     `.alert("Give up this game?")` shows that line as its message (no message when `nil`) with
@@ -402,7 +403,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
     (`GameOverCard.swift`), so they look identical — see below.
   - **Winner wording** comes from one `WinnerNaming(localColor:opponentName:)` built by
     `GameView.naming` and used by every overlay and `TurnIndicatorView`: vs the AI "You win" /
-    "TavTav wins", online "You win" / "`<opponent>` wins" (Game Center name), two-player
+    "Computer wins", online "You win" / "`<opponent>` wins" (Game Center name), two-player
     "White wins" / "Red wins"; `doubleTitle` adds "a double game". (Tournament keeps its German
     verdict.)
   - **Review gating:** `hasReviewableMoves` (any ply in `session.history` with half-moves) — a
@@ -417,7 +418,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
 - **`TurnIndicatorView`** — maps `session.phase` to a headline: `.awaitingRoll` →
   "`<Name>`'s turn" + "Tap dice to roll" caption; `.picking` → "Pick a checker";
   `.moving` → "Choose destination"; `.aiThinking` → "AI thinking…"; `.animating` →
-  "`<Name>` moving…"; `.gameOver(w)` → `naming.title(w)` ("You win" / "TavTav wins" /
+  "`<Name>` moving…"; `.gameOver(w)` → `naming.title(w)` ("You win" / "Computer wins" /
   "Red wins", or `doubleTitle` for a 2-point result). `<Name>` and the player come from
   `ChromeTheme` + `session.currentPlayer`; the winner wording from the `WinnerNaming` passed in.
 - **`BorneOffView(session:color:)`** — a horizontal chip (#101): checker-colored disc,
@@ -438,8 +439,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
 - **`GameOverCard`** (`GameOverCard.swift`) — the one game-over surface: a single centred
   solid card (`.chromeCard()`, padding 28 / 16 compact, `frame(maxWidth: 440)`, full width minus
   a 16 pt gutter on a phone) over `GameView`'s scrim, so its ink text never collides with the
-  status text / dice / checkers behind. Top to bottom: `TavTavAvatar` (96 pt, **iPad only**),
-  the serif verdict (`ChromeType.winTitle`, ink, ≤ 2 lines, scales to 0.6), an optional
+  status text / dice / checkers behind. Top to bottom: the serif verdict (`ChromeType.winTitle`, ink, ≤ 2 lines, scales to 0.6), an optional
   subtitle (points / draw reason, `inkSecondary`), an optional `GameOverScore` block styled
   like the in-game scoreboard (names in callout, digits `title3.bold().monospacedDigit()` on an
   `ink.opacity(0.06)` inset, caption beneath), optional extra content, the full-width
@@ -457,7 +457,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   `RootView`'s store, whose `@Published` change re-renders `RootView` → passes fresh `stats`
   down before the overlay paints.
 - **`MatchOverlayView`** (#145) — best-of-three on the `GameOverCard`: per-game verdict (or the
-  match verdict once decided), score block "You 0 – 1 TavTav" with the caption "Game N of M"
+  match verdict once decided), score block "You 0 – 1 Computer" with the caption "Game N of M"
   where **N is the game that just finished** (`state.results.count`, not `currentGameNumber`,
   which already points at the next game) or "Final", primary "Next game" / "Rematch" / "Back to
   lobby", Review / History, and "Back to menu".
@@ -570,9 +570,8 @@ App-side helpers in `ChromeKit.swift`:
   instead of clipping DE/NL), `.chromeSecondaryButtonSurface()` (a `Menu` label that looks
   like a secondary button).
 
-**No TavTav mascot on compact layouts** (owner's call — it goes in a future rebrand and
-only costs space on a phone): no logo tile in the game / opening-roll chrome, no avatar
-in the win / match / Full Tavli overlays or the Full Tavli result screen. iPad unchanged.
+**No mascot anywhere** (#192): the AI opponent is simply "Computer" in all UI text; the former
+train mascot (logo tile, avatar, locomotive art) was removed on every layout.
 
 Per screen (compact only):
 - **GameView** — portrait: icon nav bar (Back · Settings · ⋯ menu with Save/Resign or
@@ -688,7 +687,7 @@ and a live game. Owns all save/load wiring (#61) through a single `SaveStore.def
 **Variants (#143, #189).** The variant is chosen in the new-game sheet (`NewGameSheet`,
 `settings.variant`); the start screen shows it in the play button's setup line.
 When the setup's model is missing (`NewGameSetup.aiAvailable`) the play button is
-replaced by a "TavTav is still learning …" note (the adjust button stays, so another variant can
+replaced by a "The computer is still learning …" note (the adjust button stays, so another variant can
 be picked); "Two players on this iPad" (`beginTwoPlayer`) is always offered with the remembered
 variant + length — White-facing board,
 starter from `variant.startingPlayer(default: .white)`, no match, no W/L record, review via the
@@ -753,7 +752,7 @@ too), and `match.recordGame(winner:points:)`.
   - **Top bar** — three 44 pt icon buttons, trailing: My Record (`chart.bar.fill` → the fitted
     `statsSheet`: "My Record" header + **Done** around `StatsPanelView`, `.height(480)` detent),
     Saved games (`tray.full.fill` → `SavedGamesSheet`), Settings (`gearshape.fill` → `SettingsView`).
-  - The Cormorant Garamond **"Tavli"** wordmark.
+  - The Cormorant Garamond **"Tavlo"** wordmark (the app's name, #192).
   - **`ContinueCard`** — only while an autosave exists (`saves.first(where: \.isAutosave)`):
     one tappable `.chromeCard()` — amber `arrow.clockwise.circle.fill`, "Continue last game",
     the mode line (variant, "· two players", "Full Tavli ·" prefix) and a date · moves line;
@@ -764,13 +763,12 @@ too), and `match.recordGame(winner:points:)`.
       (`NewGameSetup.summary`: "Level 6 · Plakoto · Best of 3", Full Tavli "Level 6 · Full
       Tavli"). Tapping starts at once (`onPlay` → `RootView` resolves the colour with
       `PreferredColorSetting.resolve()` and calls `beginGame` / `beginFullTavli`). No model →
-      the "TavTav is still learning …" note in its place (a card on a phone).
+      the "The computer is still learning …" note in its place (a card on a phone).
     - **`adjustButton`** — a square `.secondary` `slider.horizontal.3` button ("Game setup")
       presenting `NewGameSheet`. The sheet's Play sets `playAfterSheet` and dismisses; the
       sheet's `onDismiss` then calls `onPlay`, so the game starts only after the sheet is gone.
       On iPad the sheet is form-sized (`FormSheetSizing`: `.presentationSizing(.form)` on iOS 18+).
-    On iPad the play pair sits in a `.chromeCard()` headed by a 128 pt `TavTavLoco` (no mascot
-    on a phone, #109).
+    On iPad the play pair sits in its own `.chromeCard()`.
   - **Secondary rows** — "Two players on this iPhone/iPad" (`onTwoPlayer`, remembered variant +
     length) and "Play Online" (`onPlayOnline`, #134), full-width `.secondary` buttons with a
     leading icon + chevron.
@@ -844,7 +842,7 @@ players" pick the choices up immediately — there is no Cancel/commit step.
 - **Length** — `SegmentedChoice` over `MatchLengthSetting.label` (Single game · Best of 3 · Full
   Tavli) + `caption`.
 - **Play** — full-width `.primary` `ChromeButton` (`title3` bold) → `onPlay`. Disabled (0.45)
-  with the "TavTav is still learning …" message above it when `NewGameSetup.aiAvailable` is false.
+  with the "The computer is still learning …" message above it when `NewGameSetup.aiAvailable` is false.
 
 Helpers in the file: `NewGameSetup` (variant/level/playAs/length → `aiAvailable`, `summary`,
 `unavailableMessage`; shared with the start screen), `SheetSection` (quiet label over content),
@@ -861,9 +859,9 @@ a `ScrollView` capped at 560 pt. Every control binds to `@AppStorage`; each defa
 
 - **Game** — *Play as* (`PreferredColorSetting` White / Random / Red, default **White**; also in
   the new-game sheet), *Auto-roll* (default **on**).
-- **Advanced** — *First move* (`StartingPlayerSetting`: opening roll / I start / TavTav
+- **Advanced** — *First move* (`StartingPlayerSetting`: opening roll / I start / Computer
   starts), *Analyze during play* (#146, default off).
-- **Display** — *Animate AI moves* (default on), *Win-probability bar* (default off).
+- **Display** — *Animate computer moves* (default on), *Win-probability bar* (default off).
 
 Row builders: `choiceRow` (title + segmented picker + caption), `toggleRow`. Variant, match
 length and the AI level moved to `NewGameSheet` (#189); the #108 strength slider is gone (its

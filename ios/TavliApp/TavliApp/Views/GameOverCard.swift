@@ -9,7 +9,7 @@ struct GameOverAction {
     var identifier: String? = nil
 }
 
-/// The running score line: "You  1 – 0  TavTav" + a caption ("Game 1 of 3").
+/// The running score line: "You  1 – 0  Computer" + a caption ("Game 1 of 3").
 struct GameOverScore {
     let leftName: String
     let left: Int
@@ -24,7 +24,7 @@ struct GameOverScore {
 /// collide with the verdict. Every overlay builds on this, so they look identical.
 /// Presentation only: the copy and every action come from the caller.
 ///
-/// Layout, top to bottom: TavTav avatar (iPad only), verdict, subtitle (points /
+/// Layout, top to bottom: verdict, subtitle (points /
 /// draw reason), optional score block, optional extra content (the vs-AI record),
 /// the primary action (full width), Review / History, then an optional exit.
 /// ≤ 440 pt wide on iPad; full width minus a gutter on a phone, scrolling only when
@@ -33,8 +33,6 @@ struct GameOverCard<Extra: View>: View {
     let title: String
     var subtitle: String? = nil
     var score: GameOverScore? = nil
-    /// TavTav's persona (smirk if it won); `nil` for human-vs-human. iPad only.
-    var mascot: TavTavPersona? = nil
     let primary: GameOverAction
     /// `nil` hides Review (no model, online, or nothing reviewable).
     var onReview: (() -> Void)? = nil
@@ -57,9 +55,6 @@ struct GameOverCard<Extra: View>: View {
 
     private var card: some View {
         VStack(spacing: compact ? 12 : 20) {
-            if let mascot, !compact {
-                TavTavAvatar(persona: mascot, size: 96)
-            }
             VStack(spacing: 6) {
                 Text(title)
                     .font(ChromeType.winTitle)
@@ -175,25 +170,25 @@ struct GameOverCard<Extra: View>: View {
 
 extension GameOverCard where Extra == EmptyView {
     init(title: String, subtitle: String? = nil, score: GameOverScore? = nil,
-         mascot: TavTavPersona? = nil, primary: GameOverAction,
+         primary: GameOverAction,
          onReview: (() -> Void)? = nil, onHistory: (() -> Void)? = nil,
          exit: GameOverAction? = nil) {
-        self.init(title: title, subtitle: subtitle, score: score, mascot: mascot,
+        self.init(title: title, subtitle: subtitle, score: score,
                   primary: primary, onReview: onReview, onHistory: onHistory,
                   exit: exit, extra: { EmptyView() })
     }
 }
 
 /// Winner wording shared by every overlay and the status card: vs the AI or online
-/// "You win" / "<opponent> wins" ("TavTav wins", or the Game Center name); in a
+/// "You win" / "<opponent> wins" ("Computer wins", or the Game Center name); in a
 /// two-player game "White wins" / "Red wins".
 struct WinnerNaming {
     /// The local player's colour (vs AI / online), or `nil` in a two-player game.
     let localColor: TavliEngine.Color?
-    /// "TavTav" vs the AI, the opponent's display name online.
+    /// "Computer" vs the AI, the opponent's display name online.
     let opponentName: String
 
-    /// "You win" / "TavTav wins" / "Red wins".
+    /// "You win" / "Computer wins" / "Red wins".
     func title(_ winner: TavliEngine.Color) -> String {
         guard let localColor else {
             return String(localized: "\(ChromeTheme.displayName(winner)) wins")
@@ -202,14 +197,14 @@ struct WinnerNaming {
                                     : String(localized: "\(opponentName) wins")
     }
 
-    /// Who a side is, for per-move labels (#178): "You" / "TavTav" / the online
+    /// Who a side is, for per-move labels (#178): "You" / "Computer" / the online
     /// opponent's name, or "White" / "Red" in a two-player game.
     func name(_ color: TavliEngine.Color) -> String {
         guard let localColor else { return ChromeTheme.displayName(color) }
         return color == localColor ? String(localized: "You") : opponentName
     }
 
-    /// "You win a double game" / "TavTav wins a double game" / "Red wins a double game".
+    /// "You win a double game" / "Computer wins a double game" / "Red wins a double game".
     func doubleTitle(_ winner: TavliEngine.Color) -> String {
         guard let localColor else {
             return String(localized: "\(ChromeTheme.displayName(winner)) wins a double game")

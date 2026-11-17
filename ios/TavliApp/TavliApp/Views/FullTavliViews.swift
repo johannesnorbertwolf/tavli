@@ -20,7 +20,7 @@ struct FullTavliNames {
     let localColor: TavliEngine.Color?
     let opponentName: String
 
-    init(session: FullTavliSession, opponentName: String = String(localized: "TavTav")) {
+    init(session: FullTavliSession, opponentName: String = String(localized: "Computer")) {
         localColor = session.aiColor?.opponent
         self.opponentName = opponentName
     }
@@ -30,7 +30,7 @@ struct FullTavliNames {
     var leftName: String { localColor == nil ? ChromeTheme.displayName(.white) : String(localized: "You") }
     var rightName: String { localColor == nil ? ChromeTheme.displayName(.black) : opponentName }
 
-    /// The side that won a leg, as a short label ("You", "TavTav", "White", "Red").
+    /// The side that won a leg, as a short label ("You", "Computer", "White", "Red").
     func sideName(_ color: TavliEngine.Color) -> String {
         color == leftColor ? leftName : rightName
     }
@@ -48,13 +48,13 @@ private extension GameVariantSetting {
     }
 }
 
-/// Compact running score shown during every leg: "You 2 – 1 TavTav" and which leg is
+/// Compact running score shown during every leg: "You 2 – 1 Computer" and which leg is
 /// on the board.
 struct FullTavliScoreboardView: View {
     let state: FullTavliSession
     /// The leg on the board (0-based) — the session may already count it once over.
     let legIndex: Int
-    /// One line — "You 1 – 0 TavTav · Game 2 of 3 · Fevga" — when it fits (#109).
+    /// One line — "You 1 – 0 Computer · Game 2 of 3 · Fevga" — when it fits (#109).
     var compact = false
 
     private var names: FullTavliNames { FullTavliNames(session: state) }
@@ -144,11 +144,6 @@ struct FullTavliLegOverlayView: View {
 
     private var names: FullTavliNames { FullTavliNames(session: state) }
 
-    private var mascot: TavTavPersona? {
-        guard let ai = state.aiColor, let winner = result?.winner else { return nil }
-        return winner == ai ? .smirk : .friendly
-    }
-
     private var title: String {
         guard let result else { return String(localized: "Game over") }
         guard let w = result.winner else { return ResultCopy.drawTitle }
@@ -171,7 +166,6 @@ struct FullTavliLegOverlayView: View {
                                  rightName: names.rightName,
                                  caption: legCaption(index: legIndex,
                                                      variantID: state.legVariantIDs[legIndex])),
-            mascot: mascot,
             primary: GameOverAction(
                 label: state.isComplete ? String(localized: "See final result")
                                         : String(localized: "Continue"),
@@ -232,7 +226,7 @@ private struct FullTavliScoreCard: View {
         }
     }
 
-    /// "You · 2 points", "TavTav · 1 point", "Draw", or "–" for a leg still to play.
+    /// "You · 2 points", "Computer · 1 point", "Draw", or "–" for a leg still to play.
     private func outcome(_ i: Int) -> String {
         guard i < state.results.count else { return "–" }
         let r = state.results[i]
@@ -324,19 +318,11 @@ struct FullTavliResultView: View {
         return String(localized: "\(ChromeTheme.displayName(w)) wins the Full Tavli!")
     }
 
-    private var mascot: TavTavPersona? {
-        guard let ai = state.aiColor, let w = state.winner else { return nil }
-        return w == ai ? .smirk : .friendly
-    }
-
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 24) {
-                    if let mascot, !ChromeType.isCompact {   // no mascot on iPhone (#109)
-                        TavTavAvatar(persona: mascot, size: 108)
-                    }
                     Text(title)
                         .font(ChromeType.winTitle)
                         .foregroundStyle(CaramelPalette.frameText)

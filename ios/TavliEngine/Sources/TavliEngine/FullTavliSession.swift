@@ -134,7 +134,7 @@ public struct FullTavliSession: Codable, Equatable, Sendable {
         legVariants.allSatisfy(catalog.isAvailable)
     }
 
-    /// The legs whose model is missing ("AI not available yet"), in play order.
+    /// The legs whose model is missing ("Computer not available yet"), in play order.
     public func unavailableLegVariantIDs(in catalog: ModelCatalog = .main) -> [String] {
         legVariants.filter { !catalog.isAvailable($0) }.map(\.id)
     }

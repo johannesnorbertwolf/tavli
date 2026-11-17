@@ -4,7 +4,7 @@ import TavliEngine
 /// #143 — the game-variant choice, used by
 /// the online lobby: a segmented picker over the four variants, then the selected
 /// variant's full name and one-paragraph rules summary. With `showsAIAvailability`
-/// a variant whose Core ML model isn't bundled yet is flagged "AI not available yet"
+/// a variant whose Core ML model isn't bundled yet is flagged "Computer not available yet"
 /// (it stays playable two-player). Bound to the persisted `@AppStorage` setting by the
 /// caller.
 struct VariantPickerView: View {
@@ -40,7 +40,7 @@ struct VariantPickerView: View {
 /// Small capsule marking a variant whose AI model isn't bundled yet (#143).
 struct AIUnavailableBadge: View {
     var body: some View {
-        Text("AI not available yet")
+        Text("Computer not available yet")
             .font(ChromeType.caption2.weight(.bold))
             .foregroundStyle(ChromeTheme.surrenderTint)
             .padding(.horizontal, 8)

@@ -39,7 +39,7 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `FullTavliSession.swift` (#144) | Pure `Codable` Full Tavli session: fixed legs Portes → Fevga → Plakoto (house, or standard if that is the saved preference), per-leg `results`, points totals (doubles 2, house Plakoto 1, draw 0 and still advances), `winner`/`isDrawn` after leg 3, `isAIAvailable(in:)` (every leg's model), and `resume(savedGame:)` → mid-leg / between legs / complete. Persisted as the optional `GameSave.fullTavli`. |
 | `MoveNotation.swift` (#178) | Pure readable move notation for history/review/drill: mover-relative points (`boardSize+1 − pathIndex`, so Fevga works), `bar`/`off`, one chained segment per checker (`13/7*/5` keeps only hit intermediates), doubles grouped `6/4(3)`, highest point first, `*` hit (Portes) / `^` new pin (Plakoto) on the first lander, `motherPinned` (standard Plakoto), high die first. Structured parts + plain `text` (`64: 13/7^ 8/4`); `describe(...before:/stacks:)` for one ply, `game(_:startingPlayer:config:)` replays a whole record. See `REFERENCE.md`. |
 | `BoardLayout.swift` (#143) | Engine → display slots for the board views, driven only by the variant hooks: trays show borne-off checkers only, bar checkers (Portes) move to slots 26/27; source↔slot mapping, borne-off/bar counts, hit detection for the bar animation; `reportsEquity`/`equity(fromValue:)` for 2-point variants. |
-| `ModelCatalog.swift` (#143) | Per-variant Core ML model lookup + `isAvailable` (the vs-AI gate; missing model = "AI not available yet", never random moves) + `makeAgent`; `VariantPreference` persists the chosen variant id. |
+| `ModelCatalog.swift` (#143) | Per-variant Core ML model lookup + `isAvailable` (the vs-AI gate; missing model = "Computer not available yet", never random moves) + `makeAgent`; `VariantPreference` persists the chosen variant id. |
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
 
@@ -67,7 +67,7 @@ encoder. A `preBuildScript` guard in `project.yml` fails the build if the model 
 app can never silently ship the random-move fallback. The other variants' models
 (`PlakotoStandardValue`/`FevgaValue`/`PortesValue`) are optional: `setup.sh` converts each once
 its config's gold checkpoint exists, or drop the `.mlpackage` into `TavliApp/Resources/` and
-re-run `setup.sh`; without one that variant is two-player only ("AI not available yet"). `SWIFT_VERSION` is pinned to 5.9 (Swift-6
+re-run `setup.sh`; without one that variant is two-player only ("Computer not available yet"). `SWIFT_VERSION` is pinned to 5.9 (Swift-6
 strict concurrency errors on `MLModel` + the non-`Sendable` engine classes). Display fonts (Cormorant
 Garamond + Inter) are committed TTFs registered via `Info.plist` `UIAppFonts`; the Core ML model is a
 generated, gitignored artifact.
