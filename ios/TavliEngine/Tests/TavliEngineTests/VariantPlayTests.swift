@@ -125,7 +125,7 @@ final class VariantPlayTests: XCTestCase {
             case .awaitingRoll:
                 turns += 1
                 guard turns < 5000 else { XCTFail("game failed to terminate"); break loop }
-                s.setManualDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
+                s.setDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
             case .picking, .moving:
                 let moves = s.moveBuilder.activeMoves
                 let chosen = moves[Int.random(in: 0..<moves.count, using: &rng)]
@@ -187,7 +187,7 @@ final class VariantPlayTests: XCTestCase {
         var finished: [(Color?, Int)] = []
         s.onGameOver = { _ in wins += 1 }
         s.onGameFinished = { finished.append(($0, $1)) }
-        s.setManualDice(1, 2)                                             // spec E5
+        s.setDice(1, 2)                                             // spec E5
         XCTAssertTrue(s.moveBuilder.activeMoves.contains { swiftMovePairs([$0])[0].contains([2, 1]) })
         s.selectPoint(2); s.commitHalfMove(from: 2, to: 1)
         if s.phase != .gameOver(winner: nil) { s.selectPoint(5); s.commitHalfMove(from: 5, to: 3) }

@@ -220,7 +220,7 @@ final class GameSessionTests: XCTestCase {
     func testRollMovesIntoPickingWithSources() {
         let s = GameSession(startingPlayer: .white)
         XCTAssertEqual(s.phase, .awaitingRoll)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         XCTAssertEqual(s.phase, .picking)
         XCTAssertFalse(s.selectableSources.isEmpty)
         XCTAssertFalse(s.legalMoves.isEmpty)
@@ -228,7 +228,7 @@ final class GameSessionTests: XCTestCase {
 
     func testSelectAndUndoSelectionState() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let src = s.selectableSources.sorted().first!
         s.selectPoint(src)
         XCTAssertEqual(s.phase, .moving)
@@ -244,7 +244,7 @@ final class GameSessionTests: XCTestCase {
 
     func testCommitThenUndoRestoresBoardAndState() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let src = s.selectableSources.sorted().first!
         let dst = s.moveBuilder.validDestinations(for: src).sorted().first!
         let beforeFrom = s.game.board.points[src].count
@@ -270,7 +270,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(6, pieces: [.black, .black])     // blocks die=1
         b.setPoint(7, pieces: [.black, .black])     // blocks die=2
 
-        s.setManualDice(1, 2)
+        s.setDice(1, 2)
         XCTAssertEqual(s.legalMoves.count, 0)
         XCTAssertEqual(s.currentPlayer, .black)     // turn advanced
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -278,7 +278,7 @@ final class GameSessionTests: XCTestCase {
 
     func testNewGameResets() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         s.selectPoint(s.selectableSources.sorted().first!)
         s.newGame(startingPlayer: .black)
         XCTAssertEqual(s.phase, .awaitingRoll)
@@ -296,7 +296,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(1, pieces: [.white])
         b.setPoint(24, pieces: [.black])    // keep both colors on the board
 
-        s.setManualDice(2, 2)
+        s.setDice(2, 2)
         XCTAssertEqual(s.phase, .picking)
         XCTAssertEqual(s.selectableSources, [1])
         s.selectPoint(1)
@@ -319,7 +319,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(10, pieces: [.white])
         b.setPoint(24, pieces: [.black])
 
-        s.setManualDice(2, 2)
+        s.setDice(2, 2)
         XCTAssertEqual(s.selectableSources, [1, 10])
 
         // A then B: the other point must stay selectable (bug #1).
@@ -354,7 +354,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(1, pieces: [.white])
         b.setPoint(24, pieces: [.black])
 
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         XCTAssertEqual(s.selectableSources, [1])
         s.selectPoint(1)
         XCTAssertEqual(s.validTargets, [4, 6, 9])   // stops + merged endpoint
@@ -383,7 +383,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(24, pieces: [.black])
 
         // White plays the merged single checker 1→9 (dice 3·5) as two hops.
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         s.commitHalfMove(from: 1, to: 4)
         s.commitHalfMove(from: 4, to: 9)
 
@@ -405,7 +405,7 @@ final class GameSessionTests: XCTestCase {
         b.setPoint(6, pieces: [.black, .black])     // blocks die=1
         b.setPoint(7, pieces: [.black, .black])     // blocks die=2
 
-        s.setManualDice(1, 2)
+        s.setDice(1, 2)
         XCTAssertEqual(s.history.count, 1)
         XCTAssertTrue(s.history[0].halfMoves.isEmpty)   // pass = empty halfMoves
         XCTAssertEqual(s.history[0].die1, 1)
@@ -428,7 +428,7 @@ final class GameSessionTests: XCTestCase {
             case .awaitingRoll:
                 turns += 1
                 XCTAssertLessThan(turns, 100_000, "game failed to terminate")
-                s.setManualDice(Int.random(in: 1...6, using: &rng),
+                s.setDice(Int.random(in: 1...6, using: &rng),
                                 Int.random(in: 1...6, using: &rng))
             case .picking, .moving:
                 guard let chosen = s.moveBuilder.activeMoves.first else {
@@ -487,7 +487,7 @@ final class GameSessionUndoTests: XCTestCase {
         XCTAssertFalse(s.canUndo, "nothing to rewind before the first move")
 
         let start = signature(s.game.board)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         XCTAssertEqual(s.phase, .picking)
         playFirstMove(s)
 
@@ -532,12 +532,12 @@ final class GameSessionUndoTests: XCTestCase {
         s.start()
         let start = signature(s.game.board)
 
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         playFirstMove(s)
         XCTAssertTrue(s.canUndoLastDecision)
         let afterFirst = signature(s.game.board)                      // decision 1 + AI reply
 
-        s.setManualDice(1, 2)                                         // Black at 24 always has 24→23/24→22
+        s.setDice(1, 2)                                         // Black at 24 always has 24→23/24→22
         playFirstMove(s)
         XCTAssertTrue(s.canUndoLastDecision, "second decision should be rewindable")
 
@@ -564,7 +564,7 @@ final class GameSessionUndoTests: XCTestCase {
         for i in 0...(b.boardSize + 1) { b.setPoint(i, pieces: []) }
         b.setPoint(1, pieces: [.white])                              // lone checker walks the Pasch ray
         b.setPoint(24, pieces: [.black])                            // keep both colors on the board
-        s.setManualDice(2, 2)                                        // 1→3→5→7→9
+        s.setDice(2, 2)                                        // 1→3→5→7→9
 
         let start = signature(b)
         s.selectPoint(1)
@@ -608,7 +608,7 @@ final class GameSessionSurrenderTests: XCTestCase {
         b.setPoint(1, pieces: [.white])                             // lone checker walks the Pasch ray
         b.setPoint(24, pieces: [.black])                           // keep both colors on the board
         let start = signature(b)
-        s.setManualDice(2, 2)                                       // 1→3→5→7→9
+        s.setDice(2, 2)                                       // 1→3→5→7→9
 
         s.selectPoint(1)
         s.commitHalfMove(from: 1, to: 5)                           // two of four hops — turn unfinished

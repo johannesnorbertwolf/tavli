@@ -1040,7 +1040,7 @@ private struct ControlsView: View {
     var body: some View {
         HStack(spacing: 12) {
             Button {
-                session.undoOrStepBack()
+                session.undo()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.uturn.backward")
@@ -1048,8 +1048,8 @@ private struct ControlsView: View {
                 }
             }
             .buttonStyle(ChromeButton(role: .secondary))
-            .disabled(!session.canUndoOrStepBack)
-            .opacity(session.canUndoOrStepBack ? 1 : 0.4)
+            .disabled(!session.canUndo)
+            .opacity(session.canUndo ? 1 : 0.4)
             if canFinish {
                 Button {
                     session.confirm()
@@ -1474,7 +1474,7 @@ enum ChromeTheme {
 
 #Preview("Undo/Done", traits: .landscapeLeft) {
     let session = GameSession()
-    session.setManualDice(3, 5)
+    session.setDice(3, 5)
     if let source = session.selectableSources.sorted().first,
        let target = session.moveBuilder.validDestinations(for: source).sorted().first {
         session.commitHalfMove(from: source, to: target)
@@ -1485,7 +1485,7 @@ enum ChromeTheme {
 #Preview("History") {
     let session = GameSession(startingPlayer: .white)
     // Script a couple of plies so the log has content.
-    session.setManualDice(3, 5)
+    session.setDice(3, 5)
     if let src = session.selectableSources.sorted().first {
         session.selectPoint(src)
         if let dst = session.validTargets.sorted().first {

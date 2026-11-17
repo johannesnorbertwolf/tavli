@@ -14,7 +14,7 @@ final class GameSessionDrillTests: XCTestCase {
     /// same position can be re-attempted.
     func testAttemptModeReportsAndRollsBack() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let before = s.game.board.points.map(\.pieces)
 
         var reported: [Move] = []
@@ -40,7 +40,7 @@ final class GameSessionDrillTests: XCTestCase {
     /// only `retryAttempt()` rolls it back to the pre-move position (#114).
     func testHoldAttemptKeepsPositionUntilRetry() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let before = s.game.board.points.map(\.pieces)
         var reported = 0
         s.onMoveAttempt = { _ in reported += 1 }
@@ -64,7 +64,7 @@ final class GameSessionDrillTests: XCTestCase {
     /// Two attempts in a row both fire and both leave the position pristine.
     func testAttemptModeAllowsRepeatedTries() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let before = s.game.board.points.map(\.pieces)
         var reported = 0
         s.onMoveAttempt = { _ in reported += 1 }
@@ -81,7 +81,7 @@ final class GameSessionDrillTests: XCTestCase {
     /// With the hook nil (normal play), a completed move still records + advances.
     func testNormalPlayUnaffected() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         s.commitHalfMove(from: 1, to: 4)
         s.commitHalfMove(from: 4, to: 9)
 

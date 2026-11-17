@@ -81,7 +81,7 @@ public struct RouteChoice: Equatable {
 ///
 /// Owns the `Game`, drives the turn state machine, and exposes observable
 /// read-state. Views interact only through the intent methods
-/// (`roll`/`setManualDice`/`selectPoint`/`commitHalfMove`/`undo`/`confirm`/
+/// (`roll`/`setDice`/`selectPoint`/`commitHalfMove`/`undo`/`confirm`/
 /// `newGame`). No rendering, no AI, no animation — those belong to later layers.
 @MainActor
 public final class GameSession: ObservableObject {
@@ -121,16 +121,9 @@ public final class GameSession: ObservableObject {
     /// screen (#77) can adjust them; consulted afresh at each AI turn.
     public var animationTimings: AnimationTimings
 
-    /// Manual-dice mode (#110): when true the session does **not** auto-roll for
-    /// the AI — on the AI's turn it pauses in `.awaitingRoll` so the human enters
-    /// the AI's dice too, then plays the AI's move with them. Mirrors the human
-    /// side, which the view gates on the same setting; the view keeps this in
-    /// sync so a mid-game settings change takes effect on the next roll.
-    public var manualDiceEntry: Bool
-
     /// Auto-roll mode (#116): when true the human's dice fire automatically at
-    /// the start of their turn — no tap required. Mutually exclusive with
-    /// `manualDiceEntry`; the view keeps this in sync with the settings toggle.
+    /// the start of their turn — no tap required. The view keeps this in sync with
+    /// the settings toggle.
     public var autoRoll: Bool
 
     /// In-play analysis mode (#146): when true the session computes each ply's 2-ply
@@ -147,13 +140,13 @@ public final class GameSession: ObservableObject {
     @Published public private(set) var legalMoves: [Move] = []
 
     /// The roll of the turn in progress (#171): set the moment dice exist for the
-    /// side on move (tap, auto-roll, manual entry, the AI's roll, a decision rewind)
+    /// side on move (tap, auto-roll, the AI's roll, a decision rewind)
     /// and cleared when that turn is recorded as a ply (or abandoned). `snapshot`
     /// persists it so a crash/relaunch mid-turn resumes with the same dice.
     @Published public private(set) var pendingRoll: PendingRoll? = nil
 
     /// Bumped whenever `pendingRoll` is set — and when it is dropped without a ply
-    /// being recorded (manual-mode unroll) — so the app can write its autosave as soon
+    /// being recorded (a decision rewind) — so the app can write its autosave as soon
     /// as a roll exists (#171), not only after a move (`history.count`).
     @Published public private(set) var rollRevision = 0
 
@@ -277,7 +270,6 @@ public final class GameSession: ObservableObject {
                 aiColor: Color? = nil,
                 searchConfig: SearchConfig = .standard,
                 animationTimings: AnimationTimings = .standard,
-                manualDiceEntry: Bool = false,
                 autoRoll: Bool = false,
                 inPlayAnalysis: Bool = false) {
         let game = Game(config: config, startingPlayer: startingPlayer)
@@ -287,7 +279,6 @@ public final class GameSession: ObservableObject {
                                  variantID: config.variant.id)
         self.searchConfig = searchConfig
         self.animationTimings = animationTimings
-        self.manualDiceEntry = manualDiceEntry
         self.autoRoll = autoRoll
         self.inPlayAnalysisEnabled = inPlayAnalysis
         self.moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
@@ -357,23 +348,18 @@ public final class GameSession: ObservableObject {
         beginTurn()
     }
 
-    /// Set the dice to specific values (manual/debug/scripted play), then compute
-    /// legal moves. Same effect as `roll` but deterministic. Clears the replay
-    /// queue — a manual override supersedes any saved future dice. In manual-dice
-    /// mode (#110) the human enters the AI's dice too: on the AI's turn this hands
-    /// straight off to the AI's search/play with the entered dice (no tumble, the
-    /// values are already shown), rather than starting a human turn.
-    public func setManualDice(_ d1: Int, _ d2: Int) {
+    /// Set the dice to specific values (scripted/deterministic play — tests, previews,
+    /// the `-uiTestGame` launch hook, the drill seeder), then compute legal moves.
+    /// Same effect as `roll` but deterministic. Clears the replay queue — an explicit
+    /// override supersedes any saved future dice and any restored pending roll.
+    /// Always starts a human turn; on the AI's turn the AI rolls for itself.
+    public func setDice(_ d1: Int, _ d2: Int) {
         guard phase == .awaitingRoll else { return }
         diceReplays.removeAll()
-        restoreRollOnStart = false   // explicitly entered dice supersede a restored roll
+        restoreRollOnStart = false
         game.dice.set(d1, d2)
         markRolled()
-        if isAITurn {
-            playAITurn(animateDiceRoll: false)
-        } else {
-            beginTurn()
-        }
+        beginTurn()
     }
 
     /// Pick (or clear) a source point for the next half-move.
@@ -471,68 +457,6 @@ public final class GameSession: ObservableObject {
         moveBuilder.undoGesture()
         clearSelection()
         refreshSources()
-    }
-
-    /// The in-game "Undo" button's action (#110). Peels back the current turn's
-    /// half-moves first (within-turn `undo`); in manual-dice mode, once nothing is
-    /// left to peel, it steps the game back one ply to that ply's **dice entry**, so
-    /// the human can choose different dice and re-play it. In automatic mode it is
-    /// exactly the within-turn undo (whole-decision rewind stays in the debug
-    /// overlay's `undoLastDecision`).
-    public func undoOrStepBack() {
-        if canUndo { undo(); return }
-        guard manualDiceEntry else { return }
-        stepBackToManualRoll()
-    }
-
-    /// Whether the Undo button is enabled: a within-turn half-move to peel, or — in
-    /// manual mode — a ply (the current rolled turn or a recorded one) to step back
-    /// to its dice entry.
-    public var canUndoOrStepBack: Bool {
-        canUndo || (manualDiceEntry && canStepBackToManualRoll)
-    }
-
-    private var canStepBackToManualRoll: Bool {
-        guard manualDiceEntry, isUndoablePhase else { return false }
-        // Mid-turn (already rolled): unroll it. Between turns: pop the last ply.
-        return phase == .picking || phase == .moving || !undoHistory.isEmpty
-    }
-
-    /// Step back one ply to its dice entry in manual mode (#110). Called only with
-    /// no built half-moves left (the button peels those first via `undo`). If the
-    /// current turn was rolled but not yet recorded, unroll it (same mover re-rolls);
-    /// otherwise pop the last recorded ply — reversing it on the board — and restore
-    /// its mover. Lands in `.awaitingRoll` so the manual control reappears.
-    private func stepBackToManualRoll() {
-        guard manualDiceEntry, isUndoablePhase, moveBuilder.built.isEmpty else { return }
-        if phase == .picking || phase == .moving {
-            enterManualRoll(for: game.currentPlayer)
-        } else if let popped = undoHistory.popLast() {
-            if !record.plies.isEmpty { record.plies.removeLast() }
-            pruneStaleAnalysis()   // drop in-play analysis (#146) of the popped ply
-            if let move = popped.move { game.variant.undo(move, on: game.board) }
-            enterManualRoll(for: popped.mover)
-        }
-    }
-
-    /// Re-enter `.awaitingRoll` for `color` so the human picks fresh dice (manual
-    /// step-back, #110). Clears move state and any saved replay dice — re-choosing
-    /// supersedes them — and re-scores for the overlay.
-    private func enterManualRoll(for color: Color) {
-        cancelHumanAnalysis()
-        game.setPlayer(color)
-        legalMoves = []
-        moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
-        clearSelection()
-        selectableSources = []
-        diceReplays.removeAll()
-        if pendingRoll != nil {
-            // Unrolled without recording a ply: persist the "awaiting roll" state too.
-            pendingRoll = nil
-            rollRevision += 1
-        }
-        phase = .awaitingRoll
-        refreshEvaluation()
     }
 
     /// Finish the turn early when the partial sequence is already a legal move.
@@ -804,20 +728,17 @@ public final class GameSession: ObservableObject {
 
     private func maybeStartAITurn() {
         guard isAITurn, phase == .awaitingRoll else { return }
-        // Manual-dice mode (#110): don't auto-roll — wait in `.awaitingRoll` for
-        // the human to enter the AI's dice, which then drives `playAITurn`.
-        guard !manualDiceEntry else { return }
         takeAITurn()
     }
 
     /// Fire the human's roll automatically (#116). No-op when auto-roll is off,
-    /// when the AI owns the turn, in manual-dice mode, or outside `.awaitingRoll`.
+    /// when the AI owns the turn or outside `.awaitingRoll`.
     /// With animation on: pre-rolls (so the engine has the values), raises
     /// `humanDiceRolling` (the view masks faces like the AI tumble), waits out
     /// `aiDiceRollDuration`, then lowers the flag and calls `beginTurn`.
     /// With animation off: goes straight to `roll()`.
     private func maybeAutoRoll() {
-        guard autoRoll, !isAITurn, phase == .awaitingRoll, !manualDiceEntry else { return }
+        guard autoRoll, !isAITurn, phase == .awaitingRoll else { return }
         let rollDuration = animationTimings.aiDiceRollDuration
         autoRollTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled else { return }
@@ -853,9 +774,9 @@ public final class GameSession: ObservableObject {
     /// Continue the AI's turn with the dice already on the board: generate legal
     /// moves and either pass, play randomly (no model), or search off the main
     /// actor, then present the result. `animateDiceRoll` is true for a normal
-    /// secret roll (tumble + masked reveal, #93) and false when the human entered
-    /// the AI's dice in manual mode (#110) — those are already shown, so we skip
-    /// straight to the move animation.
+    /// secret roll (tumble + masked reveal, #93) and false when resuming a restored
+    /// pending roll (#171) — those dice are already shown, so we skip straight to
+    /// the move animation.
     private func playAITurn(animateDiceRoll: Bool) {
         legalMoves = game.variant.legalMoves(on: game.board, color: game.currentPlayer, dice: game.dice)
 
@@ -985,8 +906,8 @@ public final class GameSession: ObservableObject {
     /// usual ordering guarantees; phase guards block human input throughout.
     /// `move == nil` is a forced pass (dice settle, short beat, turn passes).
     /// `rollDuration` is the dice-tumble window to wait out before the move (the
-    /// configured duration for a secret roll, 0 for manual entry where the dice
-    /// are already on screen, #110).
+    /// configured duration for a secret roll, 0 for a restored roll where the dice
+    /// are already on screen, #171).
     private func animateAITurn(move: Move?, score: Float?,
                                diceRollStarted: Date,
                                rollDuration: TimeInterval, epoch: Int) {
@@ -1330,7 +1251,7 @@ public final class GameSession: ObservableObject {
         for i in session.game.board.points.indices where i < boardStacks.count {
             session.game.board.setPoint(i, pieces: boardStacks[i])
         }
-        session.setManualDice(die1, die2)   // → beginTurn → .picking at this position
+        session.setDice(die1, die2)   // → beginTurn → .picking at this position
         return session
     }
 
@@ -1343,15 +1264,14 @@ public final class GameSession: ObservableObject {
     /// A save taken mid-turn carries that turn's `pendingRoll` (#171): the session is
     /// returned at `.awaitingRoll` with those dice set and published, and `start()`
     /// re-enters the turn with them (human → `.picking`, AI → plays them) instead of
-    /// rolling — regardless of auto-roll / manual-dice mode.
+    /// rolling — regardless of auto-roll.
     /// `config` defaults to the save's own variant (#136; Plakoto for pre-variant saves).
     public static func resume(from save: GameSave,
                               config: GameConfig? = nil,
                               agent: Agent? = nil,
                               searchConfig: SearchConfig = .standard,
                               animationTimings: AnimationTimings = .standard,
-                              manualDiceEntry: Bool = false,
-                              autoRoll: Bool = false,
+                                            autoRoll: Bool = false,
                               inPlayAnalysis: Bool = false) -> GameSession {
         let starting = Color(rawValue: save.startingPlayer) ?? .black
         let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
@@ -1361,7 +1281,6 @@ public final class GameSession: ObservableObject {
                                   aiColor: aiColor,
                                   searchConfig: searchConfig,
                                   animationTimings: animationTimings,
-                                  manualDiceEntry: manualDiceEntry,
                                   autoRoll: autoRoll,
                                   inPlayAnalysis: inPlayAnalysis)
         session.replay(save.history)

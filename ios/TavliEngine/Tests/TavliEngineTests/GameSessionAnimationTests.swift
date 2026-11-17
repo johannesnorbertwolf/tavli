@@ -149,7 +149,7 @@ final class GameSessionAnimationTests: XCTestCase {
                 XCTAssertLessThan(turns, 100_000, "game failed to terminate")
                 XCTAssertEqual(totalCheckers(s), 2 * s.game.board.numberOfPieces,
                                "checkers must be conserved across animated turns")
-                s.setManualDice(Int.random(in: 1...6), Int.random(in: 1...6))
+                s.setDice(Int.random(in: 1...6), Int.random(in: 1...6))
             case .picking, .moving:
                 playHumanTurn(s)
             case .aiThinking, .animating:

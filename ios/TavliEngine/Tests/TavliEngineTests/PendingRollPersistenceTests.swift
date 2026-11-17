@@ -40,7 +40,7 @@ final class PendingRollPersistenceTests: XCTestCase {
     /// Play one whole turn through the session intents with `d1`/`d2`.
     private func playTurn(_ s: GameSession, _ d1: Int, _ d2: Int, pick: Int = 0) {
         guard s.phase == .awaitingRoll else { return }
-        s.setManualDice(d1, d2)
+        s.setDice(d1, d2)
         let active = s.moveBuilder.activeMoves
         guard !active.isEmpty else { return }   // forced pass
         let chosen = active[pick % active.count]
@@ -105,7 +105,7 @@ final class PendingRollPersistenceTests: XCTestCase {
                                          "portes: expected a bar-entry position")
                 }
                 guard let r = playableRoll(a, using: &rng) else { return XCTFail(variant.id) }
-                a.setManualDice(r.0, r.1)
+                a.setDice(r.0, r.1)
                 XCTAssertEqual(a.phase, .picking, variant.id)
                 XCTAssertEqual(a.pendingRoll, PendingRoll(die1: r.0, die2: r.1), variant.id)
 
@@ -206,18 +206,15 @@ final class PendingRollPersistenceTests: XCTestCase {
             XCTAssertEqual(save.pendingRoll, roll, variant.id)
             a.newGame()   // cancel the in-flight animation
 
-            for manual in [false, true] {
-                let b = GameSession.resume(from: save, config: config,
-                                           animationTimings: .off, manualDiceEntry: manual)
-                XCTAssertEqual(b.aiColor, .black, variant.id)
-                b.start()
-                XCTAssertEqual(b.history.count, 1, "\(variant.id) manual=\(manual): the AI played on resume")
-                XCTAssertEqual(b.history.first?.die1, roll.die1, variant.id)
-                XCTAssertEqual(b.history.first?.die2, roll.die2, variant.id)
-                XCTAssertEqual(b.currentPlayer, .white, variant.id)
-                XCTAssertEqual(b.phase, .awaitingRoll, variant.id)
-                XCTAssertNil(b.pendingRoll, variant.id)
-            }
+            let b = GameSession.resume(from: save, config: config, animationTimings: .off)
+            XCTAssertEqual(b.aiColor, .black, variant.id)
+            b.start()
+            XCTAssertEqual(b.history.count, 1, "\(variant.id): the AI played on resume")
+            XCTAssertEqual(b.history.first?.die1, roll.die1, variant.id)
+            XCTAssertEqual(b.history.first?.die2, roll.die2, variant.id)
+            XCTAssertEqual(b.currentPlayer, .white, variant.id)
+            XCTAssertEqual(b.phase, .awaitingRoll, variant.id)
+            XCTAssertNil(b.pendingRoll, variant.id)
         }
     }
 
@@ -268,25 +265,12 @@ final class PendingRollPersistenceTests: XCTestCase {
         XCTAssertNotNil(b.pendingRoll)
     }
 
-    /// Manual-dice step-back ("unroll") drops the pending roll and bumps the revision,
-    /// so the autosave returns to "awaiting a roll".
-    func testManualUnrollClearsPendingRoll() {
-        let s = GameSession(startingPlayer: .white, animationTimings: .off, manualDiceEntry: true)
-        s.setManualDice(3, 5)
-        XCTAssertNotNil(s.pendingRoll)
-        let rev = s.rollRevision
-        s.undoOrStepBack()
-        XCTAssertEqual(s.phase, .awaitingRoll)
-        XCTAssertNil(s.pendingRoll)
-        XCTAssertEqual(s.rollRevision, rev + 1)
-    }
-
     /// A Full Tavli leg's snapshot carries both the session and the pending roll.
     func testFullTavliSnapshotCarriesPendingRoll() throws {
         let ft = FullTavliSession(plakotoVariantID: "plakoto", aiColor: nil)
         let s = GameSession(startingPlayer: .white, config: GameConfig(variant: GameVariants.portes),
                             animationTimings: .off)
-        s.setManualDice(6, 1)
+        s.setDice(6, 1)
         let save = try encodeDecode(s.snapshot(name: "leg", fullTavli: ft))
         XCTAssertNotNil(save.fullTavli)
         XCTAssertEqual(save.pendingRoll, PendingRoll(die1: 6, die2: 1))
@@ -378,7 +362,7 @@ final class PendingRollPersistenceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = SaveStore(directory: dir)
         let s = GameSession(startingPlayer: .white, animationTimings: .off)
-        s.setManualDice(5, 2)
+        s.setDice(5, 2)
         try store.writeAutosave(s.snapshot(name: "auto"))
         XCTAssertEqual(store.loadAutosave()?.pendingRoll, PendingRoll(die1: 5, die2: 2))
     }

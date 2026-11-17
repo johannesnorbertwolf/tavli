@@ -102,7 +102,7 @@ final class BoardConservationTests: XCTestCase {
                     break loop
                 case .awaitingRoll:
                     XCTAssertEqual(totalCheckers(s.game.board), expected, "leak at turn start")
-                    s.setManualDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
+                    s.setDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
                 case .picking, .moving:
                     // Occasionally stop early when the partial sequence is already legal.
                     if s.moveBuilder.canFinishNow, Bool.random(using: &rng) {

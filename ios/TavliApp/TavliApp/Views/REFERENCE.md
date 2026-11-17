@@ -298,7 +298,7 @@ the published view contract (`selectableSources`, `validTargets`, `selectedPoint
   `geo.checkerCenter(point:slot:)` with radius `checkerRadius + 3.2·s`, width
   `3.4·s` — matching the reference's `selected` ring.
 - `#Preview`s: frame + fill drive a `GameSession(startingPlayer: .white)` with
-  manual dice `3·5` and point 1 selected, reproducing the design's reference
+  scripted dice `3·5` and point 1 selected, reproducing the design's reference
   highlight scenario (targets 4, 6, 9); a "Borne-off checkers in trays" preview
   (#31) seeds the session's board with borne-off checkers (`setPoint(25, …×8)`,
   `setPoint(0, …×3)`) to show the tray chrome + stacked borne-off checkers + count
@@ -426,10 +426,10 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   `board.points[board.boardSize + 1].count`, black = `board.points[0].count`. They
   refresh because `phase`/`selectableSources` republish on every transition.
 - **`ControlsView`** — **Undo** is persistent (#59): always rendered (while the game is
-  live; the call sites hide the whole row once terminal, #101), calling `session.undoOrStepBack()`,
-  greyed (`.disabled` + `0.4` opacity) when `session.canUndoOrStepBack` is false. It peels the last
-  committed half-move within the current turn (within-turn only; the app no longer enables the
-  engine's manual-dice step-back since #174 — whole-decision rewind stays in the debug overlay's
+  live; the call sites hide the whole row once terminal, #101), calling `session.undo()`,
+  greyed (`.disabled` + `0.4` opacity) when `session.canUndo` is false. It peels the last
+  committed half-move within the current turn (within-turn only; the engine's manual-dice step-back
+  was removed in #174/#176 — whole-decision rewind stays in the debug overlay's
   `undoLastDecision`). **Done** (`session.confirm()`) is still
   contextual: shown only when `moveBuilder.canFinishNow && !built.isEmpty`, and carries
   `ChromeButton(role: .primary)` — the one solid button on the board screen — while Undo is
@@ -491,7 +491,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   views (`GameView`, `OpeningRollView`, `RootView`, `StatsPanelView`, `DebugOverlay`);
   the board, dice faces and checkers keep their own geometry-scaled sizing.
 - **Previews:** `"Landscape"` / `"Portrait"` on a fresh session, `"Undo/Done"`
-  which scripts a half-move (`setManualDice` → `commitHalfMove`) to surface the
+  which scripts a half-move (`setDice` → `commitHalfMove`) to surface the
   contextual buttons without T7, and `"History"` which scripts a ply and shows
   `HistoryView` directly.
 

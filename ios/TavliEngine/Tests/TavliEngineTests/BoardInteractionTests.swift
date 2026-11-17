@@ -16,7 +16,7 @@ final class BoardInteractionTests: XCTestCase {
     /// exact interaction reported as broken.
     func testTapSourceThenTargetCommitsHalfMove() {
         let s = GameSession(startingPlayer: .black)  // Black: 15 on point 24
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         XCTAssertEqual(s.phase, .picking)
 
         // Tap the top checker of Black's stack on point 24.
@@ -47,7 +47,7 @@ final class BoardInteractionTests: XCTestCase {
     /// tap on any gold lane lands on the point the engine expects.
     func testEveryHighlightedTargetHitTestsToItself() {
         let s = GameSession(startingPlayer: .black)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         for source in s.selectableSources {
             s.selectPoint(source)
             for target in s.validTargets where target != 0 && target != 25 {
