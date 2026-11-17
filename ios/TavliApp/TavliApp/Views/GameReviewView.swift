@@ -356,7 +356,7 @@ struct GameReviewView: View {
     private func moveSection(eval: PlyEvaluation, i: Int, count: Int, finished: Bool) -> some View {
         let isBlunder = model.blunderPlies.contains(eval.plyNumber)
         let isHuman = eval.mover == humanColor
-        let mover: LocalizedStringKey = isHuman ? "You" : "TavTav"
+        let mover: LocalizedStringKey = isHuman ? "You" : "Computer"
         return VStack(alignment: .leading, spacing: 18) {
             // Move counter + blunder badge + dice.
             VStack(alignment: .leading, spacing: 4) {
@@ -388,14 +388,14 @@ struct GameReviewView: View {
             let playedIsBest = sameMove(eval.playedMove, eval.bestMove)
             VStack(alignment: .leading, spacing: 10) {
                 // Distinct literal labels (not "\(mover) played") so they localize.
-                moveLine(label: isHuman ? "You played" : "TavTav played",
+                moveLine(label: isHuman ? "You played" : "Computer played",
                          move: notation(eval, eval.playedMove),
                          pct: Double(eval.playedScore), tint: ChromeTheme.ink)
                 if eval.hadChoice {
                     moveLine(label: "Best move", move: notation(eval, eval.bestMove),
                              pct: Double(eval.bestScore), tint: ReviewTint.best)
                     if playedIsBest {
-                        Text(isHuman ? "Best move played ✓" : "TavTav played the best ✓")
+                        Text(isHuman ? "Best move played ✓" : "Computer played the best ✓")
                             .font(.callout.bold())
                             .foregroundStyle(ReviewTint.best)
                     } else {
@@ -727,7 +727,7 @@ private struct DepthChip: View {
     }
 }
 
-/// Whose move a review card is — "You" (amber) or the AI persona "TavTav" (#132).
+/// Whose move a review card is — "You" (amber) or "Computer" (#132).
 private struct MoverChip: View {
     let label: LocalizedStringKey
     let isHuman: Bool

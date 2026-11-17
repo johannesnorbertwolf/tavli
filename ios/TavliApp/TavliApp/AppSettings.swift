@@ -80,7 +80,7 @@ enum StartingPlayerSetting: String, CaseIterable, Identifiable {
         switch self {
         case .openingRoll: return String(localized: "Opening roll")
         case .human:       return String(localized: "I start")
-        case .ai:          return String(localized: "TavTav starts")
+        case .ai:          return String(localized: "Computer starts")
         }
     }
 
@@ -207,7 +207,7 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .plakoto:
-            return String(localized: "The pinning game, as TavTav first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game.")
+            return String(localized: "The pinning game, as the computer first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game.")
         case .plakotoStandard:
             return String(localized: "Plakoto by the standard (bkgm) rules: use both dice whenever you can (the larger one if only one fits), bear off with higher rolls from your highest point. Pinning your opponent's last checker on its start point (the mother) wins two points once your own start point is clear; if both mothers are pinned, the game is a draw. Winning before your opponent bears off any checker also scores two points.")
         case .portes:

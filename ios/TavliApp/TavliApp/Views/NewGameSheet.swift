@@ -31,11 +31,11 @@ struct NewGameSetup {
         return parts.joined(separator: " · ")
     }
 
-    /// "Computer is still learning …" (the no-model explanation, start screen + sheet).
+    /// "The computer is still learning …" (the no-model explanation, start screen + sheet).
     var unavailableMessage: String {
         isFullTavli
-            ? String(localized: "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now.")
-            : String(localized: "TavTav is still learning \(variant.name). Play it with two players for now.")
+            ? String(localized: "The computer is still learning some of the Full Tavli games. Play Full Tavli with two players for now.")
+            : String(localized: "The computer is still learning \(variant.name). Play it with two players for now.")
     }
 }
 

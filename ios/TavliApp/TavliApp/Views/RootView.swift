@@ -111,7 +111,7 @@ struct RootView: View {
                         GameView.Match(
                             state: ms,
                             localColor: humanColor,
-                            opponentName: String(localized: "TavTav"),
+                            opponentName: String(localized: "Computer"),
                             lastGameResult: nil,
                             showResultOverlay: false,
                             onNextGame: startNextMatchGame,
@@ -274,7 +274,7 @@ struct RootView: View {
 
     /// Start a Full Tavli session: vs the AI as `humanColor`, or two players (`nil`).
     /// Its Plakoto leg follows the variant preference. vs-AI needs every leg's model
-    /// (the start screen shows "AI not available yet" otherwise).
+    /// (the start screen shows "Computer not available yet" otherwise).
     private func beginFullTavli(humanColor color: EngineColor?) {
         let ft = AppSettings.newFullTavli(aiColor: color?.opponent)
         if color != nil && !ft.isAIAvailable() { return }
@@ -531,7 +531,7 @@ private enum FullTavliScreen: Equatable {
 }
 
 /// Caramel start screen (#101, slimmed down in #174, quick play in #189). Top to bottom:
-/// an icon bar (My Record · Saved games · Settings), the "Tavli" wordmark, a "Continue
+/// an icon bar (My Record · Saved games · Settings), the "Tavlo" wordmark, a "Continue
 /// last game" card (only while an autosave exists), the play pair — a big "Play the
 /// computer" button that starts the remembered setup at once (subtitle "Level 6 ·
 /// Plakoto · Best of 3") beside a small square adjust button opening `NewGameSheet` —
@@ -587,7 +587,7 @@ private struct ModePickerView: View {
                 topBar
                 FitOrScroll {
                     VStack(spacing: isCompact ? 16 : 32) {
-                        Text("Tavli")
+                        Text("Tavlo")
                             .font(ChromeType.wordmark)
                             .compactSingleLine()
                             .foregroundStyle(CaramelPalette.frameText)
@@ -645,13 +645,10 @@ private struct ModePickerView: View {
             if isCompact {
                 playPair
             } else {
-                // iPad: TavTav himself heads the play card (no mascot on a phone, #109).
-                VStack(spacing: 12) {
-                    TavTavLoco(persona: .friendly, height: 128)
-                    playPair
-                }
-                .frame(maxWidth: .infinity)
-                .chromeCard(padding: 20)
+                // iPad: the play pair sits in its own card.
+                playPair
+                    .frame(maxWidth: .infinity)
+                    .chromeCard(padding: 20)
             }
         }
     }

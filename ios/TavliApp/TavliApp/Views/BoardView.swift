@@ -3,8 +3,7 @@ import BoardGeometry
 
 /// Static rendering of the empty Caramel board (T3): beechwood frame,
 /// mahogany play surface, 24 ivory triangles with tip pips, the slim center bar
-/// line, two diamond ornaments, and the TAVLI wordmark. No checkers, dice,
-/// highlights, or interactivity.
+/// line, and two diamond ornaments. No checkers, dice, highlights, or interactivity.
 ///
 /// Drawn with a single SwiftUI `Canvas` on top of `BoardGeometry`, which fits a
 /// centered square inside the available rect — so the board stays square at any
@@ -108,18 +107,6 @@ public struct BoardView: View {
         // ── Diamonds ────────────────────────────────────────────────────────
         drawDiamond(in: &context, center: geo.leftDiamondCenter, size: geo.diamondSize, s: s)
         drawDiamond(in: &context, center: geo.rightDiamondCenter, size: geo.diamondSize, s: s)
-
-        // ── TAVLI wordmark ──────────────────────────────────────────────────
-        let mark = Text("TAVLI")
-            .font(.custom("Cormorant Garamond", size: 13 * s))
-            .italic()
-            .tracking(7 * s)
-            .foregroundStyle(p.frameText.opacity(0.55))
-        context.draw(
-            mark,
-            at: CGPoint(x: board.midX, y: board.maxY - 14 * s),
-            anchor: .center
-        )
     }
 
     /// One diamond ornament: dark backing, a tessellated dark/light tile border

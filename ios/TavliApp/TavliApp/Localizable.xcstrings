@@ -82,9 +82,7 @@
         }
       }
     },
-    "—" : {
-
-    },
+    "—" : {},
     "· Blunder %@ of %@" : {
       "localizations" : {
         "de" : {
@@ -124,9 +122,7 @@
         }
       }
     },
-    "(%@)" : {
-
-    },
+    "(%@)" : {},
     "(pass)" : {
       "localizations" : {
         "de" : {
@@ -143,9 +139,7 @@
         }
       }
     },
-    "%@" : {
-
-    },
+    "%@" : {},
     "%@ moving…" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -180,12 +174,8 @@
         }
       }
     },
-    "%@-ply" : {
-
-    },
-    "%@." : {
-
-    },
+    "%@-ply" : {},
+    "%@." : {},
     "%@'s turn" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -430,19 +420,18 @@
         }
       }
     },
-    "Animate AI moves" : {
-      "extractionState" : "stale",
+    "Animate computer moves" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI-Züge animieren"
+            "value" : "Computerzüge animieren"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI-zetten animeren"
+            "value" : "Computerzetten animeren"
           }
         }
       }
@@ -734,9 +723,7 @@
         }
       }
     },
-    "DEBUG" : {
-
-    },
+    "DEBUG" : {},
     "Dice %@ · %@" : {
       "localizations" : {
         "de" : {
@@ -1030,18 +1017,18 @@
         }
       }
     },
-    "Human vs TavTav" : {
+    "Human vs Computer" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mensch gegen TavTav"
+            "value" : "Mensch gegen Computer"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mens tegen TavTav"
+            "value" : "Mens tegen computer"
           }
         }
       }
@@ -1857,19 +1844,18 @@
         }
       }
     },
-    "Slow dice roll and one-by-one checker hops on the AI's turn." : {
-      "extractionState" : "stale",
+    "Slow dice roll and one-by-one checker hops on the computer's turn." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Langsamer Würfelwurf und einzelne Steine bei AI-Zügen."
+            "value" : "Langsamer Würfelwurf und einzelne Steine bei Computerzügen."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Langzame dobbelworp en één-voor-één stenen bij AI-beurten."
+            "value" : "Langzame dobbelworp en één-voor-één stenen als de computer aan de beurt is."
           }
         }
       }
@@ -1941,93 +1927,86 @@
         }
       }
     },
-    "Tavli" : {
-
-    },
-    "TAVLI" : {
-
-    },
-    "TavTav goes first!" : {
-      "extractionState" : "stale",
+    "Tavlo" : {},
+    "TAVLI" : {},
+    "Computer goes first!" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav beginnt!"
+            "value" : "Computer beginnt!"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav begint!"
+            "value" : "Computer begint!"
           }
         }
       }
     },
-    "TavTav played" : {
+    "Computer played" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav spielte"
+            "value" : "Computer spielte"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav speelde"
+            "value" : "Computer speelde"
           }
         }
       }
     },
-    "TavTav played the best ✓" : {
+    "Computer played the best ✓" : {
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav spielte den besten ✓"
+            "value" : "Computer spielte den besten ✓"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav speelde de beste ✓"
+            "value" : "Computer speelde de beste ✓"
           }
         }
       }
     },
-    "TavTav starts" : {
-      "extractionState" : "stale",
+    "Computer starts" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav beginnt"
+            "value" : "Computer beginnt"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav begint"
+            "value" : "Computer begint"
           }
         }
       }
     },
-    "TavTav thinking…" : {
-      "extractionState" : "stale",
+    "Computer is thinking…" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav denkt nach…"
+            "value" : "Computer denkt nach…"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav denkt na…"
+            "value" : "Computer denkt na…"
           }
         }
       }
@@ -2137,9 +2116,7 @@
         }
       }
     },
-    "W" : {
-
-    },
+    "W" : {},
     "Waiting for %@…" : {
       "localizations" : {
         "de" : {
@@ -2468,18 +2445,18 @@
         }
       }
     },
-    "The pinning game, as TavTav first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game." : {
+    "The pinning game, as the computer first learned it. Land on a lone opposing checker to pin it under yours until you leave. Bear off only with exact rolls; every win counts as one game." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Das Festsetz-Spiel, so wie TavTav es zuerst gelernt hat. Landest du auf einem einzelnen gegnerischen Stein, setzt du ihn unter deinem fest, bis du weiterziehst. Abgetragen wird nur mit genauen Würfen; jeder Sieg zählt als ein Spiel."
+            "value" : "Das Festsetz-Spiel, so wie der Computer es zuerst gelernt hat. Landest du auf einem einzelnen gegnerischen Stein, setzt du ihn unter deinem fest, bis du weiterziehst. Abgetragen wird nur mit genauen Würfen; jeder Sieg zählt als ein Spiel."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Het vastzetspel, zoals TavTav het als eerste leerde. Land je op een losse steen van je tegenstander, dan zet je die onder de jouwe vast tot je verder trekt. Uitspelen alleen met precieze worpen; elke winst telt als één spel."
+            "value" : "Het vastzetspel, zoals de computer het als eerste leerde. Land je op een losse steen van je tegenstander, dan zet je die onder de jouwe vast tot je verder trekt. Uitspelen alleen met precieze worpen; elke winst telt als één spel."
           }
         }
       }
@@ -2548,18 +2525,18 @@
         }
       }
     },
-    "AI not available yet" : {
+    "Computer not available yet" : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "KI noch nicht verfügbar"
+            "value" : "Computer noch nicht verfügbar"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "AI nog niet beschikbaar"
+            "value" : "Computer nog niet beschikbaar"
           }
         }
       }
@@ -2676,18 +2653,18 @@
         }
       }
     },
-    "TavTav is still learning %@. Play it with two players for now." : {
+    "The computer is still learning %@. Play it with two players for now." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav lernt %@ noch. Spiel es vorerst zu zweit."
+            "value" : "Der Computer lernt %@ noch. Spiel es vorerst zu zweit."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav leert %@ nog. Speel het voorlopig met z'n tweeën."
+            "value" : "De computer leert %@ nog. Speel het voorlopig met z'n tweeën."
           }
         }
       }
@@ -3044,18 +3021,18 @@
         }
       }
     },
-    "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now." : {
+    "The computer is still learning some of the Full Tavli games. Play Full Tavli with two players for now." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav lernt einige der Full-Tavli-Spiele noch. Spiel Full Tavli vorerst zu zweit."
+            "value" : "Der Computer lernt einige der Full-Tavli-Spiele noch. Spiel Full Tavli vorerst zu zweit."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav leert sommige Full Tavli-spellen nog. Speel Full Tavli voorlopig met z'n tweeën."
+            "value" : "De computer leert sommige Full Tavli-spellen nog. Speel Full Tavli voorlopig met z'n tweeën."
           }
         }
       }
@@ -3204,18 +3181,18 @@
         }
       }
     },
-    "TavTav still rates your position at %@ points." : {
+    "The computer still rates your position at %@ points." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav bewertet deine Stellung noch mit %@ Punkten."
+            "value" : "Der Computer bewertet deine Stellung noch mit %@ Punkten."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "TavTav waardeert je stelling nog op %@ punten."
+            "value" : "De computer waardeert je stelling nog op %@ punten."
           }
         }
       }
@@ -3508,18 +3485,18 @@
         }
       }
     },
-    "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery." : {
+    "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the computer's processing power, so the computer can be slower to move. Uses a little more battery." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Berechnet bei jedem Zug schon während des Spiels den besten Zug, damit die Analyse nach der Partie sofort öffnet. Standardmäßig aus – es teilt sich die Rechenleistung mit TavTav, sodass TavTav langsamer ziehen kann. Braucht etwas mehr Akku."
+            "value" : "Berechnet bei jedem Zug schon während des Spiels den besten Zug, damit die Analyse nach der Partie sofort öffnet. Standardmäßig aus – es teilt sich die Rechenleistung mit dem Computer, sodass der Computer langsamer ziehen kann. Braucht etwas mehr Akku."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Berekent tijdens het spel bij elke zet de beste zet, zodat de nabespreking direct opent. Standaard uit — het deelt de rekenkracht met TavTav, waardoor TavTav trager kan zetten. Kost iets meer batterij."
+            "value" : "Berekent tijdens het spel bij elke zet de beste zet, zodat de nabespreking direct opent. Standaard uit — het deelt de rekenkracht met de computer, waardoor de computer trager kan zetten. Kost iets meer batterij."
           }
         }
       }
@@ -3856,6 +3833,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volle sterkte: kijkt vooruit naar jouw antwoord."
+          }
+        }
+      }
+    },
+    "Computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer"
+          }
+        }
+      }
+    },
+    "Computer is moving…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer zieht…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer zet…"
           }
         }
       }
