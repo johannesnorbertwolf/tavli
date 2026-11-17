@@ -51,7 +51,7 @@ struct RootView: View {
         // board interaction can be driven without the picker or random dice.
         if ProcessInfo.processInfo.arguments.contains("-uiTestGame") {
             let s = RootView.makeSession(humanColor: .black, startingPlayer: .black)
-            s.setManualDice(3, 5)
+            s.setDice(3, 5)
             _session = State(initialValue: s)
             _humanColor = State(initialValue: .black)
             _autosaveName = State(initialValue: RootView.newAutosaveName())

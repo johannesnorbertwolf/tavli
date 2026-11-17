@@ -20,7 +20,7 @@ private struct SeededRNG: RandomNumberGenerator {
 @MainActor
 private func playOneTurn(_ s: GameSession, _ d1: Int, _ d2: Int) {
     guard s.phase == .awaitingRoll else { return }
-    s.setManualDice(d1, d2)
+    s.setDice(d1, d2)
     guard let chosen = s.moveBuilder.activeMoves.first else { return }  // forced pass
     while s.phase == .picking || s.phase == .moving {
         let idx = s.moveBuilder.built.count
@@ -38,7 +38,7 @@ private func signature(_ s: GameSession) -> [[Color]] { s.game.board.points.map(
 final class GameHistoryRecordingTests: XCTestCase {
     func testRecordsDiceAndHalfMovesPerPly() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let chosen = s.moveBuilder.activeMoves.first!
         for h in chosen.halfMoves {
             s.selectPoint(h.from.position)
@@ -60,7 +60,7 @@ final class GameHistoryRecordingTests: XCTestCase {
         b.setPoint(6, pieces: [.black, .black])   // blocks die 1
         b.setPoint(7, pieces: [.black, .black])   // blocks die 2
 
-        s.setManualDice(1, 2)
+        s.setDice(1, 2)
         XCTAssertEqual(s.history.count, 1)
         XCTAssertTrue(s.history[0].halfMoves.isEmpty)   // a pass
         XCTAssertEqual(s.currentPlayer, .black)
@@ -68,7 +68,7 @@ final class GameHistoryRecordingTests: XCTestCase {
 
     func testNewGameClearsHistory() {
         let s = GameSession(startingPlayer: .white)
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         let chosen = s.moveBuilder.activeMoves.first!
         for h in chosen.halfMoves {
             s.selectPoint(h.from.position)
@@ -143,7 +143,7 @@ final class GameSaveResumeTests: XCTestCase {
 
     func testAIColorRoundTrips() {
         let a = GameSession(startingPlayer: .black, aiColor: .black)
-        a.setManualDice(3, 5)   // black opens; no agent → no move, but turn order is set
+        a.setDice(3, 5)   // black opens; no agent → no move, but turn order is set
         let b = GameSession.resume(from: a.snapshot(name: "ai"))
         XCTAssertEqual(b.aiColor, .black)
         XCTAssertEqual(b.startingPlayer, .black)

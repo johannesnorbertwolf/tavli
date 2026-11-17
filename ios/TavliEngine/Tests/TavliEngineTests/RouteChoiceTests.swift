@@ -17,7 +17,7 @@ final class RouteChoiceTests: XCTestCase {
         let s = GameSession(startingPlayer: .white, config: GameConfig(variant: GameVariants.portes),
                             animationTimings: .off)
         PortesVariant.setPosition(on: s.game.board, white: white, black: black, whiteBar: whiteBar)
-        s.setManualDice(dice.0, dice.1)
+        s.setDice(dice.0, dice.1)
         return s
     }
 
@@ -277,7 +277,7 @@ final class RouteChoiceTests: XCTestCase {
         let b = s.game.board
         b.setPoint(4, pieces: [.black])
         b.setPoint(24, pieces: Array(repeating: .black, count: 14))
-        s.setManualDice(3, 5)
+        s.setDice(3, 5)
         XCTAssertEqual(s.moveBuilder.routeOptions(from: 1, to: 9).count, 1)
         s.commitHalfMove(from: 1, to: 9)
         XCTAssertNil(s.routeChoice)
@@ -297,7 +297,7 @@ final class RouteChoiceTests: XCTestCase {
             while !s.isTerminal && turns < 3000 {
                 turns += 1
                 guard s.phase == .awaitingRoll else { XCTFail("phase \(s.phase)"); return }
-                s.setManualDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
+                s.setDice(Int.random(in: 1...6, using: &rng), Int.random(in: 1...6, using: &rng))
                 guard s.phase == .picking else { continue }      // forced pass
                 let mover = s.currentPlayer
                 var results = Set<[[Color]]>()

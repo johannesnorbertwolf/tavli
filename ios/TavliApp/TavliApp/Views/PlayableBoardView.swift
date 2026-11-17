@@ -580,7 +580,7 @@ private func startScenarioSession() -> GameSession {
     // White on point 1, dice 3·5 → reachable targets 4, 6, 9 (matches the
     // design's reference highlight scenario), with point 1 selected.
     let session = GameSession(startingPlayer: .white)
-    session.setManualDice(3, 5)
+    session.setDice(3, 5)
     session.selectPoint(1)
     return session
 }
