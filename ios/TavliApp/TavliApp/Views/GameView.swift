@@ -106,6 +106,12 @@ struct GameView: View {
     }
     var fullTavli: FullTavli? = nil
 
+    /// Whether the board shows a finished game whose result card is up — the scoreboard
+    /// then keeps that game's number instead of advancing to the next (#179).
+    private var matchGameOver: Bool {
+        session.isTerminal || match?.showResultOverlay == true
+    }
+
     /// The leg on the board (0-based), by its variant.
     private var fullTavliLegIndex: Int {
         fullTavli?.state.legIndex(ofVariantID: session.game.variant.id) ?? 0
@@ -247,7 +253,8 @@ struct GameView: View {
                             if let match {
                                 MatchScoreboardView(state: match.state,
                                                     localColor: match.localColor,
-                                                    opponentName: match.opponentName)
+                                                    opponentName: match.opponentName,
+                                    gameOver: matchGameOver)
                             }
                             if let fullTavli {
                                 FullTavliScoreboardView(state: fullTavli.state,
@@ -535,7 +542,8 @@ struct GameView: View {
             if let match {
                 MatchScoreboardView(state: match.state,
                                     localColor: match.localColor,
-                                    opponentName: match.opponentName)
+                                    opponentName: match.opponentName,
+                                    gameOver: matchGameOver)
             }
             if let fullTavli {
                 FullTavliScoreboardView(state: fullTavli.state, legIndex: fullTavliLegIndex)
@@ -745,6 +753,7 @@ struct GameView: View {
             MatchScoreboardView(state: match.state,
                                 localColor: match.localColor,
                                 opponentName: match.opponentName,
+                                gameOver: matchGameOver,
                                 compact: true)
         }
         if let fullTavli {
@@ -1131,13 +1140,15 @@ private struct MatchScoreboardView: View {
     let state: MatchState
     let localColor: TavliEngine.Color
     let opponentName: String
+    /// A finished game's result card is up: keep showing that game's number (#179).
+    var gameOver = false
     /// One line — "You 1 – 0 TavTav · Game 2 of 3" — when it fits (#109).
     var compact = false
 
     // The score in points (#143): games for Plakoto, a double game counts 2.
     private var localWins: Int { state.score(for: localColor) }
     private var opponentWins: Int { state.score(for: localColor.opponent) }
-    private var gameNumber: Int { min(state.currentGameNumber, state.maxGames) }
+    private var gameNumber: Int { state.displayedGameNumber(gameOver: gameOver) }
 
     var body: some View {
         if compact {

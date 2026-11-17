@@ -137,6 +137,14 @@ public struct MatchState: Codable, Equatable, Sendable {
     /// 1-based number of the game currently being played (or about to be).
     public var currentGameNumber: Int { completedGames + 1 }
 
+    /// The game number a scoreboard shows: the game in progress, or — while the result
+    /// card of a game that `results` already counts is still up (`gameOver`) — that
+    /// finished game, so the number only advances once the next game starts (#179).
+    public func displayedGameNumber(gameOver: Bool) -> Int {
+        let n = gameOver ? completedGames : currentGameNumber
+        return min(max(n, 1), maxGames)
+    }
+
     /// The most games the match could span (best-of-three → 3), plus one per draw
     /// (a drawn game is replayed).
     public var maxGames: Int { targetWins * 2 - 1 + draws }
