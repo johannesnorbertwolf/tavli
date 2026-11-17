@@ -33,6 +33,20 @@ final class MatchStateTests: XCTestCase {
         XCTAssertNil(m.matchWinner)
     }
 
+    /// #179: while a finished game's result card is up the scoreboard keeps its number.
+    func testDisplayedGameNumberHoldsFinishedGame() {
+        var m = MatchState.bestOfThree(baseStartingPlayer: .white)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: false), 1)
+        m.recordGame(winner: .white)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: true), 1)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: false), 2)   // after "Next game" / resume
+        m.recordGame(winner: .black)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: true), 2)
+        m.recordGame(winner: .white)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: true), 3)
+        XCTAssertEqual(m.displayedGameNumber(gameOver: false), 3)   // clamped to maxGames
+    }
+
     func testTwoZeroShortCircuit() {
         var m = MatchState.bestOfThree(baseStartingPlayer: .black)
         m.recordGame(winner: .black)
