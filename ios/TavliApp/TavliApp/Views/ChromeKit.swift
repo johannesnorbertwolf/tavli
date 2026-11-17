@@ -50,9 +50,8 @@ extension View {
 /// `.secondary` — everyday actions (flat caramel tint).
 /// `.destructive` — game-ending actions (flat brick tint, brick label).
 /// `.quiet` — low-emphasis inline actions (no fill).
-/// `.scrim` — secondary actions on the dark win-overlay scrim.
 enum ChromeButtonRole {
-    case primary, secondary, destructive, quiet, scrim
+    case primary, secondary, destructive, quiet
 }
 
 struct ChromeButton: ButtonStyle {
@@ -81,8 +80,6 @@ struct ChromeButton: ButtonStyle {
             return ChromeTheme.surrenderTint.opacity(pressed ? 0.30 : 0.14)
         case .quiet:
             return ChromeTheme.ink.opacity(pressed ? 0.08 : 0)
-        case .scrim:
-            return SwiftUI.Color.white.opacity(pressed ? 0.32 : 0.16)
         }
     }
 
@@ -92,7 +89,6 @@ struct ChromeButton: ButtonStyle {
         case .secondary:    return ChromeTheme.ink
         case .destructive:  return ChromeTheme.surrenderTint
         case .quiet:        return ChromeKit.inkSecondary
-        case .scrim:        return .white
         }
     }
 }

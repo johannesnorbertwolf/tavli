@@ -31,15 +31,6 @@ struct FullTavliNames {
     var leftName: String { localColor == nil ? ChromeTheme.displayName(.white) : String(localized: "You") }
     var rightName: String { localColor == nil ? ChromeTheme.displayName(.black) : opponentName }
 
-    /// "You win!" / "TavTav wins" / "Red wins" for a decided game or session.
-    func winTitle(_ winner: TavliEngine.Color) -> String {
-        if let localColor {
-            return winner == localColor ? String(localized: "You win!")
-                                        : String(localized: "\(opponentName) wins")
-        }
-        return String(localized: "\(ChromeTheme.displayName(winner)) wins")
-    }
-
     /// The side that won a leg, as a short label ("You", "TavTav", "White", "Red").
     func sideName(_ color: TavliEngine.Color) -> String {
         color == leftColor ? leftName : rightName
@@ -134,9 +125,9 @@ struct FullTavliScoreboardView: View {
     }
 }
 
-/// Game-over takeover for one leg: the leg's verdict and points, the running score,
-/// and "Continue" to the between-legs screen (or the final result after leg 3).
-/// Mirrors `WinOverlayView`'s styling.
+/// Game-over overlay for one leg: the leg's verdict and points, the running score,
+/// and "Continue" to the between-legs screen (or the final result after leg 3). Built
+/// on the shared `GameOverCard`, like the single-game and best-of-three overlays.
 struct FullTavliLegOverlayView: View {
     /// The session, already including this leg's result.
     let state: FullTavliSession
@@ -146,6 +137,9 @@ struct FullTavliLegOverlayView: View {
     let variant: any GameVariant
     let onContinue: () -> Void
     let onExit: () -> Void
+    /// Winner wording shared with the other overlays and the status card.
+    let naming: WinnerNaming
+    /// `nil` hides Review (no model for the leg, or nothing reviewable).
     var onReview: (() -> Void)? = nil
     var onHistory: () -> Void = {}
 
@@ -159,7 +153,7 @@ struct FullTavliLegOverlayView: View {
     private var title: String {
         guard let result else { return String(localized: "Game over") }
         guard let w = result.winner else { return ResultCopy.drawTitle }
-        return names.winTitle(w)
+        return naming.title(w)
     }
 
     private var subtitle: String? {
@@ -168,76 +162,27 @@ struct FullTavliLegOverlayView: View {
         return ResultCopy.pointsSubtitle(points: result.points, variant: variant)
     }
 
-    @Environment(\.chromeMode) private var chromeMode
-
     var body: some View {
-        FitOrScroll(enabled: chromeMode.isCompact) {
-            content
-                .padding(.horizontal, chromeMode.isCompact ? 16 : 0)
-                .padding(.vertical, chromeMode.isCompact ? 12 : 0)
-        }
-    }
-
-    private var content: some View {
-        VStack(spacing: chromeMode.isCompact ? 14 : 28) {
-            if let mascot, !chromeMode.isCompact {
-                TavTavAvatar(persona: mascot, size: 108)
-            }
-            Text(title)
-                .font(ChromeType.winTitle)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            if let subtitle {
-                Text(subtitle)
-                    .font(ChromeType.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-            }
-            VStack(spacing: 6) {
-                Text("\(names.leftName) \(state.score(for: names.leftColor)) – \(state.score(for: names.leftColor.opponent)) \(names.rightName)")
-                    .font(ChromeType.title2.bold().monospacedDigit())
-                    .foregroundStyle(.white)
-                Text(legCaption(index: legIndex, variantID: state.legVariantIDs[legIndex]))
-                    .font(ChromeType.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-            Button(action: onContinue) {
-                HStack(spacing: 6) {
-                    Image(systemName: state.isComplete ? "flag.checkered" : "arrow.right")
-                    Text(state.isComplete ? String(localized: "See final result")
-                                          : String(localized: "Continue"))
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 4)
-            }
-            .buttonStyle(ChromeButton(role: .primary))
-            .accessibilityIdentifier("fullTavliContinue")
-            AdaptiveRow(spacing: 14) {
-                if let onReview {
-                    Button(action: onReview) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "magnifyingglass")
-                            Text("Review game")
-                        }
-                    }
-                    .buttonStyle(ChromeButton(role: .scrim))
-                }
-                Button(action: onHistory) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text("History")
-                    }
-                }
-                .buttonStyle(ChromeButton(role: .scrim))
-            }
-            Button(action: onExit) {
-                HStack(spacing: 6) {
-                    Image(systemName: "house")
-                    Text("Back to menu")
-                }
-            }
-            .buttonStyle(ChromeButton(role: .scrim))
-        }
+        GameOverCard(
+            title: title,
+            subtitle: subtitle,
+            score: GameOverScore(leftName: names.leftName,
+                                 left: state.score(for: names.leftColor),
+                                 right: state.score(for: names.leftColor.opponent),
+                                 rightName: names.rightName,
+                                 caption: legCaption(index: legIndex,
+                                                     variantID: state.legVariantIDs[legIndex])),
+            mascot: mascot,
+            primary: GameOverAction(
+                label: state.isComplete ? String(localized: "See final result")
+                                        : String(localized: "Continue"),
+                icon: state.isComplete ? "flag.checkered" : "arrow.right",
+                action: onContinue,
+                identifier: "fullTavliContinue"),
+            onReview: onReview,
+            onHistory: onHistory,
+            exit: GameOverAction(label: String(localized: "Back to menu"), icon: "house",
+                                 action: onExit))
     }
 }
 
@@ -254,8 +199,10 @@ private struct FullTavliScoreCard: View {
                 Text(names.leftName)
                     .font(ChromeType.headline)
                     .foregroundStyle(ChromeKit.inkSecondary)
-                Text("\(state.score(for: names.leftColor)) – \(state.score(for: names.leftColor.opponent))")
-                    .font(ChromeType.statsTitle.bold().monospacedDigit())
+                // Same digits as the in-game scoreboard (system face, lining
+                // figures) — the display serif's old-style numerals read "o — ɪ".
+                Text(verbatim: "\(state.score(for: names.leftColor)) – \(state.score(for: names.leftColor.opponent))")
+                    .font(ChromeType.scoreDisplay.monospacedDigit())
                     .foregroundStyle(ChromeTheme.ink)
                 Text(names.rightName)
                     .font(ChromeType.headline)
