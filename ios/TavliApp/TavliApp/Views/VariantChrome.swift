@@ -1,7 +1,7 @@
 import SwiftUI
 import TavliEngine
 
-/// #143 — the game-variant choice, shared by the start screen, the Settings sheet and
+/// #143 — the game-variant choice, used by
 /// the online lobby: a segmented picker over the four variants, then the selected
 /// variant's full name and one-paragraph rules summary. With `showsAIAvailability`
 /// a variant whose Core ML model isn't bundled yet is flagged "AI not available yet"

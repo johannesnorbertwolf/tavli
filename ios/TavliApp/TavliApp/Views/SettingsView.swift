@@ -8,8 +8,9 @@ private typealias SColor = SwiftUI.Color
 /// immediately and any view observing the same key updates live. Defaults are the
 /// `AppSettings` accessors' (each `@AppStorage` default here must match its accessor).
 ///
-/// Sections (#174): **Game** (variant, play as, TavTav's strength, auto-roll),
-/// **Advanced** (first move, analyze during play), **Display**.
+/// Sections (#174): **Game** (play as, auto-roll), **Advanced** (first move, analyze
+/// during play), **Display**. Variant, match length and the AI level live in the
+/// new-game sheet only (#189, `NewGameSheet`).
 ///
 /// Styled to the Caramel chrome (background, `ChromeType` fonts, `ChromeTheme` tints)
 /// rather than a stock `Form`, to match the rest of the app (cf. `StatsPanelView`).
@@ -22,8 +23,6 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
-    @AppStorage(SettingsKey.aiStrength) private var aiStrength = 1.0
-    @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
 
     var body: some View {
         ZStack {
@@ -33,27 +32,11 @@ struct SettingsView: View {
                     header
 
                     section("Game") {
-                        // Variant (#143): the rules new games use. A game in progress
-                        // keeps its own rules; the choice applies from the next new game.
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Variant")
-                                .font(ChromeType.body.weight(.semibold))
-                                .foregroundStyle(ChromeTheme.ink)
-                            VariantPickerView(selection: $variant)
-                            Text("Applies to the next new game; a game in progress keeps its rules.")
-                                .font(ChromeType.caption)
-                                .foregroundStyle(ChromeKit.inkSecondary)
-                        }
                         choiceRow("Play as",
                                   selection: $preferredColor,
                                   options: PreferredColorSetting.allCases,
                                   label: \.label,
-                                  caption: "The colour you play against TavTav. Ask lets you choose on the start screen.")
-                        sliderRow("TavTav's strength",
-                                  value: $aiStrength,
-                                  minLabel: "Relaxed",
-                                  maxLabel: "Best",
-                                  caption: "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move.")
+                                  caption: "The colour you play against the computer. Random picks a side for each new game.")
                         toggleRow("Auto-roll",
                                   isOn: $autoRoll,
                                   caption: "Dice roll automatically at the start of your turn.")
@@ -148,32 +131,6 @@ struct SettingsView: View {
                     .foregroundStyle(ChromeTheme.ink)
             }
             .tint(ChromeTheme.doneTint)
-            Text(caption)
-                .font(ChromeType.caption)
-                .foregroundStyle(ChromeKit.inkSecondary)
-        }
-    }
-
-    /// A titled slider (#108) with min/max end labels and a caption beneath.
-    private func sliderRow(_ title: LocalizedStringKey,
-                           value: Binding<Double>,
-                           minLabel: LocalizedStringKey,
-                           maxLabel: LocalizedStringKey,
-                           caption: LocalizedStringKey) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(ChromeType.body.weight(.semibold))
-                .foregroundStyle(ChromeTheme.ink)
-            HStack(spacing: 12) {
-                Text(minLabel)
-                    .font(ChromeType.caption)
-                    .foregroundStyle(ChromeKit.inkSecondary)
-                Slider(value: value, in: 0...1)
-                    .tint(ChromeTheme.undoTint)
-                Text(maxLabel)
-                    .font(ChromeType.caption)
-                    .foregroundStyle(ChromeKit.inkSecondary)
-            }
             Text(caption)
                 .font(ChromeType.caption)
                 .foregroundStyle(ChromeKit.inkSecondary)

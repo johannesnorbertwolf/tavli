@@ -7,6 +7,9 @@ struct TavliApp: App {
     init() {
         // Compact chrome type on a phone-sized screen (#109); 1 (unchanged) on iPad.
         ChromeType.scale = ChromeLayout.fontScale(forScreen: UIScreen.main.bounds.size)
+        // Retired settings (#189): strength slider → level, Play as "Ask" → Random.
+        // Before RootView's init, whose cold-launch resume reads the search config.
+        AppSettings.migrateLegacySettings()
     }
 
     var body: some Scene {

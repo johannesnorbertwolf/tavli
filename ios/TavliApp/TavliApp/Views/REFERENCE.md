@@ -677,14 +677,17 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
 The app's top-level view: switches between the caramel **mode picker**, the opening roll,
 and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
 
-**Variants (#143, #174).** The variant is chosen in Settings (`settings.variant`); the start
-screen only names it in a quiet "<variant> · change in Settings" line that opens the sheet.
-When the selected variant's model is missing (`AppSettings.aiAvailable`) the play card is
-replaced by a "TavTav is still learning …" note; "Two players on this iPad" (`beginTwoPlayer`) is always offered — White-facing board,
+**Variants (#143, #189).** The variant is chosen in the new-game sheet (`NewGameSheet`,
+`settings.variant`); the start screen shows it in the play button's setup line.
+When the setup's model is missing (`NewGameSetup.aiAvailable`) the play button is
+replaced by a "TavTav is still learning …" note (the adjust button stays, so another variant can
+be picked); "Two players on this iPad" (`beginTwoPlayer`) is always offered with the remembered
+variant + length — White-facing board,
 starter from `variant.startingPlayer(default: .white)`, no match, no W/L record, review via the
 variant's model if bundled. `makeSession(humanColor:startingPlayer:variant:vsAI:)` builds the
 session with `GameConfig(variant:)` + `makeAgent(config:)`. Play Again / Next game / Rematch
-keep the on-screen game's variant and mode. Resume (picker + cold launch) loads the agent for
+keep the on-screen game's variant and mode (and colour — except Play as **Random**, #189, where
+Play Again / Rematch draw a new side via `newGameColor`; Next game keeps the match's side). Resume (picker + cold launch) loads the agent for
 the **save's** variant and refuses a vs-AI save whose model is missing (`SavedGameRow` shows it
 disabled with the badge; subtitles name the variant / "two players"). The finish hook is
 `onGameFinished(winner?, points)`: W/L only for decided vs-AI games, every game logged (draws
@@ -737,8 +740,8 @@ too), and `match.recordGame(winner:points:)`.
   (no `await`) well before any game can end, so the hook is always armed in time. Observing
   `statsStore` re-renders `RootView` when a game is recorded, so the win overlay and picker read
   fresh `stats`.
-- **`ModePickerView(store:stats:onSelect:onTwoPlayer:onResume:onPlayOnline:)`** (#101, slimmed
-  in #174) — `#ece6dc` background. Top to bottom:
+- **`ModePickerView(store:stats:onPlay:onTwoPlayer:onResume:onPlayOnline:)`** (#101, slimmed
+  in #174, quick play #189) — `#ece6dc` background. Top to bottom:
   - **Top bar** — three 44 pt icon buttons, trailing: My Record (`chart.bar.fill` → the fitted
     `statsSheet`: "My Record" header + **Done** around `StatsPanelView`, `.height(480)` detent),
     Saved games (`tray.full.fill` → `SavedGamesSheet`), Settings (`gearshape.fill` → `SettingsView`).
@@ -747,23 +750,30 @@ too), and `match.recordGame(winner:points:)`.
     one tappable `.chromeCard()` — amber `arrow.clockwise.circle.fill`, "Continue last game",
     the mode line (variant, "· two players", "Full Tavli ·" prefix) and a date · moves line;
     chevron, or `AIUnavailableBadge` + disabled when its vs-AI model is missing.
-  - **`playCard`** — `preferredColor` (default **White**, #174) fixed → one full-width primary
-    "Play vs TavTav" button with that colour's swatch; `.ask` → a "Play vs TavTav as" caption
-    over two primary White / Red buttons. No model → the "TavTav is still learning …" note
-    (a card on a phone). On iPad the play section is a `.chromeCard()` headed by a 128 pt
-    `TavTavLoco` (no mascot on a phone, #109).
-  - **`matchLengthPicker`** — segmented `MatchLengthSetting.shortLabel` (Single · Best of 3 ·
-    Full Tavli) bound to `settings.matchLength`, with a one-line `caption` beneath that keeps
-    the height stable ("One game" / "First to two games wins" / "Portes → Fevga → Plakoto").
-  - **Secondary rows** — "Two players on this iPhone/iPad" (`onTwoPlayer`) and "Play Online"
-    (`onPlayOnline`, #134), full-width `.secondary` buttons with a leading icon + chevron.
-  - **`variantLine`** — quiet "<variant.name> · change in Settings" (opens Settings). Hidden
-    (opacity 0, keeps its room so the layout never shifts) in Full Tavli mode, which ignores it.
+  - **`playPair`** (#189) — an `HStack` (`.fixedSize(vertical)` so both are one height) of:
+    - **`playCard`** — one full-width primary button: "Play the computer" + a `PlayAsChecker`
+      (ivory / red / split for Random) over the remembered setup as a subtitle
+      (`NewGameSetup.summary`: "Level 6 · Plakoto · Best of 3", Full Tavli "Level 6 · Full
+      Tavli"). Tapping starts at once (`onPlay` → `RootView` resolves the colour with
+      `PreferredColorSetting.resolve()` and calls `beginGame` / `beginFullTavli`). No model →
+      the "TavTav is still learning …" note in its place (a card on a phone).
+    - **`adjustButton`** — a square `.secondary` `slider.horizontal.3` button ("Game setup")
+      presenting `NewGameSheet`. The sheet's Play sets `playAfterSheet` and dismisses; the
+      sheet's `onDismiss` then calls `onPlay`, so the game starts only after the sheet is gone.
+      On iPad the sheet is form-sized (`FormSheetSizing`: `.presentationSizing(.form)` on iOS 18+).
+    On iPad the play pair sits in a `.chromeCard()` headed by a 128 pt `TavTavLoco` (no mascot
+    on a phone, #109).
+  - **Secondary rows** — "Two players on this iPhone/iPad" (`onTwoPlayer`, remembered variant +
+    length) and "Play Online" (`onPlayOnline`, #134), full-width `.secondary` buttons with a
+    leading icon + chevron.
+
+  The match-length pill and the "<variant> · change in Settings" line were removed in #189 (the
+  sheet is the single source for variant, level, Play as and length).
 
   **Layout.** Phone: one column (≤ 440 pt), spacing 14, inside `FitOrScroll` — fits a 13 mini
   without scrolling; big Dynamic Type / landscape scrolls. iPad: same order in two 380 pt
-  columns 32 pt apart — left `leadColumn` (Continue + play card), right `trailColumn` (match
-  length, the two secondary rows, variant line) — centred under the wordmark. Loads
+  columns 32 pt apart — left `leadColumn` (Continue + play card), right `trailColumn` (the two
+  secondary rows) — centred under the wordmark. Loads
   `store.list()` into `@State saves` on appear and again when the saved-games sheet closes.
 - **`SavedGamesSheet(store:onResume:)`** (#174) — "Saved games" header + **Done**; the
   **manual** saves only (the autosave is the Continue card) as a scrollable list of
@@ -806,23 +816,51 @@ too), and `match.recordGame(winner:points:)`.
   vs-AI session save needs every leg's model (`resumeAgent`, `SaveCopy.resumable`); its row
   subtitle is prefixed "Full Tavli ·".
 
-## SettingsView.swift (#77, regrouped in #174)
+## NewGameSheet.swift (#189 — "Play the computer")
+
+The new-game sheet, opened by the start screen's adjust button. Background
+`ChromeKit.cardColor`; a `FitOrScroll` column (≤ 560 pt; 20 pt gutters on a phone, 32 on iPad)
+that fits a 13 mini without scrolling. Every control writes its `@AppStorage` key as it is
+tapped (defaults equal the `AppSettings` accessors), so the start screen's subtitle and "Two
+players" pick the choices up immediately — there is no Cancel/commit step.
+
+- **Header** — "Play the computer" (`ChromeType.title2` bold) + a 44 pt `xmark` close.
+- **Variant** — `SegmentedChoice` over `GameVariantSetting.shortLabel` + the one-line
+  `rulesReminder`. In Full Tavli the row is dimmed (0.45) + disabled and the caption reads "Full
+  Tavli plays all three variants in turn." (its Plakoto leg still follows the stored variant).
+- **Level** — eight number chips 1…8 (44 pt phone / 50 pt iPad; selected = solid amber
+  `ChromeTheme.undoTint`, others `ChromeKit.trackColor`) + "Level N · <description>"
+  (`AILevelCopy`).
+- **Play as** — three tiles White · Random · Red with a `PlayAsChecker`; selected = raised
+  `ChromeKit.selectedSegmentColor` fill + 2 pt amber stroke.
+- **Length** — `SegmentedChoice` over `MatchLengthSetting.label` (Single game · Best of 3 · Full
+  Tavli) + `caption`.
+- **Play** — full-width `.primary` `ChromeButton` (`title3` bold) → `onPlay`. Disabled (0.45)
+  with the "TavTav is still learning …" message above it when `NewGameSetup.aiAvailable` is false.
+
+Helpers in the file: `NewGameSetup` (variant/level/playAs/length → `aiAvailable`, `summary`,
+`unavailableMessage`; shared with the start screen), `SheetSection` (quiet label over content),
+`SegmentedChoice` (recessed `trackColor` track, the selected option on a raised
+`selectedSegmentColor` pill — the mockup's look, which the system segmented picker can't take),
+`PlayAsChecker` (also on the start screen's play button).
+
+## SettingsView.swift (#77, regrouped in #174, trimmed in #189)
 
 A sheet (from the start screen's gear and the in-game gear), Caramel-styled — not a stock
 `Form`: a "Settings" title + **Done**, then `.chromeCard` sections (uppercase headline) inside
 a `ScrollView` capped at 560 pt. Every control binds to `@AppStorage`; each default equals its
 `AppSettings` accessor.
 
-- **Game** — *Variant* (`VariantPickerView`, + "Applies to the next new game…"), *Play as*
-  (`PreferredColorSetting` Ask / White / Red, default **White**), *TavTav's strength* (slider,
-  Relaxed ↔ Best, default Best → `AppSettings.searchConfig`), *Auto-roll* (default **on**).
+- **Game** — *Play as* (`PreferredColorSetting` White / Random / Red, default **White**; also in
+  the new-game sheet), *Auto-roll* (default **on**).
 - **Advanced** — *First move* (`StartingPlayerSetting`: opening roll / I start / TavTav
   starts), *Analyze during play* (#146, default off).
 - **Display** — *Animate AI moves* (default on), *Win-probability bar* (default off).
 
-Row builders: `choiceRow` (title + segmented picker + caption), `toggleRow`, `sliderRow`.
-Manual dice entry (`DiceModeSetting`) was removed in #174; a stale `settings.diceMode` value
-in `UserDefaults` is simply never read.
+Row builders: `choiceRow` (title + segmented picker + caption), `toggleRow`. Variant, match
+length and the AI level moved to `NewGameSheet` (#189); the #108 strength slider is gone (its
+stored value is migrated to a level at launch). Manual dice entry (`DiceModeSetting`) was
+removed in #174; a stale `settings.diceMode` value in `UserDefaults` is simply never read.
 
 ## StatsPanelView.swift (#64 — human W/L panel)
 
