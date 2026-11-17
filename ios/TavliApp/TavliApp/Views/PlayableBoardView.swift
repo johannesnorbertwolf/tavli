@@ -54,10 +54,6 @@ struct PlayableBoardView: View {
     /// Logical point indices are unchanged; only the visual layout rotates.
     var flipped: Bool = false
 
-    /// When true (manual-dice mode, #77), the on-board dice don't roll on tap;
-    /// the human enters the dice via the chrome's `ManualDiceControl` instead.
-    var manualDiceEntry: Bool = false
-
     /// When false, all board input — tap-to-roll, tap/drag to move — is blocked,
     /// while rendering and incoming-move animation continue. Online play (#134) sets
     /// this to lock the board on the opponent's turn.
@@ -170,7 +166,7 @@ struct PlayableBoardView: View {
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))
 
-                BoardDiceView(session: session, manualEntry: manualDiceEntry)
+                BoardDiceView(session: session)
 
                 // Floating checker follows the finger above all board layers.
                 if let drag = liveDrag, let topColor = boardStacks[drag.sourcePoint].last {

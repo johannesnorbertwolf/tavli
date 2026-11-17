@@ -6,17 +6,15 @@ import TavliEngine
 /// and static accessors for the non-view contexts (e.g. `RootView`'s cold-launch
 /// auto-resume, which runs in `init` before `@AppStorage` is live).
 ///
-/// **Defaults reproduce the pre-settings behaviour** (#77 AC: no change on first
-/// launch): preferred color unset (the per-game White/Black pick is preserved),
-/// opening-roll ceremony, auto dice, AI animation on, win-probability bar off. Each
-/// `@AppStorage` declaration in a view must carry the same default as the matching
-/// accessor here so view bindings and these reads agree.
-///
-/// Later additions set their own sensible default rather than "no change": in-play
-/// analysis (#146) defaults **on** so reviews open instantly out of the box.
+/// Defaults: play as White, opening-roll ceremony, auto-roll on, AI animation on,
+/// win-probability bar off, in-play analysis off, full AI strength (#174 moved the
+/// colour and auto-roll defaults). Each `@AppStorage` declaration in a view must carry
+/// the same default as the matching accessor here so view bindings and these reads
+/// agree. Manual dice entry was removed in #174; an old stored `settings.diceMode`
+/// value is simply never read.
 
-/// Which color the human plays. `.ask` keeps the per-game White/Black choice on the
-/// start screen; a fixed color skips that choice and is used for every new game.
+/// Which color the human plays. A fixed color is used for every new game (default
+/// White, #174); `.ask` shows a small White/Red choice on the start screen instead.
 enum PreferredColorSetting: String, CaseIterable, Identifiable {
     case ask, white, black
 
@@ -66,22 +64,6 @@ enum StartingPlayerSetting: String, CaseIterable, Identifiable {
     }
 }
 
-/// How the human's dice are produced. The AI always rolls its own dice regardless
-/// (it rolls internally in `GameSession.maybeStartAITurn`), so this only affects
-/// the human's turn.
-enum DiceModeSetting: String, CaseIterable, Identifiable {
-    case auto, manual
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .auto:   return String(localized: "Random")
-        case .manual: return String(localized: "Enter manually")
-        }
-    }
-}
-
 /// How many games a session plays (#145). `.single` is one game; `.bestOfThree` is a
 /// best-of-three match (first to two games). Defaults to `.bestOfThree` — the most
 /// common social format — on both the offline (vs-AI) start screen and the online lobby.
@@ -100,6 +82,24 @@ enum MatchLengthSetting: String, CaseIterable, Identifiable {
         case .single:      return String(localized: "Single game")
         case .bestOfThree: return String(localized: "Best of 3")
         case .fullTavli:   return String(localized: "Full Tavli")
+        }
+    }
+
+    /// The start screen's pill segment (#174): "Single · Best of 3 · Full Tavli".
+    var shortLabel: String {
+        switch self {
+        case .single:      return String(localized: "Single")
+        case .bestOfThree: return String(localized: "Best of 3")
+        case .fullTavli:   return String(localized: "Full Tavli")
+        }
+    }
+
+    /// One line under the start screen's pill (#174); Full Tavli names its leg order.
+    var caption: String {
+        switch self {
+        case .single:      return String(localized: "One game")
+        case .bestOfThree: return String(localized: "First to two games wins")
+        case .fullTavli:   return String(localized: "Portes → Fevga → Plakoto")
         }
     }
 
@@ -193,7 +193,6 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
 enum SettingsKey {
     static let preferredColor     = "settings.preferredColor"
     static let startingPlayer     = "settings.startingPlayer"
-    static let diceMode           = "settings.diceMode"
     static let autoRoll           = "settings.autoRoll"
     static let aiAnimation        = "settings.aiAnimationEnabled"
     static let showWinProbability = "settings.showWinProbability"
@@ -210,21 +209,17 @@ enum SettingsKey {
 /// to `@AppStorage` instead, so the UI updates live as settings change.
 enum AppSettings {
     static var preferredColor: PreferredColorSetting {
-        raw(SettingsKey.preferredColor).flatMap(PreferredColorSetting.init) ?? .ask
+        raw(SettingsKey.preferredColor).flatMap(PreferredColorSetting.init) ?? .white
     }
 
     static var startingPlayer: StartingPlayerSetting {
         raw(SettingsKey.startingPlayer).flatMap(StartingPlayerSetting.init) ?? .openingRoll
     }
 
-    static var diceMode: DiceModeSetting {
-        raw(SettingsKey.diceMode).flatMap(DiceModeSetting.init) ?? .auto
-    }
-
     /// Whether the human's dice roll automatically at the start of their turn
-    /// (default off). Mutually exclusive with `diceMode == .manual`.
+    /// (default **on** since #174).
     static var autoRoll: Bool {
-        UserDefaults.standard.object(forKey: SettingsKey.autoRoll) as? Bool ?? false
+        UserDefaults.standard.object(forKey: SettingsKey.autoRoll) as? Bool ?? true
     }
 
     static var aiAnimationEnabled: Bool {

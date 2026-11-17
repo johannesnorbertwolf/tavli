@@ -820,23 +820,6 @@
     "DEBUG" : {
 
     },
-    "Dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Würfel"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dobbelstenen"
-          }
-        }
-      }
-    },
     "Dice %@ · %@" : {
       "localizations" : {
         "de" : {
@@ -1013,57 +996,6 @@
         }
       }
     },
-    "Enter manually" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuell eingeben"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Handmatig invoeren"
-          }
-        }
-      }
-    },
-    "Enter TavTav's dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "TavTavs Würfel eingeben"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voer TavTavs dobbelstenen in"
-          }
-        }
-      }
-    },
-    "Enter your dice" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deine Würfel eingeben"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Voer je dobbelstenen in"
-          }
-        }
-      }
-    },
     "Excellent — that's the best move!" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1127,23 +1059,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Partij · "
-          }
-        }
-      }
-    },
-    "Gameplay" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spieloptionen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gameplay"
           }
         }
       }
@@ -1247,23 +1162,6 @@
         }
       }
     },
-    "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Das iPad würfelt für dich, oder gib deine eigenen Würfel ein. Die KI würfelt immer selbst."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Het iPad gooit voor jou, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
-          }
-        }
-      }
-    },
     "Keep playing" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1325,23 +1223,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Doe je zet op het bord."
-          }
-        }
-      }
-    },
-    "Manual entry" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Manuell"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Handmatig"
           }
         }
       }
@@ -1614,22 +1495,6 @@
         }
       }
     },
-    "Not available with manual dice entry." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nicht verfügbar bei manueller Würfeleingabe."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Niet beschikbaar bij handmatige invoer."
-          }
-        }
-      }
-    },
     "Not quite — think a little harder." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1730,39 +1595,6 @@
         }
       }
     },
-    "Pick a colour to always play, or choose at the start of every game." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wähle eine Farbe, mit der du immer spielst, oder entscheide am Anfang jeder Partie neu."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Kies een kleur om altijd te spelen, of kies aan het begin van elke partij."
-          }
-        }
-      }
-    },
-    "Play %@" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Als %@ spielen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen als %@"
-          }
-        }
-      }
-    },
     "Play a game to start your record." : {
       "localizations" : {
         "de" : {
@@ -1829,22 +1661,6 @@
         }
       }
     },
-    "Play vs AI" : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Gegen AI spielen"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spelen tegen AI"
-          }
-        }
-      }
-    },
     "played" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1875,23 +1691,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Vorige"
-          }
-        }
-      }
-    },
-    "Random" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zufällig"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Willekeurig"
           }
         }
       }
@@ -1957,23 +1756,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Analyse vereist het AI-model, dat niet beschikbaar is."
-          }
-        }
-      }
-    },
-    "Roll automatically, or enter your own dice each turn. The AI always rolls its own." : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch würfeln oder eigene Würfel eingeben. Die AI würfelt immer selbst."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Automatisch gooien, of voer je eigen dobbelstenen in. De AI gooit altijd zelf."
           }
         }
       }
@@ -3348,38 +3130,6 @@
         }
       }
     },
-    "The traditional session: three games in a row, points add up across all three. The higher total wins; equal totals are a draw." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die traditionelle Runde: drei Partien hintereinander, die Punkte aller drei werden addiert. Wer mehr Punkte hat, gewinnt; bei Gleichstand ist es unentschieden."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "De traditionele sessie: drie partijen achter elkaar, de punten van alle drie tellen op. Het hoogste totaal wint; bij gelijke stand is het gelijkspel."
-          }
-        }
-      }
-    },
-    "The Plakoto rules follow your game choice in Settings." : {
-      "localizations" : {
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Die Plakoto-Regeln folgen deiner Spielwahl in den Einstellungen."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "De Plakoto-regels volgen je spelkeuze in Instellingen."
-          }
-        }
-      }
-    },
     "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now." : {
       "localizations" : {
         "de" : {
@@ -3632,6 +3382,310 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terug naar de lobby"
+          }
+        }
+      }
+    },
+    "Variant" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variante"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Variant"
+          }
+        }
+      }
+    },
+    "The colour you play against TavTav. Ask lets you choose on the start screen." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Farbe, mit der du gegen TavTav spielst. Bei „Fragen“ wählst du sie auf dem Startbildschirm."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De kleur waarmee je tegen TavTav speelt. Bij ‘Vragen’ kies je die op het startscherm."
+          }
+        }
+      }
+    },
+    "Advanced" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Erweitert"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geavanceerd"
+          }
+        }
+      }
+    },
+    "Single" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einzeln"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enkel"
+          }
+        }
+      }
+    },
+    "Best of 3" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best of 3"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Best of 3"
+          }
+        }
+      }
+    },
+    "One game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eine Partie"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eén partij"
+          }
+        }
+      }
+    },
+    "First to two games wins" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wer zuerst zwei Partien gewinnt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wie eerst twee partijen wint"
+          }
+        }
+      }
+    },
+    "Portes → Fevga → Plakoto" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portes → Fevga → Plakoto"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Portes → Fevga → Plakoto"
+          }
+        }
+      }
+    },
+    "Play vs TavTav" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gegen TavTav spielen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelen tegen TavTav"
+          }
+        }
+      }
+    },
+    "Play vs TavTav as" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gegen TavTav spielen als"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spelen tegen TavTav als"
+          }
+        }
+      }
+    },
+    "%@ · change in Settings" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · in den Einstellungen ändern"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · wijzigen in Instellingen"
+          }
+        }
+      }
+    },
+    "No saved games yet" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Noch keine gespeicherten Partien"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nog geen opgeslagen partijen"
+          }
+        }
+      }
+    },
+    "Save a game from its menu to come back to it later." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speichere eine Partie über ihr Menü, um sie später fortzusetzen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sla een partij op via het menu om haar later te hervatten."
+          }
+        }
+      }
+    },
+    "1 move" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Zug"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 zet"
+          }
+        }
+      }
+    },
+    "%lld moves" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Züge"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld zetten"
+          }
+        }
+      }
+    },
+    "Delete" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Löschen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verwijderen"
+          }
+        }
+      }
+    },
+    "Match length" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Partielänge"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wedstrijdlengte"
+          }
+        }
+      }
+    },
+    "Analyze during play" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Während des Spiels analysieren"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Analyseren tijdens het spel"
+          }
+        }
+      }
+    },
+    "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berechnet bei jedem Zug schon während des Spiels den besten Zug, damit die Analyse nach der Partie sofort öffnet. Standardmäßig aus – es teilt sich die Rechenleistung mit TavTav, sodass TavTav langsamer ziehen kann. Braucht etwas mehr Akku."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Berekent tijdens het spel bij elke zet de beste zet, zodat de nabespreking direct opent. Standaard uit — het deelt de rekenkracht met TavTav, waardoor TavTav trager kan zetten. Kost iets meer batterij."
           }
         }
       }

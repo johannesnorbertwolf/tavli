@@ -5,18 +5,20 @@ private typealias SColor = SwiftUI.Color
 
 /// In-app settings screen (#77). Presented as a sheet from the start screen and the
 /// in-game chrome. Every control binds directly to `@AppStorage`, so changes persist
-/// immediately and any view observing the same key updates live. Defaults match the
-/// app's pre-settings behaviour (see `AppSettings`), so the screen is purely additive.
+/// immediately and any view observing the same key updates live. Defaults are the
+/// `AppSettings` accessors' (each `@AppStorage` default here must match its accessor).
+///
+/// Sections (#174): **Game** (variant, play as, TavTav's strength, auto-roll),
+/// **Advanced** (first move, analyze during play), **Display**.
 ///
 /// Styled to the Caramel chrome (background, `ChromeType` fonts, `ChromeTheme` tints)
 /// rather than a stock `Form`, to match the rest of the app (cf. `StatsPanelView`).
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
-    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
+    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .white
     @AppStorage(SettingsKey.startingPlayer) private var startingPlayer: StartingPlayerSetting = .openingRoll
-    @AppStorage(SettingsKey.diceMode) private var diceMode: DiceModeSetting = .auto
-    @AppStorage(SettingsKey.autoRoll) private var autoRoll = false
+    @AppStorage(SettingsKey.autoRoll) private var autoRoll = true
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
@@ -30,42 +32,42 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     header
 
-                    // Variant (#143): the rules new games use. A game in progress
-                    // keeps its own rules; the choice applies from the next new game.
                     section("Game") {
-                        VariantPickerView(selection: $variant)
-                        Text("Applies to the next new game; a game in progress keeps its rules.")
-                            .font(ChromeType.caption)
-                            .foregroundStyle(ChromeKit.inkSecondary)
-                    }
-
-                    section("Gameplay") {
+                        // Variant (#143): the rules new games use. A game in progress
+                        // keeps its own rules; the choice applies from the next new game.
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Variant")
+                                .font(ChromeType.body.weight(.semibold))
+                                .foregroundStyle(ChromeTheme.ink)
+                            VariantPickerView(selection: $variant)
+                            Text("Applies to the next new game; a game in progress keeps its rules.")
+                                .font(ChromeType.caption)
+                                .foregroundStyle(ChromeKit.inkSecondary)
+                        }
+                        choiceRow("Play as",
+                                  selection: $preferredColor,
+                                  options: PreferredColorSetting.allCases,
+                                  label: \.label,
+                                  caption: "The colour you play against TavTav. Ask lets you choose on the start screen.")
                         sliderRow("TavTav's strength",
                                   value: $aiStrength,
                                   minLabel: "Relaxed",
                                   maxLabel: "Best",
                                   caption: "How strongly TavTav plays. Best is the full-strength engine; lower down it looks less far ahead and slips up more often. Takes effect on TavTav's next move.")
-                        choiceRow("Play as",
-                                  selection: $preferredColor,
-                                  options: PreferredColorSetting.allCases,
-                                  label: \.label,
-                                  caption: "Pick a colour to always play, or choose at the start of every game.")
+                        toggleRow("Auto-roll",
+                                  isOn: $autoRoll,
+                                  caption: "Dice roll automatically at the start of your turn.")
+                    }
+
+                    section("Advanced") {
                         choiceRow("First move",
                                   selection: $startingPlayer,
                                   options: StartingPlayerSetting.allCases,
                                   label: \.label,
                                   caption: "The opening roll decides who starts, unless you force a side.")
-                        choiceRow("Dice",
-                                  selection: $diceMode,
-                                  options: DiceModeSetting.allCases,
-                                  label: \.label,
-                                  caption: "iPad rolls for you, or enter your own dice each turn. The AI always rolls its own.")
-                            .onChange(of: diceMode) { _, mode in
-                                // The two modes are mutually exclusive: switching to
-                                // manual dice turns off auto-roll.
-                                if mode == .manual { autoRoll = false }
-                            }
-                        autoRollRow
+                        toggleRow("Analyze during play",
+                                  isOn: $inPlayAnalysis,
+                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery.")
                     }
 
                     section("Display") {
@@ -75,9 +77,6 @@ struct SettingsView: View {
                         toggleRow("Win-probability bar",
                                   isOn: $showWinProbability,
                                   caption: "Show your live chance of winning during the game.")
-                        toggleRow("Analyze during play",
-                                  isOn: $inPlayAnalysis,
-                                  caption: "Work out each move's best play as you go, so the post-game review opens instantly. Off by default — it shares the AI's compute, so the AI can be slower to move. Uses a little more battery.")
                     }
                 }
                 .compactPadding(28, compact: 16)
@@ -179,29 +178,6 @@ struct SettingsView: View {
                 .font(ChromeType.caption)
                 .foregroundStyle(ChromeKit.inkSecondary)
         }
-    }
-
-    /// Auto-roll toggle (#116): disabled and annotated when manual-dice mode is on.
-    private var autoRollRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(isOn: $autoRoll) {
-                Text("Auto-roll")
-                    .font(ChromeType.body.weight(.semibold))
-                    .foregroundStyle(diceMode == .manual ? ChromeKit.inkSecondary : ChromeTheme.ink)
-            }
-            .tint(ChromeTheme.doneTint)
-            .disabled(diceMode == .manual)
-            if diceMode == .manual {
-                Text("Not available with manual dice entry.")
-                    .font(ChromeType.caption)
-                    .foregroundStyle(ChromeKit.inkSecondary)
-            } else {
-                Text("Dice roll automatically at the start of your turn.")
-                    .font(ChromeType.caption)
-                    .foregroundStyle(ChromeKit.inkSecondary)
-            }
-        }
-        .opacity(diceMode == .manual ? 0.5 : 1)
     }
 }
 

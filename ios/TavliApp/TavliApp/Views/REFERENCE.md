@@ -181,17 +181,10 @@ session-bound hosts.
   renders unrotated and no gate-flip can animate a backward unwind. Greying
   still works during the AI's moves because the engine commits each landed hop
   into `moveBuilder` — `usedDiceFlags` greys the used die as each hop lands.
-- **`ManualDiceControl`** (#110) — a tap-grid: two rows of six `DieFace`s
-  (top = first die, bottom = second die, ~36 pt). Tapping a face selects that
-  die's value (caramel highlight ring via `DieFace.isHighlighted`); when both
-  dice carry a selection it **auto-submits** `session.setManualDice(d1, d2)` and
-  resets — entering a roll is two taps, no confirm button. Selection is
-  order-independent. Active only while awaiting a roll (`phase == .awaitingRoll`):
-  otherwise dimmed (opacity 0.4) and non-interactive, clearing any half-finished
-  pick on the way out.
 - `#Preview`s: a "Dice — states" matrix over `DiceRow` (normal, each side
   consumed, pasch, partially/fully consumed — including a right-die-consumed
-  case demonstrating the #46 fix) and the manual control.
+  case demonstrating the #46 fix). (The manual-dice tap-grid, #110, was removed in #174 —
+  the human's dice are always rolled: by tap or by auto-roll.)
 
 ## PlayableBoardView.swift (T7 — move input + highlighting)
 
@@ -388,7 +381,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
     in-progress game is persisted after **every move**, not just on background. `RootView`'s
     `persistAutosave` overwrites the single autosave slot (or clears it once the game is over).
     #171: a second `.onChange(of: session.rollRevision) { onAutosave() }` also writes it as soon
-    as a roll exists (human tap / auto-roll / manual entry, and the AI's roll), so the save
+    as a roll exists (human tap / auto-roll, and the AI's roll), so the save
     carries `pendingRoll` and a crash mid-turn resumes with the same dice. Online passes no
     `onAutosave`, so both are no-ops there.
   - **Surrender / resign (#74):** one confirmation everywhere (iPad Resign button and the
@@ -435,10 +428,9 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
 - **`ControlsView`** — **Undo** is persistent (#59): always rendered (while the game is
   live; the call sites hide the whole row once terminal, #101), calling `session.undoOrStepBack()`,
   greyed (`.disabled` + `0.4` opacity) when `session.canUndoOrStepBack` is false. It peels the last
-  committed half-move within the current turn; in **manual-dice mode** (#110), once nothing is left
-  to peel it steps the game back one ply to that ply's dice entry (`.awaitingRoll`), so a sequence
-  can be rewound and re-rolled with different dice. (Auto mode is unchanged — within-turn only;
-  whole-decision rewind stays in the debug overlay's `undoLastDecision`.) **Done** (`session.confirm()`) is still
+  committed half-move within the current turn (within-turn only; the app no longer enables the
+  engine's manual-dice step-back since #174 — whole-decision rewind stays in the debug overlay's
+  `undoLastDecision`). **Done** (`session.confirm()`) is still
   contextual: shown only when `moveBuilder.canFinishNow && !built.isEmpty`, and carries
   `ChromeButton(role: .primary)` — the one solid button on the board screen — while Undo is
   `.secondary`. The dice no longer live here — they moved to the board's center bar
@@ -557,7 +549,7 @@ in the win / match / Full Tavli overlays or the Full Tavli result screen. iPad u
 Per screen (compact only):
 - **GameView** — portrait: icon nav bar (Back · Settings · ⋯ menu with Save/Resign or
   Leave, Move history, debug pane; compact borne-off chips trailing), free space, then
-  turn status + one-line scoreboard + win bar + manual dice (32 pt faces) + Undo/Done
+  turn status + one-line scoreboard + win bar + Undo/Done
   right above the board, all in `FitOrScroll`. Landscape: the same pieces in the rail
   beside a full-height board. The debug pane floats over the board (by design); its
   ladybug closes it. Win / match / Full Tavli leg overlays: the `GameOverCard` at full
@@ -657,10 +649,10 @@ The board is the main visual; chrome mirrors `GameView`'s layout and text style 
 The app's top-level view: switches between the caramel **mode picker**, the opening roll,
 and a live game. Owns all save/load wiring (#61) through a single `SaveStore.default()`.
 
-**Variants (#143).** The picker (scrollable) opens with a `VariantPickerView` card bound to
-`settings.variant`. When the selected variant's model is missing (`AppSettings.aiAvailable`)
-the play card is replaced by a "TavTav is still learning …" note and the match-length toggle is
-dimmed; "Two players on this iPad" (`beginTwoPlayer`) is always offered — White-facing board,
+**Variants (#143, #174).** The variant is chosen in Settings (`settings.variant`); the start
+screen only names it in a quiet "<variant> · change in Settings" line that opens the sheet.
+When the selected variant's model is missing (`AppSettings.aiAvailable`) the play card is
+replaced by a "TavTav is still learning …" note; "Two players on this iPad" (`beginTwoPlayer`) is always offered — White-facing board,
 starter from `variant.startingPlayer(default: .white)`, no match, no W/L record, review via the
 variant's model if bundled. `makeSession(humanColor:startingPlayer:variant:vsAI:)` builds the
 session with `GameConfig(variant:)` + `makeAgent(config:)`. Play Again / Next game / Rematch
@@ -717,40 +709,52 @@ too), and `match.recordGame(winner:points:)`.
   (no `await`) well before any game can end, so the hook is always armed in time. Observing
   `statsStore` re-renders `RootView` when a game is recorded, so the win overlay and picker read
   fresh `stats`.
-- **`ModePickerView(store:stats:onSelect:onResume:onPlayOnline:)`** (#101) — `#ece6dc` background, a large
-  Cormorant Garamond "Tavli" wordmark, then **one primary `playCard`** (a `.chromeCard` titled
-  "Play vs AI" holding two `ColorChoiceButton`s side by side — tapping a color starts that
-  game), a secondary **`onlineButton`** (#134; "Play Online" → the Game Center lobby), a quiet **`recordRow`** (#64; chart icon + "My Record" + current `Ws – Ls` or "No
-  games yet" + chevron; full-width `secondary` button) that presents the **`statsSheet`** — a
-  fitted sheet (`.presentationDetents([.height(480)])`, drag indicator) with a "My Record"
-  header + explicit **Done** button around `StatsPanelView(stats:)` — and (#61) a
-  **`SavedGamesList`** below when any saves exist. Loads `store.list()` in `@State saves` on
-  `onAppear` (`reload`); `delete` removes a save and reloads. `onSelect` sets
-  `pendingHumanColor` (routes through the opening roll). The design reference's "Watch AI vs
-  AI" mode is **deferred** (out of scope).
-- **`ColorChoiceButton(color:action:)`** (#101) — one side of the play card: the checker disc
-  the player would command (`ChromeTheme.checkerColor`) over "Play `<displayName>`" (engine
-  black renders as **Red**), equal-width `secondary` buttons.
-- **`SavedGamesList(saves:onResume:onDelete:)`** (#61) — a titled "Saved games" section: a
-  scrollable (`maxHeight 240`) `VStack` of `SavedGameRow`s.
-- **`SavedGameRow(meta:onResume:onDelete:)`** (#61) — one row: an icon (autosave →
-  `arrow.clockwise.circle.fill`, else `doc.fill`), the save's `meta.name` (every row, autosave
-  included, now carries its own timestamped name), a subtitle (medium date + `N moves` from
-  `meta.savedAt` / `meta.plyCount`), and a trailing trash button. The autosave row adds a small
-  uppercase **"Continue last game"** capsule badge **above** the name (marking the resumable
-  last game without replacing its identity). Tapping the body resumes; the trash button deletes.
-  Flat card row (#101): `ChromeKit.cardColor` fill, small shadow, no border.
+- **`ModePickerView(store:stats:onSelect:onTwoPlayer:onResume:onPlayOnline:)`** (#101, slimmed
+  in #174) — `#ece6dc` background. Top to bottom:
+  - **Top bar** — three 44 pt icon buttons, trailing: My Record (`chart.bar.fill` → the fitted
+    `statsSheet`: "My Record" header + **Done** around `StatsPanelView`, `.height(480)` detent),
+    Saved games (`tray.full.fill` → `SavedGamesSheet`), Settings (`gearshape.fill` → `SettingsView`).
+  - The Cormorant Garamond **"Tavli"** wordmark.
+  - **`ContinueCard`** — only while an autosave exists (`saves.first(where: \.isAutosave)`):
+    one tappable `.chromeCard()` — amber `arrow.clockwise.circle.fill`, "Continue last game",
+    the mode line (variant, "· two players", "Full Tavli ·" prefix) and a date · moves line;
+    chevron, or `AIUnavailableBadge` + disabled when its vs-AI model is missing.
+  - **`playCard`** — `preferredColor` (default **White**, #174) fixed → one full-width primary
+    "Play vs TavTav" button with that colour's swatch; `.ask` → a "Play vs TavTav as" caption
+    over two primary White / Red buttons. No model → the "TavTav is still learning …" note
+    (a card on a phone). On iPad the play section is a `.chromeCard()` headed by a 128 pt
+    `TavTavLoco` (no mascot on a phone, #109).
+  - **`matchLengthPicker`** — segmented `MatchLengthSetting.shortLabel` (Single · Best of 3 ·
+    Full Tavli) bound to `settings.matchLength`, with a one-line `caption` beneath that keeps
+    the height stable ("One game" / "First to two games wins" / "Portes → Fevga → Plakoto").
+  - **Secondary rows** — "Two players on this iPhone/iPad" (`onTwoPlayer`) and "Play Online"
+    (`onPlayOnline`, #134), full-width `.secondary` buttons with a leading icon + chevron.
+  - **`variantLine`** — quiet "<variant.name> · change in Settings" (opens Settings). Hidden
+    (opacity 0, keeps its room so the layout never shifts) in Full Tavli mode, which ignores it.
+
+  **Layout.** Phone: one column (≤ 440 pt), spacing 14, inside `FitOrScroll` — fits a 13 mini
+  without scrolling; big Dynamic Type / landscape scrolls. iPad: same order in two 380 pt
+  columns 32 pt apart — left `leadColumn` (Continue + play card), right `trailColumn` (match
+  length, the two secondary rows, variant line) — centred under the wordmark. Loads
+  `store.list()` into `@State saves` on appear and again when the saved-games sheet closes.
+- **`SavedGamesSheet(store:onResume:)`** (#174) — "Saved games" header + **Done**; the
+  **manual** saves only (the autosave is the Continue card) as a scrollable list of
+  `SavedGameRow`s, or an empty state ("No saved games yet"). Tapping a row dismisses the sheet
+  and resumes; the trash button deletes and reloads.
+- **`SavedGameRow(meta:onResume:onDelete:)`** (#61) — `doc.fill` icon, the save's name, its mode
+  line and date · moves line (`SaveCopy.mode`/`detail`), a trailing 44 pt trash button. Disabled
+  + `AIUnavailableBadge` when a vs-AI save's model is missing (`SaveCopy.resumable`; a Full Tavli
+  save needs every leg's). Flat card row: `ChromeKit.cardColor` fill, small shadow.
 - `EngineColor` is a `private typealias` for `TavliEngine.Color` to disambiguate from
   `SwiftUI.Color` (mirrors `GameView`'s `SColor`).
 
 ## Full Tavli (#144 — `FullTavliViews.swift` + `RootView` wiring)
 
-- **Mode choice.** `ModePickerView`'s match-length toggle gains "Full Tavli"
-  (`MatchLengthSetting.fullTavli`; the online lobby iterates `onlineCases` without it) and is no
-  longer dimmed when the selected variant has no model. In Full Tavli mode `FullTavliInfoCard`
-  replaces the variant picker and the play card is gated on `fullTavliPreview.isAIAvailable()`
-  (every leg's model) with a "still learning some of the Full Tavli games" note; "Two players on
-  this iPad" always works.
+- **Mode choice.** `ModePickerView`'s match-length pill offers "Full Tavli"
+  (`MatchLengthSetting.fullTavli`; the online lobby iterates `onlineCases` without it), captioned
+  with the leg order "Portes → Fevga → Plakoto" (#174). In Full Tavli mode the play card is gated on
+  every leg's model (`FullTavliSession(...).isAIAvailable()`) with a "still learning some of the
+  Full Tavli games" note; "Two players on this iPad" always works.
 - **Running it.** `beginFullTavli(humanColor:)` (`nil` = two players) creates the session via
   `AppSettings.newFullTavli` (Plakoto leg per `VariantPreference`), names every leg
   `"Full Tavli · <date>"`, and `startFullTavliLeg` builds each leg's session for the leg's
@@ -771,8 +775,26 @@ too), and `match.recordGame(winner:points:)`.
   session too. `prepareResume` (picker + cold launch) reconciles via
   `FullTavliSession.resume(savedGame:)`: mid-leg → the replayed session, between legs → the
   transition screen, complete → the result screen (cold launch then clears the autosave). A
-  vs-AI session save needs every leg's model (`resumeAgent`, `SavedGameRow.resumable`); its row
+  vs-AI session save needs every leg's model (`resumeAgent`, `SaveCopy.resumable`); its row
   subtitle is prefixed "Full Tavli ·".
+
+## SettingsView.swift (#77, regrouped in #174)
+
+A sheet (from the start screen's gear and the in-game gear), Caramel-styled — not a stock
+`Form`: a "Settings" title + **Done**, then `.chromeCard` sections (uppercase headline) inside
+a `ScrollView` capped at 560 pt. Every control binds to `@AppStorage`; each default equals its
+`AppSettings` accessor.
+
+- **Game** — *Variant* (`VariantPickerView`, + "Applies to the next new game…"), *Play as*
+  (`PreferredColorSetting` Ask / White / Red, default **White**), *TavTav's strength* (slider,
+  Relaxed ↔ Best, default Best → `AppSettings.searchConfig`), *Auto-roll* (default **on**).
+- **Advanced** — *First move* (`StartingPlayerSetting`: opening roll / I start / TavTav
+  starts), *Analyze during play* (#146, default off).
+- **Display** — *Animate AI moves* (default on), *Win-probability bar* (default off).
+
+Row builders: `choiceRow` (title + segmented picker + caption), `toggleRow`, `sliderRow`.
+Manual dice entry (`DiceModeSetting`) was removed in #174; a stale `settings.diceMode` value
+in `UserDefaults` is simply never read.
 
 ## StatsPanelView.swift (#64 — human W/L panel)
 

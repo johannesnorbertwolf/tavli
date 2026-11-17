@@ -434,7 +434,6 @@ struct RootView: View {
         let s = GameSession.resume(from: save, agent: agent,
                                    searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
-                                   manualDiceEntry: AppSettings.diceMode == .manual,
                                    autoRoll: AppSettings.autoRoll,
                                    inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
         return Resumed(session: s, humanColor: human, name: save.name,
@@ -508,7 +507,6 @@ struct RootView: View {
             aiColor: vsAI ? humanColor.opponent : nil,
             searchConfig: AppSettings.searchConfig,
             animationTimings: AppSettings.animationTimings,
-            manualDiceEntry: AppSettings.diceMode == .manual,
             autoRoll: AppSettings.autoRoll,
             inPlayAnalysis: vsAI && AppSettings.inPlayAnalysisEnabled
         )
@@ -522,10 +520,15 @@ private enum FullTavliScreen: Equatable {
     case transition, result
 }
 
-/// Caramel start screen (#101): "Tavli" wordmark, one primary "Play vs AI" card
-/// holding the color choice (tapping a color starts the opening roll), a quiet
-/// "My Record" row, and (since #61) a list of saved games to resume or delete.
-/// The AI-vs-AI watch mode from the design reference is deferred.
+/// Caramel start screen (#101, slimmed down in #174). Top to bottom: an icon bar
+/// (Settings · My Record · Saved games), the "Tavli" wordmark, a "Continue last game"
+/// card (only while an autosave exists), the primary "Play vs TavTav" (colour from
+/// Settings; a small White/Red choice only when Settings says Ask), the match-length
+/// pill (Single · Best of 3 · Full Tavli), the secondary modes (two players, online)
+/// and a quiet current-variant line that opens Settings. The variant itself is chosen
+/// in Settings; Full Tavli ignores it. One column on a phone (fits a 13 mini without
+/// scrolling; `FitOrScroll` for big Dynamic Type / landscape), two on iPad (Continue +
+/// Play left; match length + other modes right).
 private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
@@ -540,210 +543,260 @@ private struct ModePickerView: View {
 
     @State private var showStats = false
     @State private var showSettings = false
+    @State private var showSaves = false
 
-    /// A fixed preferred color skips the per-game White/Red choice (#77).
-    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .ask
-    /// Single game vs best-of-three match (#145). Defaults to best-of-three.
+    /// The colour to play (#77); default White (#174). `.ask` shows a small choice.
+    @AppStorage(SettingsKey.preferredColor) private var preferredColor: PreferredColorSetting = .white
+    /// Single game / best-of-three match (#145) / Full Tavli (#144). Default best-of-three.
     @AppStorage(SettingsKey.matchLength) private var matchLength: MatchLengthSetting = .bestOfThree
-    /// The variant new games use (#143), shared with the Settings sheet.
+    /// The variant new games use (#143), chosen in Settings.
     @AppStorage(SettingsKey.variant) private var variant: GameVariantSetting = .plakoto
+
+    private var isCompact: Bool { ChromeType.isCompact }
 
     /// Full Tavli mode (#144): the fixed Portes → Fevga → Plakoto session.
     private var isFullTavli: Bool { matchLength == .fullTavli }
 
-    /// The Full Tavli session the start buttons would create — its Plakoto leg follows
-    /// the variant preference, so read it off the live `variant` binding.
-    private var fullTavliPreview: FullTavliSession {
-        FullTavliSession(preferredVariantID: variant.rawValue, aiColor: .black)
-    }
-
     /// Whether vs-AI play is possible: the selected variant's model is bundled, or in
-    /// Full Tavli mode every leg's model (#144).
+    /// Full Tavli mode every leg's model (#144; its Plakoto leg follows the variant).
     private var aiAvailable: Bool {
-        isFullTavli ? fullTavliPreview.isAIAvailable() : AppSettings.aiAvailable(variant)
+        isFullTavli
+            ? FullTavliSession(preferredVariantID: variant.rawValue, aiColor: .black).isAIAvailable()
+            : AppSettings.aiAvailable(variant)
     }
 
-    /// Minimum gap before a row's trailing chevron — tighter on a phone (#109) so a
-    /// long DE/NL label keeps its room instead of truncating.
-    private var rowSpacerMin: CGFloat { ChromeType.isCompact ? 8 : 24 }
+    private var autosave: SaveMetadata? { saves.first(where: \.isAutosave) }
+    private var manualSaves: [SaveMetadata] { saves.filter { !$0.isAutosave } }
+
+    /// Column width cap: one phone column / each iPad column.
+    private var columnWidth: CGFloat { isCompact ? 440 : 380 }
+    private var stackSpacing: CGFloat { isCompact ? 14 : 18 }
 
     var body: some View {
         ZStack {
             SColor(hex: 0xece6dc).ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 24) {
-                    Text("Tavli")
-                        .font(ChromeType.wordmark)
-                        .compactSingleLine()
-                        .foregroundStyle(CaramelPalette.frameText)
-
-                    variantCard
-                    playCard
-                    // Always enabled since #144: Full Tavli is also a two-player mode,
-                    // so the choice matters even when vs-AI play isn't available.
-                    matchLengthPicker
-                    twoPlayerButton
-                    onlineButton
-                    recordRow
-
-                    if !saves.isEmpty {
-                        SavedGamesList(saves: saves,
-                                       onResume: onResume,
-                                       onDelete: delete)
-                            .frame(maxWidth: 440)
+            VStack(spacing: 0) {
+                topBar
+                FitOrScroll {
+                    VStack(spacing: isCompact ? 16 : 32) {
+                        Text("Tavli")
+                            .font(ChromeType.wordmark)
+                            .compactSingleLine()
+                            .foregroundStyle(CaramelPalette.frameText)
+                        if isCompact {
+                            VStack(spacing: stackSpacing) {
+                                leadColumn
+                                trailColumn
+                            }
+                            .frame(maxWidth: columnWidth)
+                        } else {
+                            HStack(alignment: .top, spacing: 32) {
+                                leadColumn.frame(width: columnWidth)
+                                trailColumn.frame(width: columnWidth)
+                            }
+                        }
                     }
+                    .padding(.horizontal, isCompact ? 16 : 40)
+                    .padding(.bottom, isCompact ? 12 : 40)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .compactPadding(40, compact: 16)
-                .frame(maxWidth: .infinity)
             }
-
-            // Settings gear in the top-trailing corner (#77).
-            Button { showSettings = true } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(ChromeType.title2)
-                    .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
-                    .padding(12)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Settings")
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
         }
         .onAppear { reload() }
         .sheet(isPresented: $showStats) { statsSheet }
         .sheet(isPresented: $showSettings) { SettingsView() }
-    }
-
-    /// The one primary action: start playing. With a pinned preferred color (#77)
-    /// it's a single flat "Play vs AI" button (the action is the focus; the color is
-    /// just a small swatch). Otherwise it's the color-choice card — pick White/Red,
-    /// which carry the checker disc they map to on the board (engine black = Red).
-    /// Which game to play (#143): the variant picker with its rules summary, flagged
-    /// when its AI isn't bundled yet.
-    /// In Full Tavli mode (#144) the sequence card replaces the variant picker.
-    @ViewBuilder
-    private var variantCard: some View {
-        if isFullTavli {
-            FullTavliInfoCard(preview: fullTavliPreview)
-                .frame(maxWidth: 392, alignment: .leading)
-                .chromeCard(padding: 20)
-        } else {
-            VariantPickerView(selection: $variant)
-                .frame(maxWidth: 392)
-                .chromeCard(padding: 20)
+        .sheet(isPresented: $showSaves, onDismiss: reload) {
+            SavedGamesSheet(store: store, onResume: { meta in
+                showSaves = false
+                onResume(meta)
+            })
         }
     }
 
-    /// Two players on this iPad (#143) — works for every variant, model or not.
-    private var twoPlayerButton: some View {
-        Button(action: onTwoPlayer) {
-            HStack(spacing: 10) {
-                Image(systemName: "person.2")
-                // Names the device it runs on (#109).
-                Text(UIDevice.current.userInterfaceIdiom == .phone
-                     ? String(localized: "Two players on this iPhone")
-                     : String(localized: "Two players on this iPad"))
-                Spacer(minLength: rowSpacerMin)
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(ChromeKit.inkSecondary)
+    // MARK: - Sections
+
+    /// Continue + Play (the left column on iPad).
+    private var leadColumn: some View {
+        VStack(spacing: stackSpacing) {
+            if let autosave {
+                ContinueCard(meta: autosave) { onResume(autosave) }
+            }
+            if isCompact {
+                playCard
+            } else {
+                // iPad: TavTav himself heads the play card (no mascot on a phone, #109).
+                VStack(spacing: 12) {
+                    TavTavLoco(persona: .friendly, height: 128)
+                    playCard
+                }
+                .frame(maxWidth: .infinity)
+                .chromeCard(padding: 20)
             }
         }
-        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
-        .frame(maxWidth: 440)
     }
 
-    /// The vs-AI play card, or — when the selected variant's model isn't bundled —
-    /// an explanation in its place (#143), never a silently random opponent.
+    /// Match length + the other modes + the variant line (the right column on iPad).
+    private var trailColumn: some View {
+        VStack(spacing: stackSpacing) {
+            matchLengthPicker
+            twoPlayerButton
+            onlineButton
+            // Full Tavli ignores the variant: hide the line but keep its room, so
+            // switching the pill never shifts the layout.
+            variantLine
+                .opacity(isFullTavli ? 0 : 1)
+                .disabled(isFullTavli)
+                .accessibilityHidden(isFullTavli)
+        }
+    }
+
+    /// Settings, My Record and Saved games as icon buttons in the top-trailing corner.
+    private var topBar: some View {
+        HStack(spacing: isCompact ? 4 : 8) {
+            Spacer()
+            iconButton("chart.bar.fill", label: "My Record") { showStats = true }
+            iconButton("tray.full.fill", label: "Saved games") { showSaves = true }
+            iconButton("gearshape.fill", label: "Settings") { showSettings = true }
+        }
+        .padding(.horizontal, isCompact ? 8 : 20)
+        .padding(.top, isCompact ? 0 : 12)
+    }
+
+    private func iconButton(_ systemName: String, label: LocalizedStringKey,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(ChromeType.title3)
+                .foregroundStyle(CaramelPalette.frameText.opacity(0.75))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// The primary action. A fixed colour (the default, White) is one solid "Play vs
+    /// TavTav" button carrying that colour's swatch; `.ask` shows a small White/Red
+    /// choice instead. Without the model, an explanation in its place (#143) — never a
+    /// silently random opponent.
     @ViewBuilder
     private var playCard: some View {
         if !aiAvailable {
-            VStack(spacing: 10) {
-                Text("Play vs AI")
-                    .font(ChromeType.title2.bold())
+            VStack(spacing: 8) {
+                Text("Play vs TavTav")
+                    .font(ChromeType.headline)
                     .foregroundStyle(ChromeKit.inkSecondary)
                 Text(isFullTavli
                      ? String(localized: "TavTav is still learning some of the Full Tavli games. Play Full Tavli with two players for now.")
                      : String(localized: "TavTav is still learning \(variant.name). Play it with two players for now."))
-                    .font(ChromeType.callout)
+                    .font(ChromeType.caption)
                     .foregroundStyle(ChromeKit.inkSecondary)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: 392)
-            .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
+            .frame(maxWidth: .infinity)
+            .modifier(CompactCard())
         } else if let fixed = preferredColor.engineColor {
             Button { onSelect(fixed) } label: {
                 HStack(spacing: 10) {
-                    Text("Play vs AI")
-                    Circle()
-                        .fill(ChromeTheme.checkerColor(fixed))
-                        .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1))
-                        .frame(width: 16, height: 16)
+                    Text("Play vs TavTav")
+                    swatch(fixed, size: 18)
                 }
+                .padding(.vertical, isCompact ? 4 : 6)
             }
             .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
-            .frame(maxWidth: 392)
+            .accessibilityIdentifier("playVsTavTav")
         } else {
-            VStack(spacing: 18) {
-                Text("Play vs AI")
-                    .font(ChromeType.title2.bold())
+            VStack(spacing: 8) {
+                Text("Play vs TavTav as")
+                    .font(ChromeType.callout.weight(.semibold))
                     .foregroundStyle(ChromeTheme.ink)
-                HStack(spacing: 14) {
-                    ColorChoiceButton(color: .white) { onSelect(.white) }
-                    ColorChoiceButton(color: .black) { onSelect(.black) }
+                HStack(spacing: 10) {
+                    colorButton(.white)
+                    colorButton(.black)
                 }
             }
-            .frame(maxWidth: 392)
-            .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         }
     }
 
-    /// Single-game vs best-of-three choice for the next vs-AI game (#145). A best-of-
-    /// three match is the social default, so it's pre-selected; the setting is sticky.
+    private func colorButton(_ color: EngineColor) -> some View {
+        Button { onSelect(color) } label: {
+            HStack(spacing: 8) {
+                swatch(color, size: 18)
+                Text(ChromeTheme.displayName(color))
+            }
+            .padding(.vertical, isCompact ? 4 : 6)
+        }
+        .buttonStyle(ChromeButton(role: .primary, fullWidth: true))
+    }
+
+    private func swatch(_ color: EngineColor, size: CGFloat) -> some View {
+        Circle()
+            .fill(ChromeTheme.checkerColor(color))
+            .overlay(Circle().stroke(SColor.white.opacity(0.7), lineWidth: 1.5))
+            .frame(width: size, height: size)
+    }
+
+    /// Single · Best of 3 · Full Tavli (#145, #144), with a one-line caption that keeps
+    /// the height stable; Full Tavli names its fixed leg order.
     private var matchLengthPicker: some View {
-        Picker("Match length", selection: $matchLength) {
-            ForEach(MatchLengthSetting.allCases) { option in
-                Text(option.label).tag(option)
+        VStack(spacing: 6) {
+            Picker("Match length", selection: $matchLength) {
+                ForEach(MatchLengthSetting.allCases) { option in
+                    Text(option.shortLabel).tag(option)
+                }
             }
+            .pickerStyle(.segmented)
+            .tint(ChromeTheme.undoTint)
+            Text(matchLength.caption)
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .pickerStyle(.segmented)
-        .tint(ChromeTheme.undoTint)
-        .frame(maxWidth: 392)
     }
 
-    /// Enter online multiplayer (#134): a secondary action under the primary
-    /// "Play vs AI", so playing the AI stays the obvious default.
+    /// Two players on this device (#143) — works for every variant, model or not.
+    private var twoPlayerButton: some View {
+        secondaryRow(icon: "person.2",
+                     // Names the device it runs on (#109).
+                     title: UIDevice.current.userInterfaceIdiom == .phone
+                        ? String(localized: "Two players on this iPhone")
+                        : String(localized: "Two players on this iPad"),
+                     action: onTwoPlayer)
+    }
+
+    /// Online multiplayer (#134).
     private var onlineButton: some View {
-        Button(action: onPlayOnline) {
-            HStack(spacing: 10) {
-                Image(systemName: "person.2.fill")
-                Text("Play Online")
-                Spacer(minLength: rowSpacerMin)
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(ChromeKit.inkSecondary)
-            }
-        }
-        .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
-        .frame(maxWidth: 440)
+        secondaryRow(icon: "globe", title: String(localized: "Play Online"), action: onPlayOnline)
     }
 
-    /// Quiet secondary row: current W–L at a glance, full panel on tap.
-    private var recordRow: some View {
-        Button {
-            showStats = true
-        } label: {
+    private func secondaryRow(icon: String, title: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "chart.bar.fill")
-                Text("My Record")
-                Spacer(minLength: rowSpacerMin)
-                Text(recordSubtitle)
-                    .foregroundStyle(ChromeKit.inkSecondary)
+                Image(systemName: icon)
+                    .frame(width: 28)
+                Text(title)
+                Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .foregroundStyle(ChromeKit.inkSecondary)
             }
         }
         .buttonStyle(ChromeButton(role: .secondary, fullWidth: true))
-        .frame(maxWidth: 440)
+    }
+
+    /// The current variant, quietly, with a shortcut into Settings where it's chosen.
+    private var variantLine: some View {
+        Button { showSettings = true } label: {
+            Text("\(variant.name) · change in Settings")
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+                .multilineTextAlignment(.center)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Fitted stats sheet (#101): explicit Done affordance, sized to the card
@@ -775,13 +828,149 @@ private struct ModePickerView: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var recordSubtitle: String {
-        stats.total == 0
-            ? String(localized: "No games yet")
-            : "\(stats.wins)W – \(stats.losses)L"
+    private func reload() { saves = store.list() }
+}
+
+/// A `.chromeCard()` on a phone only — on iPad the play section is already a card.
+private struct CompactCard: ViewModifier {
+    func body(content: Content) -> some View {
+        if ChromeType.isCompact { content.chromeCard(padding: 14) } else { content }
+    }
+}
+
+/// "Continue last game" (#61): the autosave as one tappable card — badge, name and
+/// a variant · date · moves line. Disabled (with a badge) when its vs-AI model is
+/// missing (#143).
+private struct ContinueCard: View {
+    let meta: SaveMetadata
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                Image(systemName: "arrow.clockwise.circle.fill")
+                    .font(ChromeType.title2)
+                    .foregroundStyle(ChromeTheme.undoTint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Continue last game")
+                        .font(ChromeType.body.weight(.semibold))
+                        .foregroundStyle(ChromeTheme.ink)
+                    Group {
+                        Text(SaveCopy.mode(meta))
+                        Text(SaveCopy.detail(meta))
+                    }
+                    .font(ChromeType.caption)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                }
+                Spacer(minLength: 8)
+                if SaveCopy.resumable(meta) {
+                    Image(systemName: "chevron.right")
+                        .font(ChromeType.callout.bold())
+                        .foregroundStyle(ChromeKit.inkSecondary)
+                } else {
+                    AIUnavailableBadge()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .chromeCard(padding: ChromeType.isCompact ? 14 : 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!SaveCopy.resumable(meta))
+        .accessibilityIdentifier("continueLastGame")
+    }
+}
+
+/// Shared save-row wording + the resumability gate (#143/#144).
+private enum SaveCopy {
+    /// A vs-AI save needs its variant's model; a vs-AI Full Tavli save every leg's.
+    static func resumable(_ meta: SaveMetadata) -> Bool {
+        guard meta.isVsAI else { return true }
+        if let ft = meta.fullTavli { return ft.isAIAvailable() }
+        return AppSettings.aiAvailable(GameVariantSetting(variantID: meta.variantID))
     }
 
-    private func reload() { saves = store.list() }
+    /// "Plakoto (house rules)", "Fevga · two players", "Full Tavli · Portes".
+    static func mode(_ meta: SaveMetadata) -> String {
+        let variant = GameVariantSetting(variantID: meta.variantID)
+        let mode = meta.isVsAI ? variant.name
+                               : String(localized: "\(variant.name) · two players")
+        return meta.fullTavli != nil ? String(localized: "Full Tavli · \(mode)") : mode
+    }
+
+    /// "17 Nov 2026 at 10:02 · 12 moves".
+    static func detail(_ meta: SaveMetadata) -> String {
+        let when = dateFormatter.string(from: meta.savedAt)
+        let moves = meta.plyCount == 1 ? String(localized: "1 move")
+                                       : String(localized: "\(meta.plyCount) moves")
+        return "\(when) · \(moves)"
+    }
+
+    static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+}
+
+/// The "Saved games" sheet (#174): the manual saves (the autosave is the start
+/// screen's Continue card), each resumable by tap and deletable.
+private struct SavedGamesSheet: View {
+    let store: SaveStore
+    let onResume: (SaveMetadata) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var saves: [SaveMetadata] = []
+
+    var body: some View {
+        ZStack {
+            SColor(hex: 0xece6dc).ignoresSafeArea()
+            VStack(spacing: 16) {
+                HStack {
+                    Text("Saved games")
+                        .font(ChromeType.title3.bold())
+                        .foregroundStyle(ChromeTheme.ink)
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .buttonStyle(ChromeButton(role: .secondary))
+                }
+                if saves.isEmpty {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Image(systemName: "tray")
+                            .font(ChromeType.title2)
+                        Text("No saved games yet")
+                            .font(ChromeType.body.weight(.semibold))
+                        Text("Save a game from its menu to come back to it later.")
+                            .font(ChromeType.caption)
+                            .multilineTextAlignment(.center)
+                    }
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                    Spacer()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(saves) { meta in
+                                SavedGameRow(meta: meta,
+                                             onResume: { onResume(meta) },
+                                             onDelete: { delete(meta) })
+                            }
+                        }
+                        .padding(.bottom, 8)
+                    }
+                }
+            }
+            .padding(ChromeType.isCompact ? 16 : 24)
+            .frame(maxWidth: 560)
+        }
+        .presentationDragIndicator(.visible)
+        .onAppear(perform: reload)
+    }
+
+    private func reload() { saves = store.list().filter { !$0.isAutosave } }
 
     private func delete(_ meta: SaveMetadata) {
         try? store.delete(filename: meta.filename)
@@ -789,57 +978,8 @@ private struct ModePickerView: View {
     }
 }
 
-/// One side of the play card: the checker disc the player would command plus a
-/// "Play <Name>" label. Tapping starts the opening roll for that color.
-private struct ColorChoiceButton: View {
-    let color: EngineColor
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 10) {
-                Circle()
-                    .fill(ChromeTheme.checkerColor(color))
-                    .overlay(Circle().stroke(ChromeTheme.ink.opacity(0.25), lineWidth: 1.5))
-                    .frame(width: 44, height: 44)
-                Text("Play \(ChromeTheme.displayName(color))")
-                    .foregroundStyle(ChromeTheme.ink)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(ChromeButton(role: .secondary))
-    }
-}
-
-/// The "Saved games" section: a titled, scrollable list of resumable games.
-private struct SavedGamesList: View {
-    let saves: [SaveMetadata]
-    let onResume: (SaveMetadata) -> Void
-    let onDelete: (SaveMetadata) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Saved games")
-                .font(ChromeType.headline)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.8))
-
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(saves) { meta in
-                        SavedGameRow(meta: meta,
-                                     onResume: { onResume(meta) },
-                                     onDelete: { onDelete(meta) })
-                    }
-                }
-            }
-            .frame(maxHeight: 240)
-        }
-    }
-}
-
-/// One saved-game row: title + subtitle (when it was saved, how many plies) with
-/// a trailing delete button. Tapping the body resumes the game.
+/// One saved-game row: name + subtitle (variant, when, how many plies) with a
+/// trailing delete button. Tapping the body resumes the game.
 private struct SavedGameRow: View {
     let meta: SaveMetadata
     let onResume: () -> Void
@@ -849,29 +989,19 @@ private struct SavedGameRow: View {
         HStack(spacing: 12) {
             Button(action: onResume) {
                 HStack(spacing: 12) {
-                    Image(systemName: meta.isAutosave ? "arrow.clockwise.circle.fill" : "doc.fill")
+                    Image(systemName: "doc.fill")
                         .font(ChromeType.title3)
                         .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
                     VStack(alignment: .leading, spacing: 2) {
-                        if meta.isAutosave {
-                            // The auto-save's own name follows the manual convention;
-                            // this badge sits on top of it to mark the last game (#61).
-                            Text("Continue last game")
-                                .font(ChromeType.caption2.weight(.bold))
-                                .textCase(.uppercase)
-                                .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .background(CaramelPalette.frameText.opacity(0.12))
-                                .clipShape(Capsule())
-                                .padding(.bottom, 2)
-                        }
                         Text(meta.name)
                             .font(ChromeType.body.weight(.semibold))
                             .foregroundStyle(CaramelPalette.frameText)
-                        Text(subtitle)
-                            .font(ChromeType.caption)
-                            .foregroundStyle(ChromeKit.inkSecondary)
+                        Group {
+                            Text(SaveCopy.mode(meta))
+                            Text(SaveCopy.detail(meta))
+                        }
+                        .font(ChromeType.caption)
+                        .foregroundStyle(ChromeKit.inkSecondary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -880,51 +1010,26 @@ private struct SavedGameRow: View {
             .buttonStyle(.plain)
             // A vs-AI save of a variant whose model isn't bundled can't be resumed
             // without a silently random opponent (#143).
-            .disabled(!resumable)
-            .opacity(resumable ? 1 : 0.5)
-            if !resumable { AIUnavailableBadge() }
+            .disabled(!SaveCopy.resumable(meta))
+            .opacity(SaveCopy.resumable(meta) ? 1 : 0.5)
+            if !SaveCopy.resumable(meta) { AIUnavailableBadge() }
 
             Button(action: onDelete) {
                 Image(systemName: "trash")
                     .font(ChromeType.body)
                     .foregroundStyle(ChromeKit.inkSecondary)
-                    .padding(8)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Delete")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(ChromeKit.cardColor)
         .cornerRadius(ChromeKit.buttonRadius)
         .shadow(color: ChromeKit.cardShadow, radius: 5, x: 0, y: 2)
     }
-
-    private var variant: GameVariantSetting { GameVariantSetting(variantID: meta.variantID) }
-
-    /// A vs-AI Full Tavli save (#144) needs every leg's model, not just this leg's.
-    private var resumable: Bool {
-        guard meta.isVsAI else { return true }
-        if let ft = meta.fullTavli { return ft.isAIAvailable() }
-        return AppSettings.aiAvailable(variant)
-    }
-
-    private var subtitle: String {
-        let when = SavedGameRow.dateFormatter.string(from: meta.savedAt)
-        let moves = meta.plyCount == 1 ? "1 move" : "\(meta.plyCount) moves"
-        var mode = meta.isVsAI ? variant.name
-                               : String(localized: "\(variant.name) · two players")
-        if meta.fullTavli != nil {
-            mode = String(localized: "Full Tavli · \(mode)")
-        }
-        return "\(mode) · \(when) · \(moves)"
-    }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
 }
 
 #Preview {
