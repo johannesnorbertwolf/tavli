@@ -113,7 +113,7 @@ final class HandicapTests: XCTestCase {
     /// m, -fav)]).initial_board(config)` for m = 0…8 (house Plakoto, 24 points, 15
     /// checkers); White's advanced checkers sit on point 7, Black's on 18.
     func testHeadStartMatchesPythonInitialBoard() {
-        for m in 0...8 {
+        for m in 0...HandicapSetup.maxHeadStart {
             let w = GameBoard(config: .standard)
             HandicapSetup(white: HandicapItems(headStart: m)).setUpInitialPosition(on: w)
             var expectW: [Int: String] = [1: "W\(15 - m)", 24: "B15"]
@@ -158,7 +158,7 @@ final class HandicapTests: XCTestCase {
                                                      rerolls: 9, hints: 9),
                                 black: HandicapItems(movesFirst: true))
         let n = raw.normalized
-        XCTAssertEqual(n.white.headStart, 8)
+        XCTAssertEqual(n.white.headStart, HandicapSetup.maxHeadStart)
         XCTAssertEqual(n.white.rerolls, 4)
         XCTAssertEqual(n.white.hints, 5)
         XCTAssertEqual(n.white.diceTilt, 0)
@@ -425,20 +425,40 @@ final class HandicapTests: XCTestCase {
                        1 / (1 + exp(-0.35)), accuracy: 1e-9)
     }
 
-    func testBundledTableDecodesAsUnmeasured() throws {
+    /// Every step the app offers has a measured, positive and monotone shift (E1).
+    func testBundledTableCoversEveryAppStep() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("TavliApp/TavliApp/Resources/HandicapTable.json")
         let table = try XCTUnwrap(HandicapTable.decode(try Data(contentsOf: url)))
+        var last = 0.0
         for beta in HandicapSetup.diceTiltSteps where beta > 0 {
             let cell = try XCTUnwrap(table.cells[HandicapTable.label("weighted_dice", beta)])
-            XCTAssertNil(cell.logOddsShift)
+            let shift = try XCTUnwrap(cell.logOddsShift)
+            XCTAssertGreaterThan(shift, last, "weighted dice β \(beta)")
+            last = shift
         }
+        last = 0
         for n in 1...HandicapSetup.maxRerolls {
             let cell = try XCTUnwrap(table.cells[HandicapTable.label("rerolls", Double(n))])
-            XCTAssertNil(cell.logOddsShift)
+            let shift = try XCTUnwrap(cell.logOddsShift)
+            XCTAssertGreaterThan(shift, last, "rerolls \(n)")
+            last = shift
         }
+    }
+
+    /// A head start amplifies the same side's dice levers (E1 head start × dice combos).
+    func testHeadStartAmplifiesDiceShift() {
+        let table = HandicapTable(cells: ["rerolls:2": .init(logOddsShift: 0.3)])
+        let plain = HandicapEstimator.combine(positionWhite: 0.5,
+                                              setup: HandicapSetup(white: HandicapItems(rerolls: 2)),
+                                              table: table)
+        let withHS = HandicapEstimator.combine(positionWhite: 0.5,
+                                               setup: HandicapSetup(white: HandicapItems(headStart: 4, rerolls: 2)),
+                                               table: table)
+        XCTAssertEqual(plain.whiteWinChance, 1 / (1 + exp(-0.3)), accuracy: 1e-9)
+        XCTAssertEqual(withHS.whiteWinChance, 1 / (1 + exp(-0.3 * 1.4)), accuracy: 1e-9)
     }
 }
 

@@ -71,14 +71,17 @@ public struct HandicapSetup: Codable, Equatable, Hashable, Sendable {
     /// ignored), so an old reader plays the items it knows.
     public static let currentVersion = 1
 
-    public static let maxHeadStart = 8
+    /// Capped at 4 by E1 (docs/handicap-e1-tier1.md): the head start's effect saturates
+    /// (m = 4: +8.0 pp, 6: +9.2, 8: +7.6) and the net's start-position estimate is within
+    /// 1 pp up to m = 4 but 3–5 pp off beyond.
+    public static let maxHeadStart = 4
     public static let maxRerolls = 4
     public static let maxHints = 5
     /// The weighted-dice strengths the app offers, Off → Very strong. The **one place**
-    /// the β grid lives (retune after measurement). Matches the harness grid
-    /// (`KINDS["weighted_dice"]`: 1, 2, 4, 8, 16; β ≈ 1 barely registers, so the app
-    /// starts at 2).
-    public static let diceTiltSteps: [Double] = [0, 2, 4, 8, 16]
+    /// the β grid lives. Calibrated by E1 (gold_v11, 1-ply, 1 000 pairs/cell): β 0.3 / 0.6 /
+    /// 1.2 / 2.0 give the favoured side +3.7 / +6.2 / +13.6 / +22.0 pp. The first-order
+    /// estimate ΔP ≈ β·Σ Var(v) is ≈ +13.5 pp per unit β for small β.
+    public static let diceTiltSteps: [Double] = [0, 0.3, 0.6, 1.2, 2.0]
     /// Pips a head-start checker starts ahead (`pip_headstart`: 6).
     public static let headStartPips = 6
     /// The only variant handicaps apply to (house Plakoto).

@@ -214,3 +214,31 @@ Engine detail: `ios/REFERENCE.md` ("Handicaps, tier 1"); views: `ios/TavliApp/Ta
   Swift side has no bear-off database, so its race values (dice tilt, reroll decisions, estimate)
   are the net's own rather than the DB's exact ones.
 
+
+## 10. E1 results: tier-1 calibration (2026-11-18)
+
+Full table: `docs/handicap-e1-tier1.md` / `.json` (gold_v11, 1-ply, 1 000 duplicate-dice pairs per
+cell). Gains are percentage points for the favoured side.
+
+| Lever | Steps → gain |
+|---|---|
+| Moves first | +3.0 |
+| Head start (m checkers) | 1: +2.1 · 2: +4.1 · 4: +8.0 · 6: +9.2 · 8: +7.6 (saturates, so the app caps at 4) |
+| Weighted dice β | 0.3: +3.7 · 0.6: +6.2 · 1.2: +13.6 · 2.0: +22.0 (the app's steps) |
+| Rerolls | 1: +4.9 · 2: +8.0 · 3: +11.4 · 4: +14.7 |
+
+**Analytic check.**
+- Win probability is a martingale under fair play, so weighted dice shift it by
+  ΣE_tilt[v] − E_fair[v] over the favoured turns, ≈ β·Σ Var(v) for small β.
+- From 400 fair games: β 0.25/0.5/1 → +3.2/+6.6/+13.5 pp.
+- This matches the measurement for β ≤ 0.6, and overestimates beyond that as the effect
+  saturates.
+
+**Net start-position estimate.** Within ≈ 1 pp for head start ≤ 4 (incl. moves first). It is
+3–5 pp off at m = 6–8, which is why the cap is 4.
+
+**Additivity in log-odds.**
+- Holds for dice-only combos (within ≈ 1 pp).
+- Head start × dice levers is super-additive: the dice shift counts ≈ 1.4× at m = 4. The app
+  multiplies the dice shift by 1 + 0.1·m (`HandicapEstimator.headStartDiceInteraction`).
+- Moves-first combos are within noise (±3 pp CI).
