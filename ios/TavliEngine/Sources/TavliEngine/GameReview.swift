@@ -124,7 +124,7 @@ public enum GameReview {
         let config = config ?? GameConfig(variantID: record.variantID)
         let variant = config.variant
         let board = GameBoard(config: config)
-        variant.setUpInitialPosition(on: board)
+        record.setUpInitialPosition(on: board)   // + any handicap head start (#148)
         let upper = board.boardSize + 1
         let dice = Dice(numberOfSides: config.dieSides)
 
@@ -311,7 +311,7 @@ public enum GameReview {
                                        includeOpponent: Bool = false) -> [PlyContext] {
         let variant = config.variant
         let board = GameBoard(config: config)
-        variant.setUpInitialPosition(on: board)
+        record.setUpInitialPosition(on: board)   // + any handicap head start (#148)
         let upper = board.boardSize + 1
         var contexts: [PlyContext] = []
         var mover = record.startingPlayer

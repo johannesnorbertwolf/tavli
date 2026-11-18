@@ -7,10 +7,16 @@ import Combine
 public struct HumanGameRecord: Codable, Equatable, Sendable {
     public let date: Date
     public let humanWon: Bool
+    /// The handicap the game was played under (#148), or `nil` for a normal game.
+    /// Handicap games are kept out of the vs-Computer record (`HumanStatsStore.stats`)
+    /// and summarised separately (`handicapStats`). Optional and omitted when `nil`, so
+    /// the log file of a player who never uses handicaps is unchanged.
+    public let handicap: HandicapSetup?
 
-    public init(date: Date, humanWon: Bool) {
+    public init(date: Date, humanWon: Bool, handicap: HandicapSetup? = nil) {
         self.date = date
         self.humanWon = humanWon
+        self.handicap = handicap
     }
 }
 
@@ -145,11 +151,18 @@ public final class HumanStatsStore: ObservableObject {
         self.records = store.load()
     }
 
-    public var stats: HumanGameStats { HumanGameStats(records: records) }
+    /// The vs-Computer record: normal games only (handicap games are separate, #148).
+    public var stats: HumanGameStats { HumanGameStats(records: records.filter { $0.handicap == nil }) }
 
-    /// Record the outcome of one completed game and persist it.
-    public func record(humanWon: Bool, date: Date = Date()) {
-        records.append(HumanGameRecord(date: date, humanWon: humanWon))
+    /// The handicap games' record (#148); `total == 0` until the first one is played.
+    public var handicapStats: HumanGameStats {
+        HumanGameStats(records: records.filter { $0.handicap != nil })
+    }
+
+    /// Record the outcome of one completed game and persist it. `handicap` marks a
+    /// handicap game (kept out of `stats`).
+    public func record(humanWon: Bool, handicap: HandicapSetup? = nil, date: Date = Date()) {
+        records.append(HumanGameRecord(date: date, humanWon: humanWon, handicap: handicap))
         store.save(records)
     }
 }

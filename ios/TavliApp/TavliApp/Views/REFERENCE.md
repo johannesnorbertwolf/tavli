@@ -945,6 +945,56 @@ landscape shows only a caption header + the overall line) and from the mode pick
 - `#Preview`s: a mixed record over the light picker background, and the empty state over the
   dark scrim.
 
+## Handicap views (#148 — `HandicapSettingsView.swift`, `HandicapViews.swift`, `HandicapSettings.swift`)
+
+Tier-1 handicaps (engine: `ios/REFERENCE.md` "Handicaps, tier 1"). **Hidden unless used**
+(concept §7): nothing on the start screen or new-game sheet; the game, review and stats change
+only when a handicap is active / exists.
+
+- **Settings (`HandicapPreferences`, target root).** One JSON value under `settings.handicap`
+  (`@AppStorage` string): `enabled` + per item a value and a favoured **role** (`HandicapRole.a` =
+  "You"/"White", `.b` = "Computer"/"Red"); weighted dice as a `HandicapDiceStrength` step mapped
+  onto the engine's `HandicapSetup.diceTiltSteps`. `setup(humanColor:)` resolves roles into a
+  per-colour `HandicapSetup` (vs the computer `.a` = the human, hints always the human's; two
+  players `.a` = White). `applies(variant:length:vsComputer:)`: house Plakoto, offline, vs the
+  computer only a **Single game** (best-of-three / Full Tavli play unhandicapped), two players
+  anything but Full Tavli. `setupForNewGame` = load + applies + resolve. `HandicapTableResource`
+  loads the bundled `HandicapTable.json`; `HandicapCopy` words the tag sheet ("You: 2 checkers start
+  6 points ahead", "Dice favour Red moderately").
+- **Settings card.** `HandicapSettingsRow` is a standalone `.chromeCard` at the end of
+  `SettingsView` ("Handicap" + "Off"/summary + chevron) presenting `HandicapSettingsView` as a sheet.
+- **Builder.** `HandicapSettingsView`: header + intro, a card with the master toggle, the label
+  switch (`@State vsComputer`, labels only) and the applicability caption (brick tint when the next
+  game won't use it), then one `itemCard` per item (title, segmented side picker ≤ 210 pt, an integer
+  `Slider` with its value label or a toggle, a caption), dimmed/disabled while off, then the estimate
+  card. The estimate evaluates side A as White (colour-symmetric) with the start rule the app would
+  use: two players → White starts; vs the computer → Settings "First move" (opening roll = roll-off).
+- **Estimate.** `HandicapEstimateModel` (`@MainActor`) caches one Plakoto `Agent`, recomputes
+  `HandicapEstimator.positionWhiteWinChance` off the main actor when the setup/rule key changes, and
+  combines with the table. `HandicapEstimateView` prints "Estimated win chance (approx.)" /
+  "You 57% · Computer 43%", the unmeasured line ("Weighted dice and rerolls: not measured yet, so
+  not in the number."), the hints note, and "If both played at the computer's full strength."
+- **Game.** `HandicapTagButton` (icon-only `compact` in the iPhone nav bar and iPad portrait top
+  bar; labelled under the status card in the iPad landscape panel) opens `HandicapInfoSheet`
+  (large detent): setup lines, tokens left, the estimate with the game's real starter
+  (`.fixed(session.startingPlayer)`), and the fair-dice caveat. `ControlsView` shows
+  `HandicapActionsRow` above Undo/Done only in a handicap game: "Reroll (n left)" / "Hint (n left)"
+  for the human on move (disabled when not allowed), side by side or stacked (`ViewThatFits`), then
+  "Best move shown in blue" or "Computer used a reroll (n left)". `PlayableBoardView` draws
+  `session.hint` as a blue `MoveHighlightView` over the checkers. `GameView` autosaves on a token
+  change, hides the vs-Computer record in the win overlay of a handicap game, and passes
+  `record.handicap` to the history notation.
+- **Review.** `GameReviewView.topBar` adds `HandicapReviewNote` ("Handicap game: win chances
+  assume fair dice") when `record.handicap.altersDice`.
+- **Stats.** `RootView` records a finished vs-Computer handicap game with its setup
+  (`statsStore.record(humanWon:handicap:)`); My Record shows `HandicapRecordBlock` under
+  `StatsPanelView` only when `handicapStats.total > 0` (the sheet grows from 480 to 680 pt then).
+- **Starting games.** `RootView.beginGame` / opening-roll completion / `beginTwoPlayer` call
+  `HandicapPreferences.setupForNewGame`; a forced starter ("moves first") skips the opening roll;
+  `makeSession(handicap:)` gives a two-player game a `handicapAgent` when the setup needs the net;
+  `prepareResume` does the same for a two-player handicap save. Best-of-three next games, rematches
+  in a match and Full Tavli legs never get one.
+
 ## App.swift
 
 `@main`. Minimal — `WindowGroup { RootView().modifier(AppearanceOverride()) }`; `init` sets

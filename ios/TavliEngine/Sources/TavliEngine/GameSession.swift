@@ -219,6 +219,38 @@ public final class GameSession: ObservableObject {
     /// Incrementally narrows the legal-move set as half-moves are committed.
     public private(set) var moveBuilder: MoveBuilder
 
+    // ── Handicap (#148, tier 1) ───────────────────────────────────────────────
+    // Everything below is inert unless the game was started with an active
+    // `HandicapSetup` (house Plakoto only): `handicap == nil` keeps every code path
+    // exactly as it was.
+
+    /// The handicap and its tokens left, or `nil` for a normal game. Persisted in the
+    /// save (`GameSave.handicap`) so a resumed game keeps its counts.
+    @Published public private(set) var handicap: HandicapGameState? = nil
+    /// The value net used for weighted dice, the computer's reroll decisions and hints
+    /// (the session's own `agent`, or one passed in for a two-player game). `nil`
+    /// outside handicap games.
+    public let handicapAgent: Agent?
+    /// True while a weighted roll is being prepared (the 21 rolls rated off the main
+    /// actor). Rolling, undo and the handicap buttons wait for it.
+    @Published public private(set) var preparingDice = false
+    /// The best move for the turn in progress, shown after a hint was used (`[from,
+    /// to]` pairs, the generator's form), or `nil`. Cleared as soon as a checker moves.
+    @Published public private(set) var hint: [[Int]]? = nil
+    /// A hint is being computed (2-ply, off the main actor).
+    @Published public private(set) var hintPending = false
+    /// The side whose computer player last used a reroll (shown as a note until its
+    /// next turn), or `nil`.
+    @Published public private(set) var lastComputerReroll: Color? = nil
+    /// Uniform source in [0, 1) for handicap dice draws (weighted rolls and rerolls).
+    /// Injectable so tests are deterministic; never consulted for a normal game.
+    public var handicapUniform: () -> Double = { Double.random(in: 0..<1) }
+    /// Bumped whenever a pending weighted roll must be discarded (new game, rewind,
+    /// scripted dice), so a late result doesn't land on the wrong turn.
+    private var handicapEpoch = 0
+    /// Bumped whenever a pending hint goes stale (a checker moved, a new turn).
+    private var hintEpoch = 0
+
     /// Fired exactly once, when the session first enters `.gameOver`, with the
     /// winning color. The app layer uses this to record the human's win/loss
     /// (issue #64); the engine itself stays unaware of stats persistence.
@@ -271,12 +303,23 @@ public final class GameSession: ObservableObject {
                 searchConfig: SearchConfig = .standard,
                 animationTimings: AnimationTimings = .standard,
                 autoRoll: Bool = false,
-                inPlayAnalysis: Bool = false) {
-        let game = Game(config: config, startingPlayer: startingPlayer)
+                inPlayAnalysis: Bool = false,
+                handicap: HandicapSetup? = nil,
+                handicapAgent: Agent? = nil) {
+        // A handicap applies only when active and only to house Plakoto (#148); any
+        // other combination is simply a normal game.
+        let setup = handicap.map(\.normalized).flatMap {
+            $0.isActive && HandicapSetup.supports(variantID: config.variant.id) ? $0 : nil
+        }
+        let starter = setup?.forcedStarter ?? startingPlayer
+        let game = Game(config: config, startingPlayer: starter)
+        setup?.setUpInitialPosition(on: game.board)
         self.game = game
         self.agent = agent
-        self.record = GameRecord(startingPlayer: startingPlayer, aiColor: aiColor,
-                                 variantID: config.variant.id)
+        self.handicap = setup.map(HandicapGameState.init(setup:))
+        self.handicapAgent = setup == nil ? nil : (handicapAgent ?? agent)
+        self.record = GameRecord(startingPlayer: starter, aiColor: aiColor,
+                                 variantID: config.variant.id, handicap: setup)
         self.searchConfig = searchConfig
         self.animationTimings = animationTimings
         self.autoRoll = autoRoll
@@ -342,8 +385,17 @@ public final class GameSession: ObservableObject {
 
     /// Roll the dice for the current turn and compute legal moves.
     public func roll() {
-        guard phase == .awaitingRoll, !autoRollPassing, !humanDiceRolling else { return }
+        guard phase == .awaitingRoll, !autoRollPassing, !humanDiceRolling, !preparingDice else { return }
         if restoreRollOnStart { resumePendingRoll(); return }
+        if weightedTiltForCurrentPlayer != nil {
+            // Weighted dice (#148): rate the rolls off the main actor, then draw.
+            let pending = startHandicappedRoll()
+            Task { @MainActor [weak self] in
+                guard let self, await self.finishHandicappedRoll(pending) else { return }
+                self.beginTurn()
+            }
+            return
+        }
         rollDice()
         beginTurn()
     }
@@ -355,6 +407,7 @@ public final class GameSession: ObservableObject {
     /// Always starts a human turn; on the AI's turn the AI rolls for itself.
     public func setDice(_ d1: Int, _ d2: Int) {
         guard phase == .awaitingRoll else { return }
+        if preparingDice { discardPendingHandicapRoll() }
         diceReplays.removeAll()
         restoreRollOnStart = false
         game.dice.set(d1, d2)
@@ -428,6 +481,7 @@ public final class GameSession: ObservableObject {
     /// Apply one gesture's hops to the board and commit them to the builder as a
     /// single gesture (so `undo` takes them back together).
     private func play(gesture hops: [HalfMove]) {
+        if hint != nil || hintPending { clearHint() }
         let applied = hops.map { hop -> HalfMove in
             let hm = HalfMove(from: game.board.points[hop.from.position],
                               to: game.board.points[hop.to.position],
@@ -510,6 +564,7 @@ public final class GameSession: ObservableObject {
     public func surrender() {
         guard canSurrender, let aiColor else { return }
         cancelHumanAnalysis()
+        if handicap != nil { clearHint() }
         for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
@@ -540,11 +595,20 @@ public final class GameSession: ObservableObject {
         restoreRollOnStart = false
         cancelHumanAnalysis()
         analysisByPly = [:]
-        game.variant.setUpInitialPosition(on: game.board)
+        let setup = record.handicap
+        let starter = setup?.forcedStarter ?? startingPlayer
+        if let setup {
+            // Same handicap, fresh tokens (#148).
+            discardPendingHandicapRoll()
+            clearHint()
+            lastComputerReroll = nil
+            handicap = HandicapGameState(setup: setup)
+        }
+        record.setUpInitialPosition(on: game.board)
         game.dice.set(1, 1)
-        game.setPlayer(startingPlayer)
-        record = GameRecord(startingPlayer: startingPlayer, aiColor: record.aiColor,
-                            variantID: record.variantID)
+        game.setPlayer(starter)
+        record = GameRecord(startingPlayer: starter, aiColor: record.aiColor,
+                            variantID: record.variantID, handicap: setup)
         legalMoves = []
         moveBuilder = MoveBuilder(legalMoves: [], board: game.board)
         clearSelection()
@@ -560,6 +624,7 @@ public final class GameSession: ObservableObject {
     // ── Internal transitions ──────────────────────────────────────────────────
 
     private func beginTurn() {
+        if handicap != nil { clearHint() }
         legalMoves = game.variant.legalMoves(on: game.board, color: game.currentPlayer, dice: game.dice)
 
         guard !legalMoves.isEmpty else {
@@ -651,6 +716,7 @@ public final class GameSession: ObservableObject {
     /// Undo is offered only while it's the human's move or between turns — never
     /// mid-AI-think, mid-animation, or once the game is over.
     private var isUndoablePhase: Bool {
+        if preparingDice || hintPending { return false }   // only in handicap games (#148)
         switch phase {
         case .awaitingRoll, .picking, .moving: return true
         case .aiThinking, .animating, .gameOver: return false
@@ -743,7 +809,11 @@ public final class GameSession: ObservableObject {
         autoRollTask = Task { @MainActor [weak self] in
             guard let self, !Task.isCancelled else { return }
             if rollDuration > 0 {
-                self.rollDice()
+                if self.weightedTiltForCurrentPlayer != nil {
+                    guard await self.finishHandicappedRoll(self.startHandicappedRoll()) else { return }
+                } else {
+                    self.rollDice()
+                }
                 self.humanDiceRolling = true
                 await GameSession.sleep(rollDuration)
                 guard !Task.isCancelled else {
@@ -767,6 +837,10 @@ public final class GameSession: ObservableObject {
     /// the chosen half-moves one at a time. With `.off` everything below is
     /// synchronous exactly as before.
     private func takeAITurn() {
+        if handicap != nil, weightedTiltForCurrentPlayer != nil || computerMayReroll {
+            takeHandicappedAITurn()
+            return
+        }
         rollDice()
         playAITurn(animateDiceRoll: true)
     }
@@ -969,6 +1043,219 @@ public final class GameSession: ObservableObject {
     private static func sleep(_ seconds: TimeInterval) async {
         guard seconds > 0 else { return }
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+    }
+
+    // ── Handicap (#148, tier 1) ─────────────────────────────────────────────────
+    // Only reached when `handicap != nil`.
+
+    /// The weighted-dice β for the side on move, or `nil` when its dice are fair (no
+    /// handicap, β = 0, no evaluator, or an undo replay queued — replays reproduce the
+    /// recorded dice exactly).
+    private var weightedTiltForCurrentPlayer: Double? {
+        guard let handicap, handicapAgent != nil, diceReplays.isEmpty else { return nil }
+        let beta = handicap.setup[currentPlayer].diceTilt
+        return beta > 0 ? beta : nil
+    }
+
+    /// The computer on move has rerolls left (and a net to decide with).
+    private var computerMayReroll: Bool {
+        guard let handicap, handicapAgent != nil, isAITurn, diceReplays.isEmpty else { return false }
+        return handicap.rerollsLeft[currentPlayer] > 0
+    }
+
+    /// The side on move is a human (vs the computer: the human; two players: both).
+    private var isHumanTurn: Bool { aiColor == nil || currentPlayer != aiColor }
+
+    /// Whether the human on move may reroll now: a handicap game, rerolls left, their
+    /// own turn with the dice rolled (anything built this turn is taken back first).
+    public var canReroll: Bool {
+        guard let handicap, onMoveAttempt == nil, isHumanTurn, !preparingDice, !hintPending,
+              phase == .picking || phase == .moving else { return false }
+        return handicap.rerollsLeft[currentPlayer] > 0
+    }
+
+    /// Rerolls left for `color` (0 outside handicap games).
+    public func rerollsLeft(_ color: Color) -> Int { handicap?.rerollsLeft[color] ?? 0 }
+    /// Hints left for `color` (0 outside handicap games).
+    public func hintsLeft(_ color: Color) -> Int { handicap?.hintsLeft[color] ?? 0 }
+
+    /// Whether the human on move may ask for a hint now: hints left, a net to search
+    /// with, their own turn with the dice rolled, and no hint already showing.
+    public var canHint: Bool {
+        guard let handicap, handicapAgent != nil, onMoveAttempt == nil, isHumanTurn,
+              !preparingDice, !hintPending, hint == nil,
+              phase == .picking || phase == .moving else { return false }
+        return handicap.hintsLeft[currentPlayer] > 0
+    }
+
+    /// Spend a reroll (#148): take back anything built this turn and roll again —
+    /// weighted when this side has weighted dice, fair otherwise.
+    public func reroll() {
+        guard canReroll else { return }
+        takeBackBuiltMove()
+        clearHint()
+        cancelHumanAnalysis()
+        selectableSources = []
+        legalMoves = []
+        handicap?.rerollsLeft[currentPlayer] -= 1
+        phase = .awaitingRoll
+        if weightedTiltForCurrentPlayer != nil {
+            let pending = startHandicappedRoll()
+            Task { @MainActor [weak self] in
+                guard let self, await self.finishHandicappedRoll(pending) else { return }
+                self.beginTurn()
+            }
+        } else {
+            drawHandicapRoll(values: nil)
+            beginTurn()
+        }
+    }
+
+    /// Spend a hint (#148): search the turn's position at full strength (2-ply, the
+    /// level-8 computer) off the main actor and publish the best move in `hint`
+    /// without playing it. Anything built this turn is taken back first, since the hint
+    /// is for the whole roll. The hint is only charged once it arrives; if the turn
+    /// moves on first, it is dropped and not charged.
+    public func requestHint() {
+        guard canHint, let agent = handicapAgent else { return }
+        if !moveBuilder.built.isEmpty {
+            takeBackBuiltMove()
+            refreshSources()
+        }
+        hintPending = true
+        let epoch = hintEpoch
+        let color = game.currentPlayer
+        let config = game.board.config
+        let stacks = game.board.captureStacks()
+        let d1 = game.dice.die1.value
+        let d2 = game.dice.die2.value
+        let search = SearchConfig.standard
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let board = GameBoard(config: config)
+            board.restoreStacks(stacks)
+            let dice = Dice(numberOfSides: config.dieSides)
+            dice.set(d1, d2)
+            let moves = config.variant.legalMoves(on: board, color: color, dice: dice)
+            let best = try? agent.getBestMove(
+                board, moves, color: color, timeBudget: search.timeBudget,
+                beamThreshold: search.beamThreshold, relativeCutoff: search.relativeCutoff,
+                maxBranch: search.maxBranch, maxDepth: search.maxDepth,
+                rootSoftBudget: search.rootSoftBudget, minRootBranches: search.minRootBranches,
+                maxRootBranches: search.maxRootBranches)
+            let pairs = best?.move.halfMoves.map { [$0.from.position, $0.to.position] }
+            await MainActor.run { [weak self] in
+                guard let self, self.hintEpoch == epoch else { return }
+                self.hintPending = false
+                guard let pairs, !pairs.isEmpty else { return }
+                self.hint = pairs
+                self.handicap?.hintsLeft[color] -= 1
+            }
+        }
+    }
+
+    /// Await a pending hint (tests).
+    func awaitHintForTesting() async {
+        while hintPending { try? await Task.sleep(nanoseconds: 5_000_000) }
+    }
+
+    /// Await a pending weighted roll (tests).
+    func awaitDiceForTesting() async {
+        while preparingDice { try? await Task.sleep(nanoseconds: 5_000_000) }
+    }
+
+    /// Drop any shown or pending hint (a pending one is then never charged).
+    private func clearHint() {
+        hintEpoch += 1
+        hint = nil
+        hintPending = false
+    }
+
+    /// Undo every half-move built this turn (reroll / hint start from the full roll).
+    private func takeBackBuiltMove() {
+        for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
+        moveBuilder = MoveBuilder(legalMoves: legalMoves, board: game.board,
+                                  die1: game.dice.die1.value, die2: game.dice.die2.value)
+        clearSelection()
+    }
+
+    /// Discard a weighted roll still being prepared.
+    private func discardPendingHandicapRoll() {
+        handicapEpoch += 1
+        preparingDice = false
+    }
+
+    /// Rate the side on move's 21 rolls with the net, off the main actor (an isolated
+    /// board copy, as the AI search does). `nil` without an evaluator or on a Core ML
+    /// failure (the roll is then fair).
+    private func computeRollValues() async -> [Float]? {
+        guard let agent = handicapAgent else { return nil }
+        let color = game.currentPlayer
+        let config = game.board.config
+        let stacks = game.board.captureStacks()
+        return await Task.detached(priority: .userInitiated) {
+            let board = GameBoard(config: config)
+            board.restoreStacks(stacks)
+            return try? HandicapDice.rollValues(agent: agent, board: board, color: color)
+        }.value
+    }
+
+    /// Mark a weighted roll as being prepared (synchronously, so `preparingDice` blocks
+    /// input at once) and return its epoch for `finishHandicappedRoll`.
+    private func startHandicappedRoll() -> Int {
+        preparingDice = true
+        return handicapEpoch
+    }
+
+    /// Rate the rolls and draw a weighted roll for the side on move. Returns `false`
+    /// when the roll went stale meanwhile (new game, scripted dice): nothing is set.
+    private func finishHandicappedRoll(_ epoch: Int) async -> Bool {
+        let values = await computeRollValues()
+        guard handicapEpoch == epoch else { return false }
+        preparingDice = false
+        guard !Task.isCancelled else { return false }
+        drawHandicapRoll(values: values)
+        return true
+    }
+
+    /// Draw the side on move's dice from its handicap distribution — tilted by its β
+    /// when `values` are known, fair otherwise — with `handicapUniform`, and publish
+    /// them as the pending roll.
+    private func drawHandicapRoll(values: [Float]?) {
+        let beta = handicap?.setup[currentPlayer].diceTilt ?? 0
+        let (d1, d2) = HandicapDice.weightedFaces(u1: handicapUniform(), u2: handicapUniform(),
+                                                  values: values, beta: beta)
+        game.dice.set(d1, d2)
+        markRolled()
+    }
+
+    /// The computer's turn in a handicap game whose dice need the net: rate the rolls,
+    /// draw (weighted or fair), apply the reroll rule while rerolls remain
+    /// (`HandicapDice.shouldReroll`, the harness policy), then play as usual.
+    private func takeHandicappedAITurn() {
+        lastComputerReroll = nil
+        phase = .aiThinking
+        let epoch = handicapEpoch
+        let turnEpoch = aiTurnEpoch
+        preparingDice = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let values = await self.computeRollValues()
+            guard self.handicapEpoch == epoch, self.aiTurnEpoch == turnEpoch else { return }
+            self.preparingDice = false
+            self.drawHandicapRoll(values: values)
+            let mover = self.currentPlayer
+            if let values {
+                while self.rerollsLeft(mover) > 0,
+                      HandicapDice.shouldReroll(values: values, d1: self.game.dice.die1.value,
+                                                d2: self.game.dice.die2.value,
+                                                beta: self.handicap?.setup[mover].diceTilt ?? 0) {
+                    self.handicap?.rerollsLeft[mover] -= 1
+                    self.lastComputerReroll = mover
+                    self.drawHandicapRoll(values: values)
+                }
+            }
+            self.playAITurn(animateDiceRoll: true)
+        }
     }
 
     // ── Remote move (online multiplayer, #134) ──────────────────────────────────
@@ -1271,8 +1558,9 @@ public final class GameSession: ObservableObject {
                               agent: Agent? = nil,
                               searchConfig: SearchConfig = .standard,
                               animationTimings: AnimationTimings = .standard,
-                                            autoRoll: Bool = false,
-                              inPlayAnalysis: Bool = false) -> GameSession {
+                              autoRoll: Bool = false,
+                              inPlayAnalysis: Bool = false,
+                              handicapAgent: Agent? = nil) -> GameSession {
         let starting = Color(rawValue: save.startingPlayer) ?? .black
         let aiColor = save.aiColor.flatMap { Color(rawValue: $0) }
         let session = GameSession(startingPlayer: starting,
@@ -1282,7 +1570,15 @@ public final class GameSession: ObservableObject {
                                   searchConfig: searchConfig,
                                   animationTimings: animationTimings,
                                   autoRoll: autoRoll,
-                                  inPlayAnalysis: inPlayAnalysis)
+                                  inPlayAnalysis: inPlayAnalysis,
+                                  handicap: save.handicap?.setup,
+                                  handicapAgent: handicapAgent)
+        // Restore the tokens left (#148); the start position already has the head start.
+        if let saved = save.handicap, let live = session.handicap {
+            session.handicap = HandicapGameState(setup: live.setup,
+                                                 rerollsLeft: saved.rerollsLeft,
+                                                 hintsLeft: saved.hintsLeft)
+        }
         session.replay(save.history)
         // Restore the roll of the turn in progress (#171); `start()` re-enters that
         // turn with it. Invalid dice (already dropped on decode) or a finished game

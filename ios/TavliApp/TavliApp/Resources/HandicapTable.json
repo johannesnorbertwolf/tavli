@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "source": "unmeasured — regenerate with ios/scripts/make_handicap_table.py from docs/handicap-e1-tier1.json",
+  "cells": {
+    "weighted_dice:2": {"logOddsShift": null},
+    "weighted_dice:4": {"logOddsShift": null},
+    "weighted_dice:8": {"logOddsShift": null},
+    "weighted_dice:16": {"logOddsShift": null},
+    "rerolls:1": {"logOddsShift": null},
+    "rerolls:2": {"logOddsShift": null},
+    "rerolls:3": {"logOddsShift": null},
+    "rerolls:4": {"logOddsShift": null}
+  }
+}

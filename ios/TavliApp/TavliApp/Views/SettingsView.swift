@@ -67,6 +67,10 @@ struct SettingsView: View {
                                   isOn: $showWinProbability,
                                   caption: "Show your live chance of winning during the game.")
                     }
+
+                    // #148: the one handicap entry, a card of its own at the end
+                    // (builder in HandicapSettingsView).
+                    HandicapSettingsRow()
                 }
                 .compactPadding(28, compact: 16)
                 .frame(maxWidth: 560)

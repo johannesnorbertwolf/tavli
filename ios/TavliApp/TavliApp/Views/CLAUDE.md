@@ -30,6 +30,8 @@ neither depends on views.
 | `VariantChrome.swift` (#143) | `VariantPickerView` (segmented variant choice + name + rules summary + `AIUnavailableBadge` when the model isn't bundled) used in the online lobby; `EvalScale` (win chance "63%" vs **equity** "+0.52" for `maxPoints > 1` variants — review, drill, win bar, debug, resign warning); `ResultCopy` (draw + "Double game · 2 points" lines). |
 | `FullTavliViews.swift` (#144) | Full Tavli chrome, presentation only over the engine's `FullTavliSession`: `FullTavliScoreboardView` (score + "Game 2 of 3 · Fevga" during play), `FullTavliLegOverlayView` (a leg's win overlay → "Continue"), `FullTavliTransitionView` (between legs: score, next variant + one-line `rulesReminder`, "Start …"), `FullTavliResultView` (session verdict / drawn session + per-leg breakdown). |
 | `StatsPanelView.swift` | #64 — pure human W/L panel (overall, sparkline, streak). |
+| `HandicapSettingsView.swift` (#148) | The handicap **builder** (sheet from Settings' Handicap card): master toggle, "Playing the computer / Two players" label switch, one card per tier-1 item (favoured-side picker + slider/toggle + one-line caption; hints are always "You" vs the computer), applicability note (house Plakoto single offline games only; warns when the next game's variant/length won't use it), live estimate. Edits `HandicapPreferences` (`HandicapSettings.swift`, target root). |
+| `HandicapViews.swift` (#148) | Handicap chrome, all hidden unless a handicap is active: `HandicapSettingsRow` (the one Settings card, "Off"/summary), `HandicapEstimateModel` + `HandicapEstimateView` (net position estimate + `HandicapTable.json`, "not measured yet" / "approx." notes, full-strength footnote), `HandicapTagButton` + `HandicapInfoSheet` (in-game tag → setup, tokens left, estimate, "Dice favour X"), `HandicapActionsRow` (Reroll/Hint (n left) above Undo/Done, side by side or stacked via `ViewThatFits`; computer-reroll note), `HandicapReviewNote`, `HandicapRecordBlock` (My Record, only once a handicap game exists). |
 | `App.swift` | `@main` — `WindowGroup { RootView() }` + `AppearanceOverride` (#191): follows iOS light/dark by default; the Appearance setting sets every window's `overrideUserInterfaceStyle` (reaches sheets, alerts, Game Center). Dark-only `UISegmentedControl` styling. (Was light-only before #191; `Info.plist` no longer pins `UIUserInterfaceStyle`.) |
 
 **Variants (#143).** The selected variant (`GameVariantSetting`, `AppSettings.swift`, key
@@ -88,3 +90,9 @@ safe height, chrome in a rail. `ChromeType` sizes scale by 0.86 on a phone (set 
   there too and default to **best-of-three** (chosen in the new-game sheet / lobby, not the Settings sheet).
   Retired values are rewritten once at launch (`AppSettings.migrateLegacySettings()` from `App.init`, #189):
   the strength slider → nearest level, Play as `ask` → `random`.
+- **Handicaps (#148) are invisible when off.** Every hook (`HandicapTagButton`, the
+  `ControlsView` actions row, the review note, the hint overlay in `PlayableBoardView`, the
+  My Record block) renders only when `session.handicap` / `record.handicap` / handicap stats
+  exist; the off path keeps the exact pre-#148 view tree. New handicap UI goes in the
+  `Handicap*.swift` files; `HandicapPreferences` (`HandicapSettings.swift`) is the only
+  settings key (`settings.handicap`, JSON).

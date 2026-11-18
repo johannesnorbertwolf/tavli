@@ -151,8 +151,13 @@ struct RootView: View {
                         autosaveName = Self.newAutosaveName()
                         match = Self.newMatch(baseStartingPlayer: startingPlayer)
                     }
+                    // A handicap (#148) only for a standalone single game (never a Full
+                    // Tavli leg or a best-of-three game).
+                    let handicap = fullTavli == nil
+                        ? HandicapPreferences.setupForNewGame(humanColor: pending, variant: pendingVariant)
+                        : nil
                     session = Self.makeSession(humanColor: pending, startingPlayer: startingPlayer,
-                                               variant: pendingVariant)
+                                               variant: pendingVariant, handicap: handicap)
                 } onBack: {
                     pendingHumanColor = nil
                     // Backing out of the first leg's roll cancels the (unplayed) Full
@@ -178,6 +183,7 @@ struct RootView: View {
             } else {
                 ModePickerView(store: store,
                                stats: statsStore.stats,
+                               handicapStats: statsStore.handicapStats,
                                onPlay: {
                                    // The remembered setup (#189): colour (Random draws a
                                    // side now), variant and length from the new-game sheet.
@@ -216,7 +222,8 @@ struct RootView: View {
             // neither; a two-player game isn't the human's record).
             session.onGameFinished = { [statsStore, humanColor, gameLog, autosaveName, store] winner, points in
                 if let winner, session.aiColor != nil {
-                    statsStore.record(humanWon: winner == humanColor)
+                    // A handicap game (#148) is logged apart from the vs-Computer record.
+                    statsStore.record(humanWon: winner == humanColor, handicap: session.record.handicap)
                 }
                 // Persist EVERY finished game to the append-only log (#104), regardless
                 // of outcome or whether it was ever manually saved. `record.outcome` is
@@ -331,11 +338,16 @@ struct RootView: View {
     private func beginGame(humanColor color: EngineColor, variant: GameVariantSetting) {
         guard AppSettings.aiAvailable(variant) else { return }
         leaveFullTavli()
-        if let starter = AppSettings.startingPlayer.startingPlayer(humanColor: color) {
+        // Handicap (#148): only for a single house-Plakoto game; "moves first" skips the
+        // opening roll.
+        let handicap = HandicapPreferences.setupForNewGame(humanColor: color, variant: variant)
+        if let starter = handicap?.forcedStarter
+            ?? AppSettings.startingPlayer.startingPlayer(humanColor: color) {
             humanColor = color
             autosaveName = Self.newAutosaveName()
             match = Self.newMatch(baseStartingPlayer: starter)
-            session = Self.makeSession(humanColor: color, startingPlayer: starter, variant: variant)
+            session = Self.makeSession(humanColor: color, startingPlayer: starter, variant: variant,
+                                       handicap: handicap)
         } else {
             pendingVariant = variant
             pendingHumanColor = color   // run the opening-roll ceremony
@@ -351,9 +363,11 @@ struct RootView: View {
         autosaveName = Self.newAutosaveName()
         match = nil
         leaveFullTavli()
+        let handicap = HandicapPreferences.setupForNewGame(humanColor: nil, variant: variant)   // #148
         session = Self.makeSession(humanColor: .white,
-                                   startingPlayer: variant.variant.startingPlayer(default: .white),
-                                   variant: variant, vsAI: false)
+                                   startingPlayer: handicap?.forcedStarter
+                                       ?? variant.variant.startingPlayer(default: .white),
+                                   variant: variant, vsAI: false, handicap: handicap)
     }
 
     /// A fresh best-of-three `MatchState` when match mode is selected (#145), else
@@ -441,11 +455,15 @@ struct RootView: View {
                 break
             }
         }
+        // A two-player handicap game (#148) needs the net for its dice/hints.
+        let handicapAgent = agent == nil && save.handicap?.setup.needsEvaluator == true
+            ? GameSession.makeAgent(config: GameConfig(variantID: save.variant)) : nil
         let s = GameSession.resume(from: save, agent: agent,
                                    searchConfig: AppSettings.searchConfig,
                                    animationTimings: AppSettings.animationTimings,
                                    autoRoll: AppSettings.autoRoll,
-                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled)
+                                   inPlayAnalysis: AppSettings.inPlayAnalysisEnabled,
+                                   handicapAgent: handicapAgent)
         return Resumed(session: s, humanColor: human, name: save.name,
                        fullTavli: fullTavli, screen: nil)
     }
@@ -508,8 +526,12 @@ struct RootView: View {
     @MainActor
     private static func makeSession(humanColor: EngineColor, startingPlayer: EngineColor,
                                     variant: GameVariantSetting = .plakoto,
-                                    vsAI: Bool = true) -> GameSession {
+                                    vsAI: Bool = true,
+                                    handicap: HandicapSetup? = nil) -> GameSession {
         let config = variant.config
+        // Two players have no agent; a handicap that needs the net gets one (#148).
+        let handicapAgent = !vsAI && handicap?.needsEvaluator == true
+            ? GameSession.makeAgent(config: config) : nil
         let session = GameSession(
             startingPlayer: startingPlayer,
             config: config,
@@ -518,7 +540,9 @@ struct RootView: View {
             searchConfig: AppSettings.searchConfig,
             animationTimings: AppSettings.animationTimings,
             autoRoll: AppSettings.autoRoll,
-            inPlayAnalysis: vsAI && AppSettings.inPlayAnalysisEnabled
+            inPlayAnalysis: vsAI && AppSettings.inPlayAnalysisEnabled,
+            handicap: handicap,
+            handicapAgent: handicapAgent
         )
         session.start()
         return session
@@ -543,6 +567,8 @@ private enum FullTavliScreen: Equatable {
 private struct ModePickerView: View {
     let store: SaveStore
     let stats: HumanGameStats
+    /// Handicap games' record (#148); its block shows only once one exists.
+    var handicapStats: HumanGameStats = .empty
     /// Start a vs-AI game with the remembered setup (#189).
     let onPlay: () -> Void
     /// Start a two-player (pass-and-play) game of the selected variant (#143).
@@ -800,11 +826,16 @@ private struct ModePickerView: View {
                     Spacer(minLength: 0)
                     StatsPanelView(stats: stats)
                         .padding(.horizontal, ChromeType.isCompact ? 16 : 24)
+                    if handicapStats.total > 0 {
+                        HandicapRecordBlock(stats: handicapStats)
+                            .padding(.horizontal, ChromeType.isCompact ? 16 : 24)
+                            .padding(.top, 12)
+                    }
                     Spacer(minLength: 0)
                 }
             }
         }
-        .presentationDetents([.height(480)])
+        .presentationDetents([.height(handicapStats.total > 0 ? 680 : 480)])
         .presentationDragIndicator(.visible)
     }
 
