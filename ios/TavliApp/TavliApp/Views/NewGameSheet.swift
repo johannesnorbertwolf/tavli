@@ -135,7 +135,7 @@ struct NewGameSheet: View {
         return Button { level = n } label: {
             Text("\(n)")
                 .font(ChromeType.callout.weight(.semibold).monospacedDigit())
-                .foregroundStyle(selected ? SColor.white : ChromeTheme.ink)
+                .foregroundStyle(selected ? ChromeKit.onAccent : ChromeTheme.ink)
                 .frame(maxWidth: .infinity, minHeight: isCompact ? 44 : 50)
                 .background(selected ? ChromeTheme.undoTint : ChromeKit.trackColor)
                 .cornerRadius(ChromeKit.buttonRadius - 2)

@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tavlo C variants</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 2060px; background: #1c1c1e; color: #f2f2f2; padding: 48px 60px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; }
+  h1 { font-size: 34px; font-weight: 700; }
+  h2 { font-size: 26px; font-weight: 700; margin-top: 56px; }
+  .sub { font-size: 18px; color: #b8b8bc; margin-top: 6px; max-width: 1900px; line-height: 1.4; }
+  .grid { display: grid; grid-template-columns: repeat(4, 440px); gap: 40px; margin-top: 32px; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .label { font-size: 22px; font-weight: 700; }
+  .blurb { font-size: 15px; color: #b8b8bc; line-height: 1.35; min-height: 42px; }
+  .sw { display: flex; gap: 4px; }
+  .sw span { flex: 1; height: 22px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .pair { display: flex; gap: 12px; align-items: flex-start; }
+  .shot { border-radius: 26px; box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 16px 40px rgba(0,0,0,.5); }
+  .g { width: 300px; } .s { width: 128px; border-radius: 14px; }
+  .lcd { display: grid; grid-template-columns: repeat(4, 440px); gap: 40px; margin-top: 24px; }
+  .panel { position: relative; width: 440px; height: 330px; overflow: hidden; border-radius: 22px;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.14); }
+  .panel img { position: absolute; left: 0; top: -260px; width: 440px; }
+  /* LCD approximation: backlight leak lifts every value (screen blend with a dark,
+     slightly cool grey), plus edge bleed. */
+  .panel.lcd-sim::after { content: ''; position: absolute; inset: 0; mix-blend-mode: screen;
+    background: radial-gradient(ellipse at 50% 120%, rgba(40,42,48,.55), rgba(0,0,0,0) 60%),
+      radial-gradient(ellipse at 50% -20%, rgba(36,38,44,.45), rgba(0,0,0,0) 55%), #0f0f11; }
+  .cap { font-size: 16px; margin-top: 10px; font-weight: 600; }
+  .cap span { color: #9a9a9f; font-weight: 400; }
+  .note { font-size: 16px; color: #b8b8bc; line-height: 1.45; margin-top: 22px; max-width: 1900px; }
+</style>
+</head>
+<body>
+<h1>Tavlo — variants of C · Walnut (#191)</h1>
+<div class="sub">All four keep C's dark walnut board (walnut frame, near-black play surface, cream-gold points). Only the page, surfaces and text change. Game screen mid-move, start screen beside it.</div>
+<div class="grid" id="grid"></div>
+
+<h2>True black vs espresso-black on an LCD iPad (approximation)</h2>
+<div class="lcd" id="lcd"></div>
+<div class="note">An LCD can't switch pixels off: the backlight leaks through, so #000 shows up as roughly #0f0f0f, a flat, slightly cool grey with a brighter glow toward the edges. The simulation lifts every value with a screen blend of #0f0f11 plus edge bleed. True black (C2) loses its "void" and turns into neutral charcoal that fights the warm text. Espresso-black (C3) lifts to a warm dark brown, so it still reads as intended. On OLED, C3 is visibly brown-black rather than black, but it stays deep and saturated.</div>
+<script src="themes.js"></script>
+<script>
+const grid = document.getElementById('grid');
+for (const k of ['c1', 'c2', 'c3', 'c4']) {
+  const t = THEMES[k];
+  const sw = ['bg', 'surface', 'elevated', 'heading', 'text', 'text2', 'accent', 'frameMid', 'tri']
+    .map(x => `<span title="${x}" style="background:${t[x] || t.text}"></span>`).join('');
+  grid.insertAdjacentHTML('beforeend', `<div class="col">
+    <div class="label">${t.name}</div><div class="blurb">${t.blurb}</div><div class="sw">${sw}</div>
+    <div class="pair"><img class="shot g" src="renders/${k}-game.png"><img class="shot s" src="renders/${k}-start.png"></div>
+  </div>`);
+}
+const lcd = document.getElementById('lcd');
+for (const [k, sim, title] of [['c2', false, 'C2 true black · OLED'], ['c2', true, 'C2 true black · LCD (sim)'],
+                               ['c3', false, 'C3 espresso · OLED'], ['c3', true, 'C3 espresso · LCD (sim)']]) {
+  lcd.insertAdjacentHTML('beforeend', `<div><div class="panel ${sim ? 'lcd-sim' : ''}"><img src="renders/${k}-start.png"></div>
+    <div class="cap">${title} <span>bg ${THEMES[k].bg}${sim ? ' → lifted' : ''}</span></div></div>`);
+}
+</script>
+</body>
+</html>

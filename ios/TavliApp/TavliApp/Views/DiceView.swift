@@ -23,7 +23,7 @@ private func usedDiceFlags(values: [Int], built: [HalfMove]) -> [Bool] {
 
 /// Design palette for the dice (from docs/design — the Caramel board).
 private enum DiceStyle {
-    static let ivory   = SColor(red: 245 / 255, green: 234 / 255, blue: 208 / 255) // #f5ead0
+    static let ivory   = SColor(light: 0xf5ead0, dark: 0xefe2c2) // #f5ead0; walnut face in dark (#191)
     static let pip     = SColor(red: 42 / 255, green: 20 / 255, blue: 8 / 255)     // #2a1408
     static let edge    = pip
     static let highlight = SColor.white.opacity(0.7)

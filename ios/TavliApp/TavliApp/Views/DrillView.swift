@@ -56,7 +56,7 @@ struct DrillView: View {
                 content(railHeader: railHeader)
             }
         }
-        .background(SColor(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
         .task {
             await model.start(record: record, precomputed: precomputed,
                               agent: agent, humanColor: humanColor)
@@ -82,7 +82,7 @@ struct DrillView: View {
             if case .drilling = model.phase {
                 Text("· Blunder \(model.index + 1) of \(model.total)")
                     .font(.callout)
-                    .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                    .foregroundStyle(ChromeKit.inkDim(0.6))
             }
             Spacer()
             Button("Done") { dismiss() }
@@ -99,12 +99,12 @@ struct DrillView: View {
             centered {
                 ProgressView().progressViewStyle(.circular).tint(ChromeTheme.ink)
                 Text("Finding your blunders…")
-                    .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                    .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
             }
         case .empty:
             centered {
                 Text("No blunders to drill — well played!")
-                    .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                    .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
             }
         case .drilling:
             if let card = model.session, let eval = model.current {
@@ -131,7 +131,7 @@ struct DrillView: View {
                 .foregroundStyle(ChromeTheme.ink)
             Text(drillSummary(s))
                 .font(.title3)
-                .foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                .foregroundStyle(ChromeKit.inkDim(0.7))
             Button("Done") { dismiss() }
                 .font(.title3.bold())
                 .padding(.horizontal, 28).padding(.vertical, 12)
@@ -377,7 +377,7 @@ private struct DrillCard: View {
                         VStack(alignment: .leading, spacing: 10) {
                             if let railHeader { railHeader }
                             Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
-                                .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                                .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                             feedbackLine
                             movesPanel
                             Spacer(minLength: 0)
@@ -393,7 +393,7 @@ private struct DrillCard: View {
                 // Board edge-to-edge; actions directly under the feedback.
                 VStack(spacing: 10) {
                     Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
-                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                         .padding(.horizontal, 12)
                     board
                         .frame(width: layout.boardSide, height: layout.boardSide)
@@ -416,7 +416,7 @@ private struct DrillCard: View {
                         .padding(12)
                     VStack(alignment: .leading, spacing: 18) {
                         Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
-                            .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                            .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                         feedbackLine
                         movesPanel
                         Spacer(minLength: 0)
@@ -428,7 +428,7 @@ private struct DrillCard: View {
             } else {
                 VStack(spacing: 14) {
                     Text("Dice \(eval.die1) · \(eval.die2) — find a better move")
-                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                     board.layoutPriority(1).padding(.horizontal, 12)
                     feedbackLine
                     movesPanel
@@ -469,11 +469,11 @@ private struct DrillCard: View {
             // A pending two-dice route choice (#169) asks for the in-between point.
             Text(session.routeChoice != nil ? LocalizedStringKey("Choose where to land in between")
                                             : LocalizedStringKey("Make your move on the board."))
-                .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+                .font(.callout).foregroundStyle(ChromeKit.inkDim(0.55))
         case .checking:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text("Checking…").font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                Text("Checking…").font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
             }
         case .correct(let msg):
             Text(msg).font(.callout.bold()).foregroundStyle(DrillTint.correct)
@@ -507,16 +507,16 @@ private struct DrillCard: View {
                         Text("−\(gap) win chance vs your move")
                     }
                 }
-                .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+                .font(.caption).foregroundStyle(ChromeKit.inkDim(0.55))
             }
         }
     }
 
     private func moveRow(label: LocalizedStringKey, move: MoveNotation, pct: Double, tint: SColor) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+            Text(label).font(.caption).foregroundStyle(ChromeKit.inkDim(0.55))
             MoveNotationLine(notation: move, font: .callout.bold(), color: tint)
-            Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeTheme.ink.opacity(0.5))
+            Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeKit.inkDim(0.5))
         }
     }
 
@@ -569,9 +569,9 @@ private struct DrillButton: ButtonStyle {
 }
 
 private enum DrillTint {
-    static let correct = SColor(hex: 0x6a8a4a)   // olive-green
-    static let close = SColor(hex: 0xa87a3e)     // amber
-    static let wrong = SColor(hex: 0xa83a2a)     // deep red
+    static let correct = SColor(light: 0x6a8a4a, dark: 0x86c46c)   // olive-green
+    static let close = SColor(light: 0xa87a3e, dark: 0xe09a42)     // amber
+    static let wrong = SColor(light: 0xa83a2a, dark: 0xff8d72)     // deep red
 }
 
 // MARK: - Previews

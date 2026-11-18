@@ -203,7 +203,7 @@ struct GameView: View {
             let landscape = proxy.size.width >= proxy.size.height
             let layout = ChromeLayout(proxy)
             ZStack {
-                SColor(hex: 0xece6dc).ignoresSafeArea()
+                ChromeKit.pageColor.ignoresSafeArea()
 
                 if layout.mode == .compactLandscape {
                     // iPhone landscape (#109): full-safe-height board on the leading
@@ -1361,7 +1361,7 @@ private struct HistoryView: View {
                 }
             }
         }
-        .background(SColor(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
     }
 
     private var titleBar: some View {
@@ -1517,18 +1517,19 @@ enum ChromeType {
 enum ChromeTheme {
     // Explicit `SwiftUI.Color` (not the file-private `SColor` alias) so this
     // internal type — shared with `GameReviewView` — exposes no private type.
-    static let ink = SwiftUI.Color(hex: 0x3a2510)            // frame text from the Caramel palette
-    static let undoTint = SwiftUI.Color(hex: 0xa87a3e)       // beechwood amber
-    static let doneTint = SwiftUI.Color(hex: 0x6a8a4a)       // muted olive-green
-    static let surrenderTint = SwiftUI.Color(hex: 0xb05a44)  // muted brick red (resign)
+    // Light value first (unchanged); the dark value is C3 (#191, `ChromeKit`).
+    static let ink = SwiftUI.Color(light: 0x3a2510, dark: 0xf4d7a4)            // frame text / cream-caramel
+    static let undoTint = SwiftUI.Color(light: 0xa87a3e, dark: 0xe09a42)       // beechwood amber / caramel
+    static let doneTint = SwiftUI.Color(light: 0x6a8a4a, dark: 0x86c46c)       // muted olive-green
+    static let surrenderTint = SwiftUI.Color(light: 0xb05a44, dark: 0xff8d72)  // muted brick red (resign)
 
     static func displayName(_ c: TavliEngine.Color) -> String {
         c == .white ? String(localized: "White") : String(localized: "Red")
     }
 
     static func checkerColor(_ c: TavliEngine.Color) -> SwiftUI.Color {
-        c == .white ? SwiftUI.Color(hex: 0xfbeed1)           // ivory (board triangle fill)
-                    : SwiftUI.Color(hex: 0xa83a2a)           // caramel-harmonized deep red
+        c == .white ? SwiftUI.Color(light: 0xfbeed1, dark: 0xf3e8cc)  // ivory (board triangle fill)
+                    : SwiftUI.Color(light: 0xa83a2a, dark: 0xe04a35)  // caramel-harmonized deep red
     }
 }
 

@@ -582,7 +582,7 @@ private struct ModePickerView: View {
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             VStack(spacing: 0) {
                 topBar
                 FitOrScroll {
@@ -678,7 +678,7 @@ private struct ModePickerView: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(ChromeType.title3)
-                .foregroundStyle(CaramelPalette.frameText.opacity(0.75))
+                .foregroundStyle(ChromeKit.iconInk)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
@@ -783,7 +783,7 @@ private struct ModePickerView: View {
     /// rather than the near-fullscreen system default.
     private var statsSheet: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             // A phone in landscape (#109) can't fit the 480 pt card; scroll there.
             FitOrScroll(enabled: ChromeType.isCompact) {
                 VStack(spacing: 16) {
@@ -920,7 +920,7 @@ private struct SavedGamesSheet: View {
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             VStack(spacing: 16) {
                 HStack {
                     Text("Saved games")
@@ -984,7 +984,7 @@ private struct SavedGameRow: View {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.fill")
                         .font(ChromeType.title3)
-                        .foregroundStyle(CaramelPalette.frameText.opacity(0.7))
+                        .foregroundStyle(ChromeKit.inkDim(0.7))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(meta.name)
                             .font(ChromeType.body.weight(.semibold))

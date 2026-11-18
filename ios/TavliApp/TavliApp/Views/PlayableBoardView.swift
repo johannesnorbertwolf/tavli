@@ -588,13 +588,13 @@ private func startScenarioSession() -> GameSession {
 #Preview("Frame highlight (default)") {
     PlayableBoardView(session: startScenarioSession(), highlightStyle: .frame)
         .padding(24)
-        .background(Color(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
 }
 
 #Preview("Fill highlight") {
     PlayableBoardView(session: startScenarioSession(), highlightStyle: .fill)
         .padding(24)
-        .background(Color(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
 }
 
 // A near-end position with borne-off checkers in both trays — White (25, top)
@@ -611,7 +611,7 @@ private func bearOffScenarioSession() -> GameSession {
 #Preview("Borne-off checkers in trays") {
     PlayableBoardView(session: bearOffScenarioSession())
         .padding(24)
-        .background(Color(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
 }
 
 // Bear-off target boxes on the right strip (top = White/25, bottom = Black/0).
@@ -623,7 +623,7 @@ private func bearOffScenarioSession() -> GameSession {
         TargetHighlightView(targets: [0, 25], style: .frame)
     }
     .padding(24)
-    .background(Color(hex: 0xece6dc))
+    .background(ChromeKit.pageColor)
 }
 
 #Preview("Bear-off targets (fill)") {
@@ -632,5 +632,5 @@ private func bearOffScenarioSession() -> GameSession {
         TargetHighlightView(targets: [0, 25], style: .fill)
     }
     .padding(24)
-    .background(Color(hex: 0xece6dc))
+    .background(ChromeKit.pageColor)
 }

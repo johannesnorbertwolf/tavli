@@ -317,7 +317,7 @@ fileprivate struct CheckerStyle {
         CheckersView(stacks: board.points.map(\.pieces))
     }
     .padding(24)
-    .background(Color(hex: 0xece6dc))
+    .background(ChromeKit.pageColor)
 }
 
 #Preview("Pinned + tall stacks") {
@@ -338,5 +338,5 @@ fileprivate struct CheckerStyle {
         CheckersView(stacks: board.points.map(\.pieces))
     }
     .padding(24)
-    .background(Color(hex: 0xece6dc))
+    .background(ChromeKit.pageColor)
 }
