@@ -27,7 +27,7 @@ import sys
 DICE_KINDS = ("weighted_dice", "rerolls")
 TIER2_KINDS = ("overshoot", "safe_point", "checkers", "smaller_house")
 # The app's steps (HandicapSetup.diceTiltSteps without 0, and 1...maxRerolls).
-APP_CELLS = [f"weighted_dice:{b}" for b in (2, 4, 8, 16)] + [f"rerolls:{n}" for n in (1, 2, 3, 4)]
+APP_CELLS = [f"weighted_dice:{b}" for b in (0.3, 0.6, 1.2, 2)] + [f"rerolls:{n}" for n in (1, 2, 3, 4)]
 
 
 def logit(p: float) -> float:

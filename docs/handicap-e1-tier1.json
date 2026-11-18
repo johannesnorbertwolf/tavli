@@ -1,0 +1,767 @@
+{
+ "model": "models/gold_v11.pth",
+ "pairs_per_cell": 1000,
+ "base_seed": 11,
+ "lookahead_plies": 1,
+ "reroll_margin": 0.02,
+ "bearoff_db": "on (from config) except geometry cells",
+ "baseline_first_mover_win": 0.53,
+ "cells": [
+  {
+   "label": "baseline",
+   "cell": [],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.5,
+   "ci_lo": 0.5,
+   "ci_hi": 0.5,
+   "se": 0.0,
+   "first_mover_win": 0.53,
+   "mean_plies": 106.554,
+   "pin_win_frac": 0.049,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [],
+   "net_estimate": 0.5,
+   "shift": 0.0
+  },
+  {
+   "label": "first_mover:1",
+   "cell": [
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4705,
+   "ci_lo": 0.4397194885116003,
+   "ci_hi": 0.5012805114883996,
+   "se": 0.015704342596122266,
+   "first_mover_win": 0.471,
+   "mean_plies": 106.5105,
+   "pin_win_frac": 0.0485,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "tempo"
+   ],
+   "net_estimate": 0.47482220662964725,
+   "shift": -0.029500000000000026
+  },
+  {
+   "label": "weighted_dice:0.3",
+   "cell": [
+    [
+     "weighted_dice",
+     0.3
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.463,
+   "ci_lo": 0.4459461181989413,
+   "ci_hi": 0.48005388180105873,
+   "se": 0.008700960102580963,
+   "first_mover_win": 0.506,
+   "mean_plies": 105.69,
+   "pin_win_frac": 0.055,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.03699999999999998
+  },
+  {
+   "label": "weighted_dice:0.6",
+   "cell": [
+    [
+     "weighted_dice",
+     0.6
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.438,
+   "ci_lo": 0.4192261312525161,
+   "ci_hi": 0.4567738687474839,
+   "se": 0.009578504463001966,
+   "first_mover_win": 0.486,
+   "mean_plies": 105.538,
+   "pin_win_frac": 0.054,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.062
+  },
+  {
+   "label": "weighted_dice:1.2",
+   "cell": [
+    [
+     "weighted_dice",
+     1.2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.3645,
+   "ci_lo": 0.3451478174210099,
+   "ci_hi": 0.38385218257899006,
+   "se": 0.009873562540301067,
+   "first_mover_win": 0.398,
+   "mean_plies": 105.8665,
+   "pin_win_frac": 0.0545,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.1355
+  },
+  {
+   "label": "weighted_dice:2",
+   "cell": [
+    [
+     "weighted_dice",
+     2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.2795,
+   "ci_lo": 0.2608830980924153,
+   "ci_hi": 0.2981169019075848,
+   "se": 0.00949841934060447,
+   "first_mover_win": 0.313,
+   "mean_plies": 106.1105,
+   "pin_win_frac": 0.056,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.22049999999999997
+  },
+  {
+   "label": "rerolls:1",
+   "cell": [
+    [
+     "rerolls",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.451,
+   "ci_lo": 0.43147873471830783,
+   "ci_hi": 0.4705212652816922,
+   "se": 0.009959829225353163,
+   "first_mover_win": 0.473,
+   "mean_plies": 105.856,
+   "pin_win_frac": 0.053,
+   "capped": 0,
+   "mean_rerolls": 0.9795,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.04899999999999999
+  },
+  {
+   "label": "rerolls:2",
+   "cell": [
+    [
+     "rerolls",
+     2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4205,
+   "ci_lo": 0.4009461850453861,
+   "ci_hi": 0.4400538149546139,
+   "se": 0.00997643620133363,
+   "first_mover_win": 0.435,
+   "mean_plies": 106.5755,
+   "pin_win_frac": 0.0485,
+   "capped": 0,
+   "mean_rerolls": 1.924,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.07950000000000002
+  },
+  {
+   "label": "rerolls:3",
+   "cell": [
+    [
+     "rerolls",
+     3
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.3855,
+   "ci_lo": 0.3652971631145966,
+   "ci_hi": 0.40570283688540343,
+   "se": 0.010307569839491538,
+   "first_mover_win": 0.417,
+   "mean_plies": 106.6495,
+   "pin_win_frac": 0.051,
+   "capped": 0,
+   "mean_rerolls": 2.8245,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.11449999999999999
+  },
+  {
+   "label": "rerolls:4",
+   "cell": [
+    [
+     "rerolls",
+     4
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.353,
+   "ci_lo": 0.3335485932944986,
+   "ci_hi": 0.37245140670550136,
+   "se": 0.009924187094643561,
+   "first_mover_win": 0.362,
+   "mean_plies": 106.121,
+   "pin_win_frac": 0.0515,
+   "capped": 0,
+   "mean_rerolls": 3.6805,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.14700000000000002
+  },
+  {
+   "label": "pip_headstart:1",
+   "cell": [
+    [
+     "pip_headstart",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4795,
+   "ci_lo": 0.4593743992038147,
+   "ci_hi": 0.4996256007961853,
+   "se": 0.010268163671523107,
+   "first_mover_win": 0.51,
+   "mean_plies": 105.9295,
+   "pin_win_frac": 0.046,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "net_estimate": 0.4769843320051829,
+   "shift": -0.020500000000000018
+  },
+  {
+   "label": "pip_headstart:2",
+   "cell": [
+    [
+     "pip_headstart",
+     2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4585,
+   "ci_lo": 0.43765192943108533,
+   "ci_hi": 0.4793480705689147,
+   "se": 0.01063677069842587,
+   "first_mover_win": 0.494,
+   "mean_plies": 104.9245,
+   "pin_win_frac": 0.053,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "net_estimate": 0.4529174491763115,
+   "shift": -0.04149999999999998
+  },
+  {
+   "label": "pip_headstart:4",
+   "cell": [
+    [
+     "pip_headstart",
+     4
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.42,
+   "ci_lo": 0.3997059809991415,
+   "ci_hi": 0.44029401900085846,
+   "se": 0.010354091326968623,
+   "first_mover_win": 0.456,
+   "mean_plies": 103.019,
+   "pin_win_frac": 0.0735,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "net_estimate": 0.42547819846206236,
+   "shift": -0.08000000000000002
+  },
+  {
+   "label": "pip_headstart:6",
+   "cell": [
+    [
+     "pip_headstart",
+     6
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4085,
+   "ci_lo": 0.3883221133041266,
+   "ci_hi": 0.42867788669587337,
+   "se": 0.010294840150955824,
+   "first_mover_win": 0.459,
+   "mean_plies": 101.5165,
+   "pin_win_frac": 0.076,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "net_estimate": 0.4349342385927836,
+   "shift": -0.09150000000000003
+  },
+  {
+   "label": "pip_headstart:8",
+   "cell": [
+    [
+     "pip_headstart",
+     8
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.424,
+   "ci_lo": 0.4038845046903749,
+   "ci_hi": 0.4441154953096251,
+   "se": 0.010263007811033214,
+   "first_mover_win": 0.485,
+   "mean_plies": 101.055,
+   "pin_win_frac": 0.0665,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position"
+   ],
+   "net_estimate": 0.4692374335394966,
+   "shift": -0.07600000000000001
+  },
+  {
+   "label": "pip_headstart:2 + first_mover:1",
+   "cell": [
+    [
+     "pip_headstart",
+     2
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4215,
+   "ci_lo": 0.391561292168388,
+   "ci_hi": 0.451438707831612,
+   "se": 0.015274850934495909,
+   "first_mover_win": 0.42,
+   "mean_plies": 105.3755,
+   "pin_win_frac": 0.062,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position",
+    "tempo"
+   ],
+   "net_estimate": 0.4329559778173765,
+   "shift": -0.07850000000000001
+  },
+  {
+   "label": "pip_headstart:4 + first_mover:1",
+   "cell": [
+    [
+     "pip_headstart",
+     4
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.384,
+   "ci_lo": 0.35396791454866033,
+   "ci_hi": 0.4140320854513397,
+   "se": 0.01532249257721413,
+   "first_mover_win": 0.384,
+   "mean_plies": 103.207,
+   "pin_win_frac": 0.086,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position",
+    "tempo"
+   ],
+   "net_estimate": 0.39208027306530213,
+   "shift": -0.11599999999999999
+  },
+  {
+   "label": "pip_headstart:8 + first_mover:1",
+   "cell": [
+    [
+     "pip_headstart",
+     8
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.3655,
+   "ci_lo": 0.3358794687510256,
+   "ci_hi": 0.3951205312489744,
+   "se": 0.015112515943354292,
+   "first_mover_win": 0.368,
+   "mean_plies": 100.6425,
+   "pin_win_frac": 0.081,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "position",
+    "tempo"
+   ],
+   "net_estimate": 0.426525067124102,
+   "shift": -0.1345
+  },
+  {
+   "label": "weighted_dice:0.3 + rerolls:1",
+   "cell": [
+    [
+     "weighted_dice",
+     0.3
+    ],
+    [
+     "rerolls",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.4295,
+   "ci_lo": 0.4093791765790976,
+   "ci_hi": 0.44962082342090237,
+   "se": 0.01026572623515428,
+   "first_mover_win": 0.444,
+   "mean_plies": 105.5565,
+   "pin_win_frac": 0.057,
+   "capped": 0,
+   "mean_rerolls": 0.9825,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.07050000000000001
+  },
+  {
+   "label": "weighted_dice:0.6 + rerolls:2",
+   "cell": [
+    [
+     "weighted_dice",
+     0.6
+    ],
+    [
+     "rerolls",
+     2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.364,
+   "ci_lo": 0.34448809386859186,
+   "ci_hi": 0.3835119061314081,
+   "se": 0.00995505414867761,
+   "first_mover_win": 0.395,
+   "mean_plies": 107.05,
+   "pin_win_frac": 0.0515,
+   "capped": 0,
+   "mean_rerolls": 1.9275,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.136
+  },
+  {
+   "label": "weighted_dice:1.2 + rerolls:2",
+   "cell": [
+    [
+     "weighted_dice",
+     1.2
+    ],
+    [
+     "rerolls",
+     2
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.2955,
+   "ci_lo": 0.2767493169266899,
+   "ci_hi": 0.31425068307331006,
+   "se": 0.00956667503740311,
+   "first_mover_win": 0.327,
+   "mean_plies": 106.8615,
+   "pin_win_frac": 0.0555,
+   "capped": 0,
+   "mean_rerolls": 1.921,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice"
+   ],
+   "net_estimate": null,
+   "shift": -0.20450000000000002
+  },
+  {
+   "label": "weighted_dice:0.6 + first_mover:1",
+   "cell": [
+    [
+     "weighted_dice",
+     0.6
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.3845,
+   "ci_lo": 0.3546048663723573,
+   "ci_hi": 0.41439513362764274,
+   "se": 0.015252619197776896,
+   "first_mover_win": 0.379,
+   "mean_plies": 105.8485,
+   "pin_win_frac": 0.0525,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice",
+    "tempo"
+   ],
+   "net_estimate": null,
+   "shift": -0.11549999999999999
+  },
+  {
+   "label": "rerolls:2 + first_mover:1",
+   "cell": [
+    [
+     "rerolls",
+     2
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.416,
+   "ci_lo": 0.39194747009991254,
+   "ci_hi": 0.4400525299000874,
+   "se": 0.012271698928616046,
+   "first_mover_win": 0.426,
+   "mean_plies": 105.843,
+   "pin_win_frac": 0.061,
+   "capped": 0,
+   "mean_rerolls": 1.918,
+   "on_distribution": true,
+   "bearoff_db": true,
+   "categories": [
+    "dice",
+    "tempo"
+   ],
+   "net_estimate": null,
+   "shift": -0.08400000000000002
+  },
+  {
+   "label": "weighted_dice:0.6 + pip_headstart:4",
+   "cell": [
+    [
+     "weighted_dice",
+     0.6
+    ],
+    [
+     "pip_headstart",
+     4
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.332,
+   "ci_lo": 0.31236314975645313,
+   "ci_hi": 0.3516368502435469,
+   "se": 0.010018801144666791,
+   "first_mover_win": 0.379,
+   "mean_plies": 103.543,
+   "pin_win_frac": 0.0665,
+   "capped": 0,
+   "mean_rerolls": 0.0,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "dice",
+    "position"
+   ],
+   "net_estimate": null,
+   "shift": -0.16799999999999998
+  },
+  {
+   "label": "rerolls:2 + pip_headstart:4",
+   "cell": [
+    [
+     "rerolls",
+     2
+    ],
+    [
+     "pip_headstart",
+     4
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.318,
+   "ci_lo": 0.2987988040078872,
+   "ci_hi": 0.3372011959921128,
+   "se": 0.009796528567404476,
+   "first_mover_win": 0.378,
+   "mean_plies": 103.302,
+   "pin_win_frac": 0.0705,
+   "capped": 0,
+   "mean_rerolls": 1.8915,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "dice",
+    "position"
+   ],
+   "net_estimate": null,
+   "shift": -0.182
+  },
+  {
+   "label": "weighted_dice:1.2 + rerolls:2 + pip_headstart:4 + first_mover:1",
+   "cell": [
+    [
+     "weighted_dice",
+     1.2
+    ],
+    [
+     "rerolls",
+     2
+    ],
+    [
+     "pip_headstart",
+     4
+    ],
+    [
+     "first_mover",
+     1
+    ]
+   ],
+   "pairs": 1000,
+   "games": 2000,
+   "rate": 0.153,
+   "ci_lo": 0.13539578760938462,
+   "ci_hi": 0.17060421239061538,
+   "se": 0.00898174101562009,
+   "first_mover_win": 0.151,
+   "mean_plies": 103.204,
+   "pin_win_frac": 0.0905,
+   "capped": 0,
+   "mean_rerolls": 1.7955,
+   "on_distribution": false,
+   "bearoff_db": true,
+   "categories": [
+    "dice",
+    "position",
+    "tempo"
+   ],
+   "net_estimate": null,
+   "shift": -0.347
+  }
+ ]
+}

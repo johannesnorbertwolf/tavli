@@ -180,6 +180,10 @@ public struct HandicapEstimate: Equatable, Sendable {
 }
 
 public enum HandicapEstimator {
+    /// Per head-start checker, the relative boost to the same side's dice-lever shift
+    /// (fitted on E1's head-start × dice combos: ≈ 1.4× at m = 4).
+    public static let headStartDiceInteraction = 0.1
+
     /// The position levers' estimate (head start ± moves first): White's win chance
     /// from the handicap start position, averaging the net's best 1-ply move value over
     /// the starter's 21 opening rolls (weighted). With "moves first" the favoured side
@@ -217,7 +221,9 @@ public enum HandicapEstimator {
             if items.rerolls > 0 { labels.append(HandicapTable.label("rerolls", Double(items.rerolls))) }
             let (shift, missing) = table.shift(for: labels)
             if missing.isEmpty {
-                logit += sign * shift
+                // E1: a head start amplifies the same side's dice levers (combos with
+                // m = 4 measured 1.36–1.52× the dice shift on top of the head start).
+                logit += sign * shift * (1 + headStartDiceInteraction * Double(items.headStart))
             } else {
                 for kind in missing where !unmeasured.contains(kind) { unmeasured.append(kind) }
             }

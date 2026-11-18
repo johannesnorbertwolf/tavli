@@ -1,14 +1,61 @@
 {
   "version": 1,
-  "source": "unmeasured — regenerate with ios/scripts/make_handicap_table.py from docs/handicap-e1-tier1.json",
+  "source": "docs/handicap-e1-tier1.json",
   "cells": {
-    "weighted_dice:2": {"logOddsShift": null},
-    "weighted_dice:4": {"logOddsShift": null},
-    "weighted_dice:8": {"logOddsShift": null},
-    "weighted_dice:16": {"logOddsShift": null},
-    "rerolls:1": {"logOddsShift": null},
-    "rerolls:2": {"logOddsShift": null},
-    "rerolls:3": {"logOddsShift": null},
-    "rerolls:4": {"logOddsShift": null}
+    "weighted_dice:0.3": {
+      "logOddsShift": 0.1483,
+      "favouredWinRate": 0.537,
+      "games": 2000
+    },
+    "weighted_dice:0.6": {
+      "logOddsShift": 0.2493,
+      "favouredWinRate": 0.562,
+      "games": 2000
+    },
+    "weighted_dice:1.2": {
+      "logOddsShift": 0.5559,
+      "favouredWinRate": 0.6355,
+      "games": 2000
+    },
+    "weighted_dice:2": {
+      "logOddsShift": 0.9469,
+      "favouredWinRate": 0.7205,
+      "games": 2000
+    },
+    "rerolls:1": {
+      "logOddsShift": 0.1966,
+      "favouredWinRate": 0.549,
+      "games": 2000
+    },
+    "rerolls:2": {
+      "logOddsShift": 0.3207,
+      "favouredWinRate": 0.5795,
+      "games": 2000
+    },
+    "rerolls:3": {
+      "logOddsShift": 0.4663,
+      "favouredWinRate": 0.6145,
+      "games": 2000
+    },
+    "rerolls:4": {
+      "logOddsShift": 0.6059,
+      "favouredWinRate": 0.647,
+      "games": 2000
+    },
+    "weighted_dice:0.3+rerolls:1": {
+      "logOddsShift": 0.2839,
+      "favouredWinRate": 0.5705,
+      "games": 2000
+    },
+    "weighted_dice:0.6+rerolls:2": {
+      "logOddsShift": 0.558,
+      "favouredWinRate": 0.636,
+      "games": 2000
+    },
+    "weighted_dice:1.2+rerolls:2": {
+      "logOddsShift": 0.8688,
+      "favouredWinRate": 0.7045,
+      "games": 2000
+    }
   }
 }
