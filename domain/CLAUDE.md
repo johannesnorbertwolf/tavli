@@ -87,6 +87,15 @@ with `is_pasch() == False` so the plain generator plays them as two dice (dedupl
 size = `HandicapBoard(Board)` overriding `is_home`/`clone` — the generator only sees home size through
 `is_home`; `board.py`/`move_generation.py` are untouched. Results / rationale: `docs/handicap-phase1.md`.
 
+Tier-1 dice kinds (both bonus, category "dice", on-distribution): `weighted_dice:β` tilts the favoured
+side's roll to p'(r) ∝ p(r)·exp(β·v(r)) over the 21 `ROLLS`, with `v` from an injected
+`roll_valuer(board, color)` (constructor arg / attribute; or `values=` passed to `roll`), drawn by
+`weighted_faces`: inverse CDF of one uniform `(int(6u1)+u2)/6` over the 36 ordered outcomes, which
+for β = 0 is exactly `(face(u1), face(u2))` — fair dice bit-for-bit, same uniforms, so pairs stay
+aligned. Cannot share a side with the face kinds (ceiling/floor/forced-low/no-doubles).
+`rerolls:N` only exposes `reroll_tokens(color)`; when to reroll is a player policy in the game loop
+(`ai/handicap_sweep.py`). `needs_roll_values(color)` / `roll_beta(color)` tell the loop when values are needed.
+
 ---
 
 ## constants.py

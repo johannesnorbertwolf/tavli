@@ -13,12 +13,26 @@ that adds the per-side behaviour the game loop needs:
     rules.legal_moves(board, color, dice)        # demoted doubles play as two dice
     rules.first_mover(default) -> color
     rules.skips_turn(color, own_turn_no) -> bool # predetermined pass schedule
+    rules.needs_roll_values(color) -> bool       # weighted dice: roll() needs per-roll values
+    rules.reroll_tokens(color) -> int            # rerolls per game (the game loop spends them)
 
 Dice are drawn as uniforms u in [0, 1) and mapped through the side's die: a fair die
 is 1 + int(6u); a ceiling-k die is 1 + int(k u) (uniform on 1..k); a floor-x die is
 x + int((7 - x) u) (uniform on x..6). Mapping the SAME uniform keeps the paired
 (duplicate-dice) harness aligned under modified dice. q1/q2 are per-turn uniforms for
 the probabilistic kinds (forced low roll, no doubles).
+
+Weighted dice (tier 1, #148): before the favoured side rolls, a `roll_valuer(board, color)`
+(injected by the caller; the harness passes the agent's 1-ply `Agent.roll_values`) rates the
+21 distinct rolls (`ROLLS` order) by the value of that side's best move. The roll distribution
+is tilted to p'(r) ∝ p(r)·exp(β·v(r)) and drawn by inverse CDF from ONE uniform per turn,
+u = (int(6 u1) + u2) / 6, over the 36 *ordered* outcomes in lexicographic order (each ordered
+pair carries its unordered roll's tilt, so the distribution over the 21 rolls is exactly the
+tilted one). For a fair die that inverse CDF is (1 + int(6 u1), 1 + int(6 u2)) — the same dice,
+in the same order, as the fair path — so β = 0 reproduces fair dice exactly and the paired
+harness stays aligned (a tilt only moves the CDF boundaries; the uniform is the same).
+Rerolls are a per-game token count (`reroll_tokens`); deciding *when* to reroll is a player
+policy and lives in the game loop (ai/handicap_sweep.py).
 
 Kinds deliberately not implemented (see docs/handicap-phase1.md):
 - fewer checkers: mechanically identical to `pre_borne` on the same side (win = all
@@ -29,9 +43,10 @@ Kinds deliberately not implemented (see docs/handicap-phase1.md):
   the inverse lever is `pip_headstart` for the weaker side.
 """
 
+import math
 import random
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
 from domain.board import Board
 from domain.constants import WHITE, BLACK
@@ -46,7 +61,7 @@ class KindInfo(NamedTuple):
     bonus: bool              # True: applied to the opponent of the handicapped side
     intensities: Tuple       # default sweep grid
     on_distribution: bool    # False: positions/encoding the gold net never saw
-    describe: str            # player-facing wording; {x} = intensity
+    describe: str            # player-facing wording; {x} = intensity, {side} = favoured side
 
 
 KINDS: Dict[str, KindInfo] = {
@@ -58,6 +73,10 @@ KINDS: Dict[str, KindInfo] = {
                            "one of your dice is a 1 ({x:.0%} of rolls)"),
     "dice_floor": KindInfo("dice", True, (2, 3), True,
                            "opponent's dice never show less than {x}"),
+    "weighted_dice": KindInfo("dice", True, (1, 2, 4, 8, 16), True,
+                              "dice favour {side} (strength {x})"),
+    "rerolls": KindInfo("dice", True, (1, 2, 3, 4), True,
+                        "{x} rerolls per game"),
     "first_mover": KindInfo("tempo", False, (1,), True,
                             "you always move second"),
     "pass_turns": KindInfo("tempo", False, (1, 2, 4, 8), True,
@@ -71,6 +90,19 @@ KINDS: Dict[str, KindInfo] = {
     "larger_house": KindInfo("geometry", True, (7, 9), False,
                              "opponent bears off from a {x}-point home board"),
 }
+
+#: The 21 distinct rolls (d1 <= d2, fair probability) in the order every per-roll value list
+#: uses — identical to ai.agent._DICE_OUTCOMES.
+ROLLS: Tuple[Tuple[int, int, float], ...] = tuple(
+    (i, j, (1.0 if i == j else 2.0) / 36.0) for i in range(1, 7) for j in range(i, 7))
+_ROLL_INDEX = {(i, j): k for k, (i, j, _) in enumerate(ROLLS)}
+
+#: (board, color) -> 21 values in ROLLS order (win prob of `color`'s best move per roll).
+RollValuer = Callable[[Board, int], Sequence[float]]
+
+#: Kinds that change the favoured side's die faces; weighted dice replaces the face mapping,
+#: so it cannot share a side with them.
+_FACE_KINDS = ("dice_ceiling", "dice_floor", "forced_low", "no_doubles")
 
 #: Own turns over which `pass_turns` spreads its skips (~ a typical game's own-turn count).
 PASS_SCHEDULE_TURNS = 40
@@ -108,6 +140,8 @@ def _validate(kind: str, x) -> None:
         "dice_floor": lambda: 1 <= x <= 6 and float(x).is_integer(),
         "no_doubles": lambda: 0.0 <= x <= 1.0,
         "forced_low": lambda: 0.0 <= x <= 1.0,
+        "weighted_dice": lambda: 0 <= x <= 100,
+        "rerolls": lambda: 0 <= x <= 20 and float(x).is_integer(),
         "first_mover": lambda: x in (0, 1),
         "pass_turns": lambda: 0 <= x <= PASS_SCHEDULE_TURNS and float(x).is_integer(),
         "pre_borne": lambda: 0 <= x <= 14 and float(x).is_integer(),
@@ -138,6 +172,47 @@ def pass_schedule(n: int, turns: int = PASS_SCHEDULE_TURNS) -> frozenset:
 def face(u: float, lo: int = 1, hi: int = 6) -> int:
     """Uniform u in [0,1) -> die face uniform on lo..hi (monotone in u)."""
     return lo + int(u * (hi - lo + 1))
+
+
+def roll_index(d1: int, d2: int) -> int:
+    """Index into ROLLS of the unordered roll {d1, d2}."""
+    return _ROLL_INDEX[(d1, d2) if d1 <= d2 else (d2, d1)]
+
+
+def tilted_roll_probs(values: Sequence[float], beta: float) -> List[float]:
+    """p'(r) ∝ p(r)·exp(β·v(r)) over the 21 ROLLS, normalised (β = 0: the fair probabilities)."""
+    if not beta:
+        return [w for _, _, w in ROLLS]
+    vmax = max(values)  # shift for numerical safety; cancels in the normalisation
+    raw = [w * math.exp(beta * (v - vmax)) for (_, _, w), v in zip(ROLLS, values)]
+    z = sum(raw)
+    return [r / z for r in raw]
+
+
+def roll_uniform(u1: float, u2: float) -> float:
+    """The single per-turn uniform of the weighted-dice scheme: (int(6 u1) + u2) / 6."""
+    return (int(u1 * 6) + u2) / 6.0
+
+
+def weighted_faces(u1: float, u2: float, values: Sequence[float], beta: float) -> Tuple[int, int]:
+    """Ordered faces (d1, d2) by inverse CDF of u = roll_uniform(u1, u2) over the 36 ordered
+    outcomes (lexicographic), each weighted by its unordered roll's tilt exp(β·v).
+    β = 0 takes the exact fair path (face(u1), face(u2)), which is that inverse CDF."""
+    if not beta:
+        return face(u1), face(u2)
+    vmax = max(values)
+    tilt = [math.exp(beta * (v - vmax)) for v in values]
+    cum = []
+    total = 0.0
+    for a in range(1, 7):
+        for b in range(1, 7):
+            total += tilt[roll_index(a, b)]
+            cum.append(total)
+    target = roll_uniform(u1, u2) * total
+    for k, c in enumerate(cum):
+        if target < c:
+            break
+    return 1 + k // 6, 1 + k % 6
 
 
 class _DemotedDoubleDice(Dice):
@@ -200,8 +275,11 @@ class HandicappedPlakotoRules(PlakotoRules):
     """House-rule Plakoto plus one or more `HandicapSpec`s. Not registered: it is a
     parametrised instance (name stays "plakoto"; checkpoints/encoder are unchanged)."""
 
-    def __init__(self, specs: Sequence[HandicapSpec]) -> None:
+    def __init__(self, specs: Sequence[HandicapSpec],
+                 roll_valuer: Optional[RollValuer] = None) -> None:
         self.specs: Tuple[HandicapSpec, ...] = tuple(specs)
+        #: Per-roll value oracle for weighted dice (see module doc); set by the caller.
+        self.roll_valuer = roll_valuer
         kinds = [s.kind for s in self.specs]
         if len(set((s.kind, s.target) for s in self.specs)) != len(self.specs):
             raise ValueError(f"duplicate handicap kind on one side: {kinds}")
@@ -213,6 +291,12 @@ class HandicappedPlakotoRules(PlakotoRules):
         for c in (WHITE, BLACK):
             if self._dice_lo[c] > self._dice_hi[c]:
                 raise ValueError("dice floor above dice ceiling")
+        self._beta = {c: float(self._by_target[c].get("weighted_dice", 0.0)) for c in (WHITE, BLACK)}
+        self._rerolls = {c: int(self._by_target[c].get("rerolls", 0)) for c in (WHITE, BLACK)}
+        for c in (WHITE, BLACK):
+            if self._beta[c] and any(k in self._by_target[c] for k in _FACE_KINDS):
+                raise ValueError("weighted_dice cannot share a side with "
+                                 + "/".join(_FACE_KINDS))
         self._skip = {c: pass_schedule(self._by_target[c]["pass_turns"])
                       if "pass_turns" in self._by_target[c] else frozenset()
                       for c in (WHITE, BLACK)}
@@ -259,8 +343,31 @@ class HandicappedPlakotoRules(PlakotoRules):
 
     # --- dice ---
 
-    def roll(self, color: int, u1: float, u2: float, q1: float, q2: float) -> Dice:
+    def needs_roll_values(self, color: int) -> bool:
+        """True when `roll` for `color` needs the 21 per-roll values (weighted dice)."""
+        return bool(self._beta[color])
+
+    def roll_beta(self, color: int) -> float:
+        return self._beta[color]
+
+    def reroll_tokens(self, color: int) -> int:
+        """Rerolls `color` may spend per game."""
+        return self._rerolls[color]
+
+    def roll(self, color: int, u1: float, u2: float, q1: float, q2: float,
+             board: Optional[Board] = None, values: Optional[Sequence[float]] = None) -> Dice:
+        """Dice for `color` from the turn's uniforms. Weighted dice need `values` (21, ROLLS
+        order) or a `board` for `self.roll_valuer`; other kinds ignore both."""
         mods = self._by_target[color]
+        beta = self._beta[color]
+        if beta:
+            if values is None:
+                if self.roll_valuer is None or board is None:
+                    raise ValueError("weighted_dice needs roll values (roll_valuer + board)")
+                values = self.roll_valuer(board, color)
+            dice = Dice()
+            dice.set(*weighted_faces(u1, u2, values, beta))
+            return dice
         lo, hi = self._dice_lo[color], self._dice_hi[color]
         d1, d2 = face(u1, lo, hi), face(u2, lo, hi)
         p_low = mods.get("forced_low")
@@ -280,12 +387,13 @@ class HandicappedPlakotoRules(PlakotoRules):
         return own_turn_no in self._skip[color]
 
 
-def make_handicapped_rules(specs: Iterable[HandicapSpec] = ()):
+def make_handicapped_rules(specs: Iterable[HandicapSpec] = (),
+                           roll_valuer: Optional[RollValuer] = None):
     """Plain `plakoto` RuleSet when there is no handicap, else a HandicappedPlakotoRules."""
     specs = tuple(specs)
     if not specs:
         return get_ruleset("plakoto")
-    return HandicappedPlakotoRules(specs)
+    return HandicappedPlakotoRules(specs, roll_valuer)
 
 
 # --- plain-rules counterparts so a game loop can treat both uniformly ---

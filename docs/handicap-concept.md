@@ -110,6 +110,14 @@ The estimate must work for *any combination* of items, so a fixed ladder won't d
 
 Experiments and training wait until the Fevga run (#141) is done (CPU).
 
+**E1 harness support (2026-11-18).** `python main.py handicap-sweep` now has the tier-1 dice kinds
+`weighted_dice:β` and `rerolls:N` (both on the same duplicate-dice uniforms as fair play, so β = 0 is
+the fair game exactly), combinations with any other kind (`weighted_dice:2+rerolls:1+first_mover`),
+and a *net est.* column: the net's start-position estimate for position-only cells (baseline, moves
+first, head start). `scripts/run_e1_tier1.sh` runs the E1 grid (1-ply, 1 000 pairs/cell; ~6 CPU-hours,
+≈1–1.5 h on 6 workers) into `docs/handicap-e1-tier1.{json,md}`. Head start uses 6-pip advances only;
+the 12-pip variant is not implemented yet. Design and alignment: `ai/REFERENCE.md` (handicap_sweep).
+
 ## 7. In the app
 
 **Principle: if you don't use handicaps, nothing changes.** No new rows in the new-game sheet,

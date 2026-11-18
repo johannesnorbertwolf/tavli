@@ -24,6 +24,26 @@ without it the 1-ply net stacks checkers on the last point and stalls under the
 exact-die bear-off rule) stays on except for geometry cells (smaller/larger house),
 where its 6-point-home race values would be wrong. Under dice handicaps it still
 assumes fair dice ahead, exactly like the net.
+
+Tier-1 dice kinds (concept doc §3):
+- `weighted_dice:β` — the rules' `roll_valuer` is the agent's 1-ply `Agent.roll_values`
+  (21 per-roll best-move values under the cell's own move generator); the favoured side's
+  roll is the tilted inverse CDF of the turn's SAME main-stream uniforms (domain/handicap.py),
+  so β = 0 is the fair game bit-for-bit and pairs stay aligned.
+- `rerolls:N` — the favoured side holds N tokens per game. Policy (`wants_reroll`): reroll
+  while tokens remain and v(rolled) < E_p[v(fresh roll)] − margin, p = the side's own roll
+  distribution (fair unless it also has weighted dice), margin `REROLL_MARGIN` (--margin).
+  A reroll draws two uniforms from a dedicated per-colour stream (`_reroll_rng`), never from
+  the main stream: the main stream is consumed exactly two uniforms per turn whatever the
+  rerolls, so every later turn of both games in a pair still sees the same uniforms; only
+  the rerolled turn itself differs (it gets the colour's next reroll uniforms).
+
+Start-position estimate (`start_estimate`, concept doc §5): for cells made only of position
+levers (`ESTIMABLE_KINDS`) the net's prediction of the measured rate, computed the way the
+pair is played — game A and B each contribute the start position's pre-roll value (average
+over the 21 opening rolls of the first mover's best 1-ply move value) from the handicapped
+side's view, averaged. With no `first_mover` that is the roll-off average (each side moves
+first in one game); `first_mover` makes the handicapped side move second in both.
 """
 
 import json
@@ -34,10 +54,21 @@ import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from domain.constants import WHITE, BLACK
-from domain.handicap import KINDS, HandicapSpec, make_handicapped_rules, parse_spec, plain_roll
+from domain.handicap import (
+    KINDS, ROLLS, HandicapSpec, make_handicapped_rules, parse_spec, plain_roll, roll_index,
+    tilted_roll_probs,
+)
 
 MAX_PLIES = 1500
 _HSEED_SALT = 0x9E3779B1
+_RSEED_SALT = 0x5BD1E995
+
+#: Reroll when the rolled value trails the expected fresh-roll value by more than this.
+REROLL_MARGIN = 0.02
+
+#: Kinds whose effect is fully in the start position / first mover, so the net's
+#: start-position estimate applies (E1 compares it with the measured rate).
+ESTIMABLE_KINDS = frozenset({"first_mover", "pip_headstart", "pre_borne"})
 
 # A cell is a tuple of (kind, intensity) pairs; () is the baseline.
 Cell = Tuple[Tuple[str, float], ...]
@@ -58,13 +89,35 @@ def parse_cell(text: str) -> Cell:
     return tuple(out)
 
 
-def rules_for(cell: Cell, side: int):
-    return make_handicapped_rules([HandicapSpec(k, x, side) for k, x in cell])
+def rules_for(cell: Cell, side: int, roll_valuer=None):
+    return make_handicapped_rules([HandicapSpec(k, x, side) for k, x in cell], roll_valuer)
 
 
-def play_game(agent, config, rules, seed: int, trace: Optional[list] = None) -> Dict:
+def agent_roll_valuer(agent, rules):
+    """The weighted-dice oracle: 21 per-roll 1-ply best-move values under `rules`' generator."""
+    legal = rules.legal_moves
+    return lambda board, color: agent.roll_values(board, color, legal)
+
+
+def wants_reroll(values, d1: int, d2: int, beta: float = 0.0,
+                 margin: float = REROLL_MARGIN) -> bool:
+    """Reroll policy: v(rolled) < E[v(fresh roll)] − margin, the expectation over the side's
+    own roll distribution (fair, or tilted when it also has weighted dice)."""
+    probs = tilted_roll_probs(values, beta)
+    expected = sum(p * v for p, v in zip(probs, values))
+    return values[roll_index(d1, d2)] < expected - margin
+
+
+def _reroll_rng(seed: int, color: int) -> random.Random:
+    """Dedicated per-colour reroll stream of `seed` (independent of the main dice stream)."""
+    return random.Random(((seed * 2654435761) + (1 if color == WHITE else 2) * 0x85EBCA6B)
+                         ^ _RSEED_SALT)
+
+
+def play_game(agent, config, rules, seed: int, trace: Optional[list] = None,
+              reroll_margin: float = REROLL_MARGIN) -> Dict:
     """One 1-ply game under `rules` on the duplicate dice stream of `seed`.
-    Returns {'winner': WHITE/BLACK/None, 'plies': int, 'pin': bool}."""
+    Returns {'winner': WHITE/BLACK/None, 'plies': int, 'pin': bool, 'rerolls': int}."""
     rng = random.Random(seed)
     hrng = random.Random((seed * 2654435761) ^ _HSEED_SALT)
     plain = not hasattr(rules, "roll")
@@ -72,10 +125,17 @@ def play_game(agent, config, rules, seed: int, trace: Optional[list] = None) -> 
     player = WHITE if plain else rules.first_mover(WHITE)
     legal = rules.legal_moves
     own_turns = {WHITE: 0, BLACK: 0}
+    tokens = {c: (0 if plain else rules.reroll_tokens(c)) for c in (WHITE, BLACK)}
+    rr = {c: _reroll_rng(seed, c) for c in (WHITE, BLACK) if tokens[c]}
+    valuer = None
+    if not plain and (any(tokens.values()) or rules.needs_roll_values(WHITE)
+                      or rules.needs_roll_values(BLACK)):
+        valuer = rules.roll_valuer or agent_roll_valuer(agent, rules)
+    rerolls = 0
     plies = 0
     while not rules.is_over(board):
         if plies >= MAX_PLIES:
-            return {"winner": None, "plies": plies, "pin": False}
+            return {"winner": None, "plies": plies, "pin": False, "rerolls": rerolls}
         u1, u2 = rng.random(), rng.random()
         q1, q2 = hrng.random(), hrng.random()
         own_turns[player] += 1
@@ -85,7 +145,23 @@ def play_game(agent, config, rules, seed: int, trace: Optional[list] = None) -> 
                 trace.append((player, None, "skip"))
             player = -player
             continue
-        dice = plain_roll(u1, u2) if plain else rules.roll(player, u1, u2, q1, q2)
+        if plain:
+            dice = plain_roll(u1, u2)
+        else:
+            values = None
+            if valuer is not None and (tokens[player] or rules.needs_roll_values(player)):
+                values = valuer(board, player)
+            dice = rules.roll(player, u1, u2, q1, q2, board, values)
+            beta = rules.roll_beta(player)
+            while tokens[player] and wants_reroll(values, dice.die1.value, dice.die2.value,
+                                                  beta, reroll_margin):
+                tokens[player] -= 1
+                rerolls += 1
+                if trace is not None:
+                    trace.append((player, (dice.die1.value, dice.die2.value, dice.is_pasch()),
+                                  "reroll"))
+                dice = rules.roll(player, rr[player].random(), rr[player].random(), q1, q2,
+                                  board, values)
         moves = legal(board, player, dice)
         move = None
         if moves:
@@ -96,19 +172,42 @@ def play_game(agent, config, rules, seed: int, trace: Optional[list] = None) -> 
         player = -player
     winner, _ = rules.outcome(board)
     return {"winner": winner, "plies": plies,
-            "pin": winner is not None and not board.all_borne_off(winner)}
+            "pin": winner is not None and not board.all_borne_off(winner), "rerolls": rerolls}
 
 
-def play_pair(agent, config, cell: Cell, seed: int) -> Dict:
+def play_pair(agent, config, cell: Cell, seed: int,
+              reroll_margin: float = REROLL_MARGIN) -> Dict:
     """Both orientations of one seed. h = handicapped-side wins (0..2, cap-hit = 0.5)."""
     h = 0.0
     out = {"seed": seed}
     for tag, side in (("a", WHITE), ("b", BLACK)):
-        g = play_game(agent, config, rules_for(cell, side), seed)
+        g = play_game(agent, config, rules_for(cell, side), seed, reroll_margin=reroll_margin)
         h += 0.5 if g["winner"] is None else float(g["winner"] == side)
         out[tag] = g
     out["h"] = h
     return out
+
+
+def is_estimable(cell: Cell) -> bool:
+    return all(k in ESTIMABLE_KINDS for k, _ in cell)
+
+
+def start_estimate(agent, config, cell: Cell) -> Optional[float]:
+    """Net estimate of the handicapped side's pair win rate from the start position alone
+    (None unless every kind is a position lever). Per orientation: v = the first mover's
+    pre-roll value (mean over the 21 opening rolls of its best 1-ply move value); the
+    handicapped side scores v if it moves first, else 1 − v. Returns the mean of A and B."""
+    if not is_estimable(cell):
+        return None
+    est = 0.0
+    for side in (WHITE, BLACK):
+        rules = rules_for(cell, side)
+        board = rules.initial_board(config)
+        first = rules.first_mover(WHITE) if hasattr(rules, "first_mover") else WHITE
+        vals = agent.roll_values(board, first, rules.legal_moves)
+        v = sum(w * x for (_, _, w), x in zip(ROLLS, vals))
+        est += v if first == side else 1.0 - v
+    return est / 2.0
 
 
 # --- multiprocessing -------------------------------------------------------
@@ -116,7 +215,7 @@ def play_pair(agent, config, cell: Cell, seed: int) -> Dict:
 _W = {}
 
 
-def _init_worker(model_path: str, config_path: str) -> None:
+def _init_worker(model_path: str, config_path: str, reroll_margin: float = REROLL_MARGIN) -> None:
     import torch
     from ai.checkpoint_io import load_agent_from_checkpoint
     from config.config_loader import ConfigLoader
@@ -124,6 +223,7 @@ def _init_worker(model_path: str, config_path: str) -> None:
     config = ConfigLoader(config_path)
     agent, _ = load_agent_from_checkpoint(model_path, config)
     _W["agent"], _W["config"], _W["db"] = agent, config, agent.bearoff
+    _W["margin"] = reroll_margin
 
 
 def cell_uses_bearoff_db(cell: Cell) -> bool:
@@ -135,20 +235,22 @@ def _task(args):
     cell, seed = args
     agent = _W["agent"]
     agent.bearoff = _W["db"] if cell_uses_bearoff_db(cell) else None
-    return cell, play_pair(agent, _W["config"], cell, seed)
+    return cell, play_pair(agent, _W["config"], cell, seed, _W["margin"])
 
 
 def run_cells(cells: Sequence[Cell], num_pairs: int, model_path: str, config_path: str,
-              workers: int = 2, base_seed: int = 0, progress=True) -> Dict[Cell, List[Dict]]:
+              workers: int = 2, base_seed: int = 0, progress=True,
+              reroll_margin: float = REROLL_MARGIN) -> Dict[Cell, List[Dict]]:
     tasks = [(c, base_seed + k) for c in cells for k in range(num_pairs)]
     results: Dict[Cell, List[Dict]] = {c: [] for c in cells}
     start = time.monotonic()
     if workers <= 1:
-        _init_worker(model_path, config_path)
+        _init_worker(model_path, config_path, reroll_margin)
         it = map(_task, tasks)
         pool = None
     else:
-        pool = mp.get_context("spawn").Pool(workers, _init_worker, (model_path, config_path))
+        pool = mp.get_context("spawn").Pool(workers, _init_worker,
+                                            (model_path, config_path, reroll_margin))
         it = pool.imap_unordered(_task, tasks, chunksize=4)
     try:
         for i, (cell, r) in enumerate(it, 1):
@@ -199,6 +301,7 @@ def summarize_cell(cell: Cell, pairs: List[Dict]) -> Dict:
         "mean_plies": sum(g["plies"] for g in games) / len(games) if games else 0.0,
         "pin_win_frac": sum(1 for g in games if g["pin"]) / len(games) if games else 0.0,
         "capped": sum(1 for g in games if g["winner"] is None),
+        "mean_rerolls": sum(g.get("rerolls", 0) for g in games) / len(games) if games else 0.0,
         "on_distribution": all(KINDS[k].on_distribution for k in kinds),
         "bearoff_db": cell_uses_bearoff_db(cell),
         "categories": sorted({KINDS[k].category for k in kinds}),
@@ -240,13 +343,15 @@ def to_markdown(summaries: List[Dict]) -> str:
     b = base["rate"] if base else 0.5
     rows = sorted(summaries, key=lambda s: (s["rate"] - b, s["label"]))
     lines = [
-        "| handicap | handicapped-side win % [95% CI] | shift (pp) | games | mean plies | pin wins | net reliability |",
-        "|---|---|---|---|---|---|---|",
+        "| handicap | handicapped-side win % [95% CI] | shift (pp) | net est. % | games | mean plies | pin wins | net reliability |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for s in rows:
+        est = s.get("net_estimate")
+        est_txt = "" if est is None else f"{100*est:.1f}"
         lines.append(
             f"| `{s['label']}` | {100*s['rate']:.1f} [{100*s['ci_lo']:.1f}, {100*s['ci_hi']:.1f}] "
-            f"| {100*(s['rate']-b):+.1f} | {s['games']} | {s['mean_plies']:.0f} "
+            f"| {100*(s['rate']-b):+.1f} | {est_txt} | {s['games']} | {s['mean_plies']:.0f} "
             f"| {100*s['pin_win_frac']:.0f}% | {_note(s)} |")
     return "\n".join(lines)
 
@@ -254,18 +359,24 @@ def to_markdown(summaries: List[Dict]) -> str:
 def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
               only: Optional[Sequence[str]] = None, combos: Optional[Sequence[str]] = None,
               base_seed: int = 0, out_json: str = "training_runs/handicap_sweep.json",
-              out_md: Optional[str] = None) -> List[Dict]:
+              out_md: Optional[str] = None, reroll_margin: float = REROLL_MARGIN) -> List[Dict]:
     cells = default_cells(only)
     # Explicit --combos always run; the default combos follow the --only filter.
     for c in (DEFAULT_COMBOS if combos is None else combos):
         cell = parse_cell(c)
         if combos is not None or not only or all(k in only for k, _ in cell):
             cells.append(cell)
+    cells = list(dict.fromkeys(cells))  # a combo may repeat a single
     num_pairs = max(1, games // 2)
     print(f"Handicap sweep: {len(cells)} cells x {num_pairs} pairs ({2*num_pairs} games), "
           f"{workers} workers, model={model_path}", flush=True)
-    results = run_cells(cells, num_pairs, model_path, config.config_file, workers, base_seed)
+    results = run_cells(cells, num_pairs, model_path, config.config_file, workers, base_seed,
+                        reroll_margin=reroll_margin)
     summaries = [summarize_cell(c, results[c]) for c in cells]
+    from ai.checkpoint_io import load_agent_from_checkpoint
+    est_agent, _ = load_agent_from_checkpoint(model_path, config)
+    for c, s in zip(cells, summaries):
+        s["net_estimate"] = start_estimate(est_agent, config, c)
     base = summaries[0]
     if abs(base["rate"] - 0.5) > 1e-12:
         raise AssertionError(f"baseline not symmetric: {base['rate']}")
@@ -273,7 +384,7 @@ def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
         s["shift"] = s["rate"] - base["rate"]
     md = to_markdown(summaries)
     payload = {"model": model_path, "pairs_per_cell": num_pairs, "base_seed": base_seed,
-               "lookahead_plies": 1,
+               "lookahead_plies": 1, "reroll_margin": reroll_margin,
                "bearoff_db": "on (from config) except geometry cells",
                "baseline_first_mover_win": base["first_mover_win"],
                "cells": summaries}

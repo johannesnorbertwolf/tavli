@@ -6,7 +6,7 @@ or modifying anything here.
 
 | Module | What it is |
 |---|---|
-| `agent.py` | Inference interface (`Agent`) over evaluator + encoder; 1/2/N-ply expectimax search with branch pruning and time-budget iterative deepening. Never updates weights. Also `RandomAgent`. |
+| `agent.py` | Inference interface (`Agent`) over evaluator + encoder; 1/2/N-ply expectimax search with branch pruning and time-budget iterative deepening; `roll_values` (per-roll 1-ply best-move values). Never updates weights. Also `RandomAgent`. |
 | `board_encoder.py` | `BoardEncoder` → flat float32 vector, always from the current player's perspective (board flip). Three checkpoint-tagged versions; current `unary_v3` (486-dim, +18 smart features). |
 | `portes_encoder.py` | `PortesEncoder` (`portes_v1`, 414 floats) for the Portes variant: mover-perspective points (owner bit + 15 unary), bars, borne-off, 18 smart features. |
 | `plakoto_std_encoder.py` | `PlakotoStdEncoder` (`plakoto_std_v1`, 494-dim) for `plakoto_standard`: the unchanged `unary_v3` vector + 8 mother/start/borne-off features. |
@@ -22,7 +22,7 @@ or modifying anything here.
 | `evaluator.py` | Older vs-random eval helper (`AIEvaluator`); likely vestigial. |
 | `lookahead_eval.py` | Parallel harness: flexible search vs fixed 2-ply (gold self-play) to validate deeper search. |
 | `paired_eval.py` | Variance-reduced head-to-head (`main.py eval-paired A B [pairs]`): plays each trial twice on the SAME seeded dice (A-White-vs-B and B-White-vs-A), cancelling dice luck + first-mover edge. Paired one-sided z-test on `d_k∈{-1,0,+1}`; far more power per game for near-identical models. Self-comparison ⇒ all `d_k=0`. |
-| `handicap_sweep.py` | Handicap exploration harness (#148, `main.py handicap-sweep`): gold-vs-gold 1-ply pairs on duplicate uniform dice under `domain/handicap.py` rules (handicapped side White then Black), per-pair CI, JSON + markdown table. Bear-off DB off only for geometry cells. Results: `docs/handicap-phase1.md`. |
+| `handicap_sweep.py` | Handicap exploration harness (#148, `main.py handicap-sweep`): gold-vs-gold 1-ply pairs on duplicate uniform dice under `domain/handicap.py` rules (handicapped side White then Black), per-pair CI, JSON + markdown table. Bear-off DB off only for geometry cells. Tier 1: `weighted_dice` (agent-valued roll tilt on the same uniforms), `rerolls` (policy `wants_reroll`, per-colour reroll stream), `start_estimate` net column for position cells; E1 runner `scripts/run_e1_tier1.sh`. Results: `docs/handicap-phase1.md`. |
 | `plateau_driver.py` | Unattended train-until-plateau driver (`main.py plateau` / `plateau-status`): rounds of train subprocess + paired eval vs a self-built ladder `models/<variant>_gold_vK.pth` (bootstraps v1 vs random), promotes on z≥2 & ≥52% (normalized **points** for `max_points > 1` variants, wins otherwise), stops when the pooled non-promotion streak's edge UCB < +1.5pp; staged config overrides; resumable JSON state. |
 
 ## Conventions / gotchas
