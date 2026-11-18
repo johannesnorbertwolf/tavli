@@ -65,7 +65,10 @@ class TestSpec(unittest.TestCase):
                 b = r.initial_board(CONFIG)
                 for c in (WHITE, BLACK):
                     on = sum(b.n[i] for i in range(1, 25) if b.color[i] == c)
-                    self.assertEqual(on + b.borne_off[c], 15, (kind, x))
+                    total = getattr(b, "checkers", {WHITE: 15, BLACK: 15})[c]
+                    self.assertEqual(on + b.borne_off[c], total, (kind, x))
+                    if kind != "checkers":
+                        self.assertEqual(total, 15, (kind, x))
 
 
 class TestDice(unittest.TestCase):

@@ -241,7 +241,13 @@ def race_state(board: Board) -> Optional[Tuple[Tuple[int, ...], Tuple[int, ...]]
     owner's home quadrant. Otherwise None.
 
     Those two conditions imply no future contact: White's checkers are all on
-    points board_size-home_size+1.., Black's all on 1..home_size, moving apart."""
+    points board_size-home_size+1.., Black's all on 1..home_size, moving apart.
+
+    A handicapped board (#148, domain.handicap.HandicapBoard) whose rules the DB does not model
+    exactly (overshoot bear-off, > 15 checkers, a home larger than the quadrant) is never a DB
+    race: `bearoff_exact` False -> None."""
+    if not getattr(board, "bearoff_exact", True):
+        return None
     bsize = board.board_size
     hsize = board.home_size
     white = [0] * hsize

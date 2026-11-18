@@ -880,19 +880,25 @@ def main():
         gold_model_path = sys.argv[3] if len(sys.argv) >= 4 and not sys.argv[3].startswith("--") else None
         evaluate_against_gold(config, games_per_color=games_per_color, gold_model_path=gold_model_path)
     elif mode == 'eval-paired':
-        # eval-paired <model_a> <model_b> [num_pairs] [--workers N]
+        # eval-paired <model_a> <model_b> [num_pairs] [--workers N] [--seed S] [--handicap]
+        # --handicap (#148 E3, plakoto_hc config): every pair from a random tier-2 setup.
         from ai.paired_eval import evaluate_paired
         args = sys.argv[2:]
-        positional = [a for a in args if not a.startswith("--")]
+        valued = {"--workers", "--seed"}
+        positional = [a for i, a in enumerate(args)
+                      if not a.startswith("--") and (i == 0 or args[i - 1] not in valued)]
         if len(positional) < 2:
-            print("Usage: eval-paired <model_a> <model_b> [num_pairs] [--workers N]")
+            print("Usage: eval-paired <model_a> <model_b> [num_pairs] [--workers N] [--seed S] "
+                  "[--handicap]")
             return
         model_a, model_b = positional[0], positional[1]
         num_pairs = int(positional[2]) if len(positional) >= 3 else 5000
         num_workers = None
         if "--workers" in args:
             num_workers = int(args[args.index("--workers") + 1])
-        evaluate_paired(config, model_a, model_b, num_pairs=num_pairs, num_workers=num_workers)
+        base_seed = int(args[args.index("--seed") + 1]) if "--seed" in args else 0
+        evaluate_paired(config, model_a, model_b, num_pairs=num_pairs, num_workers=num_workers,
+                        base_seed=base_seed, handicap="--handicap" in args)
     elif mode in ('eval-gold-stats', 'analyze-gold'):
         last_x = 50
         if len(sys.argv) >= 3:
@@ -1144,7 +1150,8 @@ def main():
     elif mode == 'handicap-sweep':
         # handicap-sweep [--games N] [--workers K] [--only kind,...] [--combos a:x+b:y,...]
         #                [--no-combos] [--seed S] [--model PATH] [--out PATH.json]
-        #                [--md PATH.md] [--margin M]  (#148; M = reroll policy margin)
+        #                [--md PATH.md] [--margin M] [--tier2]  (#148; M = reroll policy margin;
+        #                --tier2: tier-2 grid + combos, for the plakoto_hc model / config)
         from ai.handicap_sweep import run_sweep
         args = sys.argv[2:]
 
@@ -1164,7 +1171,22 @@ def main():
             out_json=opt("--out", "training_runs/handicap_sweep.json"),
             out_md=opt("--md"),
             reroll_margin=float(opt("--margin", 0.02)),
+            tier2="--tier2" in args,
         )
+    elif mode == 'handicap-init':
+        # handicap-init [--from models/gold_v11.pth] [--out <model_save_path>]  (#148 E3)
+        # Warm start of the handicap-aware net: widen gold_v11's input with zero columns.
+        from ai.handicap_model import init_handicap_model
+        args = sys.argv[2:]
+
+        def opt(name, default=None):
+            return args[args.index(name) + 1] if name in args else default
+
+        out_path = opt("--out", default_model)
+        if os.path.exists(out_path) and "--force" not in args:
+            print(f"{out_path} exists; pass --force to overwrite it")
+            return
+        init_handicap_model(opt("--from", "models/gold_v11.pth"), out_path, config)
     elif mode == 'plateau':  # unattended train-until-plateau driver (ai/plateau_driver.py)
         from ai.plateau_driver import run_driver
         sys.exit(run_driver(config.config_file))

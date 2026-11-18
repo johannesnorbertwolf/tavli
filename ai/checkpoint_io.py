@@ -21,7 +21,8 @@ def check_checkpoint_variant(meta: Dict[str, Any], config, path: str = "checkpoi
     """Raise VariantMismatchError if the checkpoint's variant differs from the config's."""
     ckpt_variant = meta.get("variant", VARIANT_LEGACY)
     config_variant = config.get_variant()
-    if ckpt_variant != config_variant:
+    if ckpt_variant != config_variant and ckpt_variant not in getattr(
+            config.get_ruleset(), "compatible_checkpoint_variants", ()):
         raise VariantMismatchError(
             f"{path} was trained for variant '{ckpt_variant}' but the config "
             f"({getattr(config, 'config_file', '?')}) selects variant '{config_variant}'. "
@@ -118,6 +119,11 @@ def load_agent_from_checkpoint(path: str, config, device: Optional[torch.device]
     state_dict, meta = load_state_dict(path, device=device)
     check_checkpoint_variant(meta, config, path)
     ruleset = get_ruleset(meta["variant"])
+    config_ruleset = config.get_ruleset()
+    if ruleset is not config_ruleset and ruleset.name in config_ruleset.compatible_checkpoint_variants:
+        # e.g. gold_v11 (plakoto) under plakoto_hc: play/search by the superset's rules, encode
+        # with the checkpoint's own encoder version (the superset RuleSet builds it too).
+        ruleset = config_ruleset
     encoder = ruleset.make_encoder(config, version=meta["encoder_version"])
     evaluator = BoardEvaluator(encoder.input_size, hidden_sizes=meta["hidden_sizes"],
                                aux_heads=meta.get("aux_heads", 0)).to(device)

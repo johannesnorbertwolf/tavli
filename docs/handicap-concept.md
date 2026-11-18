@@ -119,6 +119,32 @@ first, head start). `scripts/run_e1_tier1.sh` runs the E1 grid (1-ply, 1 000 pai
 ≈1–1.5 h on 6 workers) into `docs/handicap-e1-tier1.{json,md}`. Head start uses 6-pip advances only;
 the 12-pip variant is not implemented yet. Design and alignment: `ai/REFERENCE.md` (handicap_sweep).
 
+**E3 pipeline (2026-11-18, code only; no training run yet).** One handicap-aware model, variant
+`plakoto_hc` (`config/config-handicap.yml`). Exactly two models exist: gold_v11 (unchanged) and this one.
+- **Rules** live on `HandicapBoard` (domain/handicap.py): `overshoot:1` and `safe_point:p` for the
+  favoured side, `checkers:n` (13/14 favoured, 16/17 the other side), `smaller_house:k` for the other
+  side; overshoot bear-off via `domain/handicap_moves.py` (standard-Plakoto rule: higher die only from the
+  farthest occupied point, own pinned checkers count). Safe-point candidates 2/4/6/8/10/12 (favoured
+  side's numbering): the opponent's home and the near outer board, where its runners get pinned; point 1
+  would be the rejected mother protection.
+- **Encoder** `unary_v3_hc1` (606 inputs) = unary_v3 unchanged + overflow units for 16/17-checker stacks
+  + 2×34 per-side handicap features, all zero in a normal game. **Warm start** = gold_v11 with zero
+  columns for the new inputs (`main.py handicap-init`): identical values on normal positions
+  (max |Δ| 1.2e-7, float rounding).
+- **Bear-off DB** stays on, gated per position (`HandicapBoard.bearoff_exact`): exact for smaller homes and
+  fewer checkers, off for overshoot and > 15 checkers.
+- **Self-play mix:** 70 % of games one random side gets a random tier-2 combination (each lever on
+  independently: overshoot 0.5, safe point 0.5, checkers 0.4, smaller home 0.4; ≥ 1 lever, ≈ 2 levers per
+  handicapped game on average), the other side none; 30 % normal games.
+- **Promotion** (plateau driver, handicap mode): (b) paired eval vs the previous rung on random tier-2
+  setups (z ≥ 2, ≥ 52 %), and (a) before every promotion a paired eval vs gold_v11 on normal games whose
+  one-sided 95 % lower bound must be ≥ 49 %. Stages: depth-1 bootstrap (50k-game rounds), then depth 2
+  (20k-game rounds), the gold_v11 setting.
+- **Launch:** `.venv/bin/python main.py --config config/config-handicap.yml plateau` (resumable;
+  `plateau-status`). Measurement: `main.py --config config/config-handicap.yml handicap-sweep --tier2
+  --model models/plakoto_hc_gold_vK.pth`; app table `ios/scripts/make_handicap_table.py ... --tier2 <json>`
+  (same additive log-odds model). The Swift engine/encoder must port the same rules and layout (P3b).
+
 ## 7. In the app
 
 **Principle: if you don't use handicaps, nothing changes.** No new rows in the new-game sheet,

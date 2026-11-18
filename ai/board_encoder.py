@@ -125,7 +125,10 @@ class BoardEncoder:
             if captured_by_their:
                 out[base + 2] = 1.0
             if count:
-                out[base + 3 : base + 3 + count] = 1.0
+                # Unary capacity is pieces_per_player: a stack beyond it (only with the tier-2
+                # `checkers` handicap, #148) saturates here instead of spilling into the next
+                # slot; unary_v3_hc1 encodes the excess in its overflow block.
+                out[base + 3 : base + 3 + (count if count <= ppp else ppp)] = 1.0
 
             if not is_v3:
                 continue

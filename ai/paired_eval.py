@@ -41,12 +41,28 @@ from domain.constants import WHITE, BLACK
 from domain.ruleset import score_for
 
 
-def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: int):
+#: Salt of the per-seed stream that draws a pair's tier-2 setup (handicapped mode, #148 E3).
+_HC_SALT = 0x2545F491
+
+
+def handicap_specs_for_seed(seed: int, lever_probs=None):
+    """The tier-2 setup of pair `seed` in handicapped mode: drawn from its own stream, so it
+    never perturbs the dice stream, and identical for both orientations of the pair."""
+    from domain.handicap import sample_tier2_specs
+    return sample_tier2_specs(random.Random((seed * 2654435761) ^ _HC_SALT), lever_probs)
+
+
+def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: int,
+                   specs=None):
     """Play one full game and return its outcome `(winner, points)`. Dice (and, for
     random-starter variants, the starter) come from the global RNG, so seed it before
-    each call to share a common stream across orientations."""
+    each call to share a common stream across orientations. `specs`: start from that
+    tier-2 handicap setup (a HandicapBoard; plakoto_hc only)."""
     game = Game(config, starting_player=WHITE)
     game.player = game.ruleset.starting_player(WHITE)
+    if specs:
+        from domain.handicap import tier2_board
+        game.board = tier2_board(specs, config)
     while not game.is_over():
         current = game.current_player
         game.dice.roll()
@@ -62,16 +78,22 @@ def _play_one_game(white_agent, black_agent, config, white_la: int, black_la: in
     return game.outcome()
 
 
-def run_pairs(agent_a, agent_b, config, seeds, lookahead: int) -> List[Tuple]:
+def run_pairs(agent_a, agent_b, config, seeds, lookahead: int, handicap: bool = False,
+              lever_probs=None) -> List[Tuple]:
     """Single-process core. For each seed, play both orientations on identical dice.
     Returns a list of (d_k, a_wins_k, a_points_k): a draw counts half a win, a_points_k
-    is A's summed signed points over the two games. Used by tests and the workers."""
+    is A's summed signed points over the two games. Used by tests and the workers.
+
+    `handicap=True` (#148 E3, plakoto_hc): every pair is played from a random tier-2 setup
+    (`handicap_specs_for_seed`), the same setup in both orientations — the handicap stays on
+    its colour, so A plays the favoured side in one game and the other side in the other."""
     out: List[Tuple] = []
     for s in seeds:
+        specs = handicap_specs_for_seed(s, lever_probs) if handicap else None
         random.seed(s); np.random.seed(s)
-        o1 = _play_one_game(agent_a, agent_b, config, lookahead, lookahead)  # A is White
+        o1 = _play_one_game(agent_a, agent_b, config, lookahead, lookahead, specs)  # A is White
         random.seed(s); np.random.seed(s)
-        o2 = _play_one_game(agent_b, agent_a, config, lookahead, lookahead)  # A is Black
+        o2 = _play_one_game(agent_b, agent_a, config, lookahead, lookahead, specs)  # A is Black
         c1, p1 = score_for(o1, WHITE)
         c2, p2 = score_for(o2, BLACK)
         a_wins = c1 + c2
@@ -81,15 +103,16 @@ def run_pairs(agent_a, agent_b, config, seeds, lookahead: int) -> List[Tuple]:
     return out
 
 
-def _worker(model_a, model_b, config_path, seeds, lookahead, result_q):
+def _worker(model_a, model_b, config_path, seeds, lookahead, result_q, handicap=False):
     """Subprocess: load both models once, play each assigned seed-pair, stream results."""
     torch.set_num_threads(1)
     config = ConfigLoader(config_path)
     device = torch.device("cpu")
     agent_a, _ = load_agent_from_checkpoint(model_a, config, device=device)
     agent_b, _ = load_agent_from_checkpoint(model_b, config, device=device)
+    lever_probs = config.get_handicap_lever_probs() if handicap else None
     for s in seeds:
-        result, = run_pairs(agent_a, agent_b, config, [s], lookahead)
+        result, = run_pairs(agent_a, agent_b, config, [s], lookahead, handicap, lever_probs)
         result_q.put(result)
 
 
@@ -144,7 +167,7 @@ def summarize(results: List[Tuple], max_points: int = 1) -> dict:
 
 
 def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
-                    base_seed=0, lookahead=None):
+                    base_seed=0, lookahead=None, handicap=False):
     """Paired duplicate-dice head-to-head of model A vs model B (A is the candidate).
 
     Plays num_pairs trials (2 games each) across spawn workers, streaming a live block,
@@ -158,7 +181,10 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
 
     max_points = config.get_ruleset().max_points
     seeds = [base_seed + k for k in range(num_pairs)]
-    print(f"Paired eval: A='{model_a}'  vs  B='{model_b}'", flush=True)
+    if handicap and config.get_variant() != "plakoto_hc":
+        raise ValueError("handicapped paired eval needs a plakoto_hc config")
+    print(f"Paired eval{' (random tier-2 handicap setups)' if handicap else ''}: "
+          f"A='{model_a}'  vs  B='{model_b}'", flush=True)
     print(f"{num_pairs} pairs ({2 * num_pairs} games), {num_workers} workers, "
           f"lookahead={lookahead}, base_seed={base_seed}", flush=True)
 
@@ -170,7 +196,8 @@ def evaluate_paired(config, model_a, model_b, num_pairs=5000, num_workers=None,
     ctx = mp.get_context("spawn")
     result_q = ctx.Queue()
     procs = [ctx.Process(target=_worker,
-                         args=(model_a, model_b, config.config_file, chunk, lookahead, result_q))
+                         args=(model_a, model_b, config.config_file, chunk, lookahead, result_q,
+                               handicap))
              for chunk in chunks]
     for p in procs:
         p.start()

@@ -222,6 +222,17 @@ class ConfigLoader:
     def get_selfplay_league_fraction(self):
         return float(self.config.get("selfplay_league_fraction", 0.0))
 
+    def get_handicap_selfplay_fraction(self):
+        """Share of self-play games started from a random tier-2 handicap setup (#148 E3;
+        plakoto_hc only). 0 = off (never touches the rng)."""
+        return float(self.config.get("handicap_selfplay_fraction", 0.0))
+
+    def get_handicap_lever_probs(self):
+        """Per-lever probabilities of the tier-2 sampler (domain.handicap.sample_tier2_specs);
+        None = its defaults."""
+        probs = self.config.get("handicap_lever_probs")
+        return dict(probs) if probs else None
+
     def get_selfplay_league_opponents(self):
         return list(self.config.get("selfplay_league_opponents", []) or [])
 
