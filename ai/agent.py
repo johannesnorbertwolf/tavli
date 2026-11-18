@@ -392,19 +392,19 @@ class Agent:
             return self._evaluate_moves_2ply_batch(board, possible_moves, color)
         return self._evaluate_moves_batch(board, possible_moves, color)
 
-    def position_value_lookahead(self, board: Board, color: int) -> float:
-        """Pre-roll depth-2 expectimax value for `color` to move: average over the 21 weighted
-        dice outcomes of `color`'s best 1-ply move value (net / bear-off at the leaves). This is
-        a one-ply Bellman backup of the raw net eval — a strictly better bootstrap target than
-        net(position), used by the depth-2 TD-target experiment (E14). Returns a win-prob for
-        `color`, matching the perspective of the net's own bootstrap values."""
+    def roll_values(self, board: Board, color: int, legal_moves=None) -> List[float]:
+        """Per-roll 1-ply values for `color` to move: for each of the 21 distinct rolls (order
+        and weights of `_DICE_OUTCOMES`), the win prob of `color`'s best move (net / bear-off /
+        terminal at the leaves); a roll with no legal move is a pass, valued 1 - the opponent's
+        static value. `legal_moves` overrides the variant generator (handicap rules)."""
+        gen = legal_moves or self._legal_moves
         dice = Dice(_DIE_SIDES)
         opp_is_white = (color != WHITE)
         device = self._model_device()
-        expected = 0.0
-        for (i, j, weight) in _DICE_OUTCOMES:
+        values: List[float] = []
+        for (i, j, _weight) in _DICE_OUTCOMES:
             dice.set(i, j)
-            moves = self._legal_moves(board, color, dice)
+            moves = gen(board, color, dice)
             if not moves:
                 # `color` has no legal move and passes; value for `color` is 1 - opponent's static value.
                 exact = self._exact_value(board, opp_is_white)
@@ -415,10 +415,22 @@ class Agent:
                     with torch.no_grad():
                         v = float(self.board_evaluator(
                             torch.from_numpy(enc).float().unsqueeze(0).to(device)).squeeze())
-                expected += weight * (1.0 - v)
+                values.append(1.0 - v)
             else:
-                expected += weight * max(self._evaluate_moves_batch(board, moves, color))
+                values.append(max(self._evaluate_moves_batch(board, moves, color)))
+        return values
+
+    def position_value_lookahead(self, board: Board, color: int) -> float:
+        """Pre-roll depth-2 expectimax value for `color` to move: average over the 21 weighted
+        dice outcomes of `color`'s best 1-ply move value (net / bear-off at the leaves). This is
+        a one-ply Bellman backup of the raw net eval — a strictly better bootstrap target than
+        net(position), used by the depth-2 TD-target experiment (E14). Returns a win-prob for
+        `color`, matching the perspective of the net's own bootstrap values."""
+        expected = 0.0
+        for (_i, _j, weight), v in zip(_DICE_OUTCOMES, self.roll_values(board, color)):
+            expected += weight * v
         return float(expected)
+
 
 class RandomAgent:
     """An agent that chooses a move randomly from the possible moves."""

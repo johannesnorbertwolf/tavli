@@ -10,8 +10,9 @@ from domain.board import Board
 from domain.constants import WHITE, BLACK
 from domain.dice import Dice
 from domain.handicap import (
-    HandicapBoard, HandicapSpec, HandicappedPlakotoRules, KINDS, face,
-    make_handicapped_rules, parse_spec, pass_schedule,
+    ROLLS, HandicapBoard, HandicapSpec, HandicappedPlakotoRules, KINDS, face,
+    make_handicapped_rules, parse_spec, pass_schedule, plain_roll, roll_index, roll_uniform,
+    tilted_roll_probs, weighted_faces,
 )
 from domain.move import HalfMove, Move
 from domain.move_generation import legal_moves
@@ -214,6 +215,117 @@ class TestHouseSize(unittest.TestCase):
         c = b.clone()
         self.assertEqual((type(c), c.home_white, c.home_black), (HandicapBoard, 4, 8))
         self.assertTrue(c.is_home(BLACK, 8) and not c.is_home(WHITE, 20))
+
+
+def _vals(seed=0):
+    rng = random.Random(seed)
+    return [rng.random() for _ in ROLLS]
+
+
+class TestWeightedDice(unittest.TestCase):
+    """Tier-1 weighted dice: tilt p'(r) ∝ p(r)·exp(β·v(r)) drawn from the turn's uniforms."""
+
+    def test_classification(self):
+        for k in ("weighted_dice", "rerolls"):
+            info = KINDS[k]
+            self.assertEqual((info.category, info.bonus, info.on_distribution), ("dice", True, True))
+        self.assertEqual(KINDS["weighted_dice"].describe.format(side="White", x=2),
+                         "dice favour White (strength 2)")
+        self.assertEqual(KINDS["rerolls"].describe.format(x=3), "3 rerolls per game")
+        self.assertEqual(HandicapSpec("weighted_dice", 2, WHITE).target, BLACK)
+        with self.assertRaises(ValueError):
+            HandicapSpec("weighted_dice", -1)
+        with self.assertRaises(ValueError):
+            HandicapSpec("rerolls", 1.5)
+
+    def test_rolls_table(self):
+        self.assertEqual(len(ROLLS), 21)
+        self.assertAlmostEqual(sum(w for _, _, w in ROLLS), 1.0)
+        from ai.agent import _DICE_OUTCOMES
+        self.assertEqual(list(ROLLS), [tuple(o) for o in _DICE_OUTCOMES])
+        self.assertEqual(roll_index(5, 2), roll_index(2, 5))
+
+    def test_beta_zero_is_fair_dice(self):
+        vals = _vals()
+        rng = random.Random(5)
+        r = rules("weighted_dice:0")
+        for _ in range(5000):
+            u1, u2 = rng.random(), rng.random()
+            fair = (face(u1), face(u2))
+            self.assertEqual(weighted_faces(u1, u2, vals, 0.0), fair)
+            # The tilted-CDF path with a vanishing tilt lands on the same ordered roll.
+            self.assertEqual(weighted_faces(u1, u2, vals, 1e-12), fair)
+            d = r.roll(BLACK, u1, u2, 0.3, 0.3, values=vals)
+            self.assertEqual((d.die1.value, d.die2.value), fair)
+        self.assertEqual(tilted_roll_probs(vals, 0.0), [w for _, _, w in ROLLS])
+
+    def test_single_uniform(self):
+        self.assertEqual(roll_uniform(0.0, 0.0), 0.0)
+        self.assertAlmostEqual(roll_uniform(0.5, 0.5), 3.5 / 6)
+        self.assertLess(roll_uniform(0.9999, 0.9999), 1.0)
+
+    def test_tilt_is_monotone(self):
+        vals = _vals(1)
+        fair = [w for _, _, w in ROLLS]
+        best = max(range(21), key=lambda k: vals[k])
+        worst = min(range(21), key=lambda k: vals[k])
+        prev_best, prev_worst = fair[best], fair[worst]
+        for beta in (0.5, 1, 2, 4, 8, 16):
+            p = tilted_roll_probs(vals, beta)
+            self.assertAlmostEqual(sum(p), 1.0)
+            # Likelihood ratio p'/p is increasing in v ...
+            order = sorted(range(21), key=lambda k: vals[k])
+            ratios = [p[k] / fair[k] for k in order]
+            self.assertEqual(ratios, sorted(ratios))
+            # ... and stronger β moves more mass to the best roll, away from the worst.
+            self.assertGreater(p[best], prev_best)
+            self.assertLess(p[worst], prev_worst)
+            prev_best, prev_worst = p[best], p[worst]
+
+    def test_draws_follow_tilted_distribution(self):
+        vals = _vals(2)
+        beta = 4.0
+        rng = random.Random(9)
+        n = 60000
+        hist = Counter(roll_index(*weighted_faces(rng.random(), rng.random(), vals, beta))
+                       for _ in range(n))
+        for k, p in enumerate(tilted_roll_probs(vals, beta)):
+            self.assertAlmostEqual(hist[k] / n, p, delta=0.01)
+
+    def test_valuer_hook(self):
+        calls = []
+
+        def valuer(board, color):
+            calls.append(color)
+            v = [0.0] * 21
+            v[roll_index(6, 6)] = 1.0
+            return v
+
+        r = make_handicapped_rules([parse_spec("weighted_dice:50", WHITE)], roll_valuer=valuer)
+        board = Board.initial(CONFIG)
+        d = r.roll(BLACK, 0.1, 0.1, 0.0, 0.0, board)
+        self.assertEqual((d.die1.value, d.die2.value), (6, 6))
+        self.assertEqual(calls, [BLACK])
+        # The handicapped (unfavoured) side rolls fair dice without consulting the valuer.
+        self.assertTrue(r.needs_roll_values(BLACK) and not r.needs_roll_values(WHITE))
+        d = r.roll(WHITE, 0.1, 0.1, 0.0, 0.0, board)
+        self.assertEqual((d.die1.value, d.die2.value), (1, 1))
+        self.assertEqual(calls, [BLACK])
+        with self.assertRaises(ValueError):
+            rules("weighted_dice:2").roll(BLACK, 0.1, 0.1, 0.0, 0.0)
+
+    def test_no_face_kind_on_same_side(self):
+        with self.assertRaises(ValueError):
+            rules("weighted_dice:2", "dice_floor:2")   # both favour the opponent
+        rules("weighted_dice:2", "dice_ceiling:5")     # different sides: fine
+
+    def test_reroll_tokens(self):
+        r = rules("rerolls:3")
+        self.assertEqual((r.reroll_tokens(WHITE), r.reroll_tokens(BLACK)), (0, 3))
+        self.assertFalse(r.needs_roll_values(BLACK))
+        d = r.roll(BLACK, 0.4, 0.7, 0.0, 0.0)
+        self.assertEqual((d.die1.value, d.die2.value),
+                         (plain_roll(0.4, 0.7).die1.value, plain_roll(0.4, 0.7).die2.value))
 
 
 if __name__ == "__main__":

@@ -1143,7 +1143,8 @@ def main():
         generate_human_progress_graph(last_x=last_x)
     elif mode == 'handicap-sweep':
         # handicap-sweep [--games N] [--workers K] [--only kind,...] [--combos a:x+b:y,...]
-        #                [--no-combos] [--seed S] [--model PATH] [--out PATH.json]  (#148)
+        #                [--no-combos] [--seed S] [--model PATH] [--out PATH.json]
+        #                [--md PATH.md] [--margin M]  (#148; M = reroll policy margin)
         from ai.handicap_sweep import run_sweep
         args = sys.argv[2:]
 
@@ -1161,6 +1162,8 @@ def main():
             combos=[] if "--no-combos" in args else ([c.strip() for c in combos.split(",")] if combos else None),
             base_seed=int(opt("--seed", 0)),
             out_json=opt("--out", "training_runs/handicap_sweep.json"),
+            out_md=opt("--md"),
+            reroll_margin=float(opt("--margin", 0.02)),
         )
     elif mode == 'plateau':  # unattended train-until-plateau driver (ai/plateau_driver.py)
         from ai.plateau_driver import run_driver
