@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tavlo dark directions</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { width: 2290px; background: #1a1a1c; color: #f2f2f2; padding: 48px 60px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif; -webkit-font-smoothing: antialiased; }
+  h1 { font-size: 34px; font-weight: 700; }
+  .sub { font-size: 18px; color: #b8b8bc; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: repeat(5, 390px); gap: 40px; margin-top: 36px; }
+  .col { display: flex; flex-direction: column; gap: 14px; }
+  .label { font-size: 22px; font-weight: 700; }
+  .blurb { font-size: 15px; color: #b8b8bc; line-height: 1.35; min-height: 62px; }
+  .sw { display: flex; gap: 4px; }
+  .sw span { flex: 1; height: 22px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .shot { width: 390px; border-radius: 34px; box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 20px 50px rgba(0,0,0,.5); }
+  .start { width: 195px; border-radius: 18px; box-shadow: 0 0 0 1px rgba(255,255,255,.14); }
+  .startrow { display: flex; align-items: flex-end; gap: 16px; }
+  .startrow .note { font-size: 14px; color: #8e8e93; }
+  .col.ref .label { color: #d9c7a8; }
+</style>
+</head>
+<body>
+<h1>Tavlo — dark-mode directions (#191)</h1>
+<div class="sub">Same board, layout, fonts and chrome as today; only colours change. Light reference first, then four dark directions. Game screen mid-move (selected stack + two legal targets, pinned checkers on 5 and 15), start screen below.</div>
+<div class="grid" id="grid"></div>
+<script src="themes.js"></script>
+<script>
+const order = ['light', 'espresso', 'night', 'walnut', 'felt'];
+const grid = document.getElementById('grid');
+for (const k of order) {
+  const t = THEMES[k];
+  const sw = ['bg', 'surface', 'accent', 'text', 'frameMid', 'playBot', 'tri', 'rFill', 'wFill']
+    .map(x => `<span title="${x}" style="background:${t[x]}"></span>`).join('');
+  grid.insertAdjacentHTML('beforeend', `<div class="col ${k === 'light' ? 'ref' : ''}">
+    <div class="label">${t.name}</div>
+    <div class="blurb">${t.blurb}</div>
+    <div class="sw">${sw}</div>
+    <img class="shot" src="renders/${k}-game.png">
+    <div class="startrow"><img class="start" src="renders/${k}-start.png"><span class="note">Start screen</span></div>
+  </div>`);
+}
+</script>
+</body>
+</html>

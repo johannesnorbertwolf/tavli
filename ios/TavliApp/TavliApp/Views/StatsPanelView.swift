@@ -154,8 +154,8 @@ struct StatsPanelView: View {
 
     private enum Palette {
         static let ink = CaramelPalette.frameText
-        static let win = SColor(hex: 0x6a8a4a)   // muted olive-green
-        static let loss = SColor(hex: 0xb0563f)  // muted brick-red
+        static let win = SColor(light: 0x6a8a4a, dark: 0x86c46c)   // muted olive-green
+        static let loss = SColor(light: 0xb0563f, dark: 0xff8d72)  // muted brick-red
     }
 }
 
@@ -166,7 +166,7 @@ struct StatsPanelView: View {
         .map { HumanGameRecord(date: Date(), humanWon: $0) }
     return StatsPanelView(stats: HumanGameStats(records: recs))
         .padding()
-        .background(SColor(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
 }
 
 #Preview("Empty") {

@@ -1,0 +1,273 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tavlo dark mock</title>
+<style>
+  @font-face { font-family: 'Cormorant Garamond';
+    src: url('../../ios/TavliApp/TavliApp/Resources/CormorantGaramond.ttf'); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 390px; height: 844px; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  .phone { position: relative; width: 390px; height: 844px; display: flex;
+    flex-direction: column; background: var(--bg); color: var(--text); }
+  .statusbar { height: 47px; flex: none; display: flex; align-items: center;
+    justify-content: space-between; padding: 6px 32px 0 40px; color: var(--statusInk);
+    font-weight: 600; font-size: 17px; }
+  .sb-right { display: flex; gap: 6px; align-items: center; }
+  .home { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px;
+    margin-left: -67px; border-radius: 3px; background: var(--statusInk); opacity: .9; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    min-height: 44px; padding: 10px 14px; border-radius: 12px; font-size: 16px;
+    font-weight: 700; white-space: nowrap; }
+  .btn.secondary { background: var(--tint); color: var(--tintText); }
+  .btn.primary { background: var(--accent); color: var(--onAccent); }
+  .btn svg { width: 18px; height: 18px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+    padding: 0 10px; border-radius: 12px; background: var(--chip); font-size: 16px;
+    font-weight: 700; color: var(--text); }
+  .disc { width: 18px; height: 18px; border-radius: 50%; }
+  .card { background: var(--surface); border-radius: 16px; box-shadow: var(--cardShadow); }
+  .cap { font-size: 14px; color: var(--text2); }
+  /* game */
+  .navbar { display: flex; gap: 8px; align-items: center; padding: 4px 12px 0; }
+  .spacer { flex: 1; }
+  .status { display: flex; flex-direction: column; gap: 8px; align-items: stretch;
+    padding: 0 12px 10px; text-align: center; }
+  .variant { font-size: 14px; font-weight: 600; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--text2); }
+  .turn { font-size: 19px; font-weight: 600; color: var(--heading, var(--text)); margin-top: -2px; }
+  .score { padding: 6px 10px; border-radius: 12px; background: var(--chip);
+    font-size: 14px; color: var(--text2); }
+  .score b { font-size: 16px; color: var(--text); margin: 0 4px; }
+  .controls { display: flex; gap: 12px; justify-content: center; }
+  .board { flex: none; width: 390px; height: 390px; margin-bottom: 34px;
+    box-shadow: var(--boardShadow); }
+  /* start */
+  .topbar { display: flex; justify-content: flex-end; gap: 4px; padding: 0 8px; }
+  .iconbtn { width: 44px; height: 44px; display: flex; align-items: center;
+    justify-content: center; color: var(--icon); }
+  .iconbtn svg { width: 22px; height: 22px; }
+  .startcol { flex: 1; display: flex; flex-direction: column; justify-content: center;
+    gap: 16px; padding: 0 16px 46px; }
+  .wordmark { font-family: 'Cormorant Garamond', serif; font-size: 83px; text-align: center;
+    color: var(--wordmark); line-height: 1; margin-bottom: 4px; }
+  .continue { display: flex; align-items: center; gap: 14px; padding: 14px; }
+  .continue .t { font-size: 17px; font-weight: 600; color: var(--heading, var(--text)); }
+  .continue .s { font-size: 14px; color: var(--text2); margin-top: 3px; }
+  .pair { display: flex; gap: 10px; }
+  .play { flex: 1; flex-direction: column; gap: 3px; padding: 16px 14px; }
+  .play .l1 { font-size: 19px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .play .l2 { font-size: 15px; font-weight: 500; opacity: .92; }
+  .adjust { width: 64px; }
+  .adjust svg { width: 24px; height: 24px; }
+  .row { justify-content: flex-start; gap: 10px; width: 100%; padding: 12px 14px; }
+  .row .chev { margin-left: auto; color: var(--text2); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="themes.js"></script>
+<script>
+const params = new URLSearchParams(location.hash.slice(1));
+const T = THEMES[params.get('theme') || 'light'];
+const screen = params.get('screen') || 'game';
+
+const ICON = {
+  chevL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4 7 12l8 8"/></svg>',
+  chevR: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4l8 8-8 8"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="currentColor"><path fill-rule="evenodd" d="M10.3 1.8h3.4l.5 2.7 1.6.7 2.3-1.6 2.4 2.4-1.6 2.3.7 1.6 2.7.5v3.4l-2.7.5-.7 1.6 1.6 2.3-2.4 2.4-2.3-1.6-1.6.7-.5 2.7h-3.4l-.5-2.7-1.6-.7-2.3 1.6-2.4-2.4 1.6-2.3-.7-1.6-2.7-.5v-3.4l2.7-.5.7-1.6-1.6-2.3 2.4-2.4 2.3 1.6 1.6-.7zM12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4z"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5 4 9l4 4"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4.5" height="9" rx="1"/><rect x="9.75" y="7" width="4.5" height="14" rx="1"/><rect x="16.5" y="3" width="4.5" height="18" rx="1"/></svg>',
+  tray: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3h14l1 2H4z" opacity=".75"/><path d="M4.5 6.5h15l1 2h-17z" opacity=".85"/><path d="M2 11h6.5a3.5 3.5 0 0 0 7 0H22v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/></svg>',
+  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M3 6h10M17 6h4M3 12h4M11 12h10M3 18h12M19 18h2"/><circle cx="15" cy="6" r="2.2"/><circle cx="9" cy="12" r="2.2"/><circle cx="17" cy="18" r="2.2"/></svg>',
+  people: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8.5" cy="8" r="3.3"/><path d="M2.5 20c.6-3.6 3-5.5 6-5.5s5.4 1.9 6 5.5"/><circle cx="16.5" cy="9" r="2.8"/><path d="M15.5 14.6c3-.3 5.4 1.3 6 4.9"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.2"/><ellipse cx="12" cy="12" rx="4" ry="9.2"/><path d="M3 12h18M4.5 7h15M4.5 17h15"/></svg>',
+  resume: '<svg viewBox="0 0 24 24" width="30" height="30"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M12 6.6A5.6 5.6 0 1 0 17.5 11" fill="none" stroke="VAR_BG" stroke-width="2.2" stroke-linecap="round"/><path d="M10.6 3.9 14.6 6.6 10.6 9.3Z" fill="VAR_BG"/></svg>',
+};
+
+function applyVars(el) {
+  for (const [k, v] of Object.entries(T)) if (typeof v === 'string') el.style.setProperty('--' + k, v);
+}
+
+function statusBar() {
+  return `<div class="statusbar"><span>9:41</span><span class="sb-right">
+    <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.3c2.3 0 4.4.9 6 2.4l1.2-1.2A10 10 0 0 0 8 .6 10 10 0 0 0 .8 3.5L2 4.7a8.4 8.4 0 0 1 6-2.4zm0 3.3c1.4 0 2.6.5 3.6 1.4l1.2-1.2A6.8 6.8 0 0 0 8 3.9a6.8 6.8 0 0 0-4.8 1.9L4.4 7A5.1 5.1 0 0 1 8 5.6zM8 9a1.6 1.6 0 0 0-1.2.5L8 11.6l1.2-2.1A1.6 1.6 0 0 0 8 9z"/></svg>
+    <svg width="27" height="13" viewBox="0 0 27 13"><rect x=".5" y=".5" width="23" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="20" height="9" rx="2" fill="currentColor"/><path d="M25 4.5v4a2 2 0 0 0 0-4z" fill="currentColor" opacity=".4"/></svg>
+  </span></div>`;
+}
+
+// ── Board (900-unit design space, mirrors BoardView / BoardGeometry) ─────────
+const F = 40, BAR = 90, INNER = 820, HALFW = 365, PW = HALFW / 6, PH = INNER * 0.4;
+const R = PW * 0.42, STEP = 2 * R + 0.5;
+
+function rawPoint(n) {
+  if (n <= 6) return [F + INNER - PW * (n - 1 + 0.5), 900 - F, false];
+  if (n <= 12) return [F + HALFW - PW * (n - 7 + 0.5), 900 - F, false];
+  if (n <= 18) return [F + PW * (n - 13 + 0.5), F, true];
+  return [F + HALFW + BAR + PW * (n - 19 + 0.5), F, true];
+}
+function triPath(n, inset = 0) {
+  const [cx, by, top] = rawPoint(n);
+  const half = PW / 2 - 1.5;
+  const ty = top ? by + PH : by - PH;
+  return `M${cx - half} ${by} L${cx + half} ${by} L${cx} ${ty} Z`;
+}
+function checkerCenter(n, slot) {
+  const [cx, by, top] = rawPoint(n);
+  return [cx, top ? by + R + 1 + slot * STEP : by - R - 1 - slot * STEP];
+}
+
+let uid = 0;
+function checker(x, y, c) {
+  const id = 'g' + (uid++);
+  const s = c === 'w'
+    ? { hi: T.wHi, fill: T.wFill, ring: T.wRing, edge: T.wEdge, spec: 0.55 }
+    : { hi: T.rHi, fill: T.rFill, ring: T.rRing, edge: T.rEdge, spec: 0.28 };
+  return `<radialGradient id="${id}" cx="${x - 0.24 * R}" cy="${y - 0.36 * R}" r="${1.56 * R}" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="${s.hi}"/><stop offset="1" stop-color="${s.fill}"/></radialGradient>
+    <g filter="url(#cshadow)"><circle cx="${x}" cy="${y}" r="${R}" fill="url(#${id})" stroke="${s.edge}" stroke-width="0.7"/></g>
+    <circle cx="${x}" cy="${y}" r="${R * 0.66}" fill="none" stroke="${s.ring}" stroke-opacity=".85" stroke-width="1.1"/>
+    <circle cx="${x}" cy="${y}" r="${R * 0.52}" fill="none" stroke="${s.ring}" stroke-opacity=".55" stroke-width="0.5"/>
+    <path d="M${x - 0.55 * R} ${y - 0.35 * R} Q${x} ${y - 0.85 * R} ${x + 0.55 * R} ${y - 0.35 * R}" fill="none" stroke="#fff" stroke-opacity="${s.spec}" stroke-width="0.7"/>`;
+}
+
+function diamond(cx, cy) {
+  const w = 78, h = 138;
+  const c = [[cx, cy - h / 2], [cx + w / 2, cy], [cx, cy + h / 2], [cx - w / 2, cy]];
+  let out = `<path d="M${c.map(p => p.join(' ')).join(' L')} Z" fill="${T.diamondBorder}"/>`;
+  for (let side = 0; side < 4; side++) {
+    const a = c[side], b = c[(side + 1) % 4];
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI + 45;
+    for (let i = 0; i < 8; i++) {
+      const t = (i + 0.5) / 8;
+      const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+      const fill = (side + i) % 2 === 0 ? T.tileDark : T.tileLight;
+      out += `<rect x="-3.4" y="-3.4" width="6.8" height="6.8" fill="${fill}" stroke="${T.diamondBorder}" stroke-width=".35" transform="translate(${x} ${y}) rotate(${ang})"/>`;
+    }
+  }
+  const iw = w - 18, ih = h - 14.4;
+  out += `<path d="M${cx} ${cy - ih / 2} L${cx + iw / 2} ${cy} L${cx} ${cy + ih / 2} L${cx - iw / 2} ${cy} Z" fill="${T.diamondFill}" stroke="${T.diamondBorder}" stroke-width=".6"/>`;
+  out += `<circle cx="${cx}" cy="${cy}" r="5.5" fill="${T.diamondDot}"/>`;
+  return out;
+}
+
+const PIPS = { 1: [[.5, .5]], 2: [[.28, .28], [.72, .72]], 3: [[.28, .28], [.5, .5], [.72, .72]],
+  4: [[.28, .28], [.72, .28], [.28, .72], [.72, .72]], 5: [[.28, .28], [.72, .28], [.5, .5], [.28, .72], [.72, .72]],
+  6: [[.28, .25], [.72, .25], [.28, .5], [.72, .5], [.28, .75], [.72, .75]] };
+function die(cx, cy, v) {
+  const s = 56, x = cx - s / 2, y = cy - s / 2;
+  let out = `<g filter="url(#cshadow)"><rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${s * 0.18}" fill="${T.dieFace}" stroke="${T.diePip}" stroke-width="${s * 0.0214}"/></g>`;
+  out += `<rect x="${x + 2}" y="${y + 2}" width="${s - 4}" height="${s - 4}" rx="${s * 0.15}" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width=".5"/>`;
+  for (const [px, py] of PIPS[v]) out += `<circle cx="${x + px * s}" cy="${y + py * s}" r="${s * 0.085}" fill="${T.diePip}"/>`;
+  return out;
+}
+
+// Mid-game Plakoto position. Stacks are listed base → top; a mixed stack is a pin.
+const POSITION = {
+  1: 'rrrr', 3: 'r', 5: 'wr', 6: 'rr', 8: 'ww', 10: 'r', 12: 'www',
+  13: 'rr', 15: 'rw', 17: 'ww', 19: 'w', 21: 'rrr', 22: 'ww', 24: 'www',
+};
+const SELECTED = 12, TARGETS = [9, 7], LAST_MOVE = [];
+
+function board({ withDice = true, selection = true } = {}) {
+  let s = `<svg class="board" viewBox="0 0 900 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${T.frameTop}"/><stop offset=".55" stop-color="${T.frameMid}"/><stop offset="1" stop-color="${T.frameBot}"/></linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${T.playTop}"/><stop offset="1" stop-color="${T.playBot}"/></linearGradient>
+    <filter id="cshadow" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="2" stdDeviation="2.2" flood-color="#000" flood-opacity=".32"/></filter>
+  </defs>
+  <rect x="0" y="0" width="900" height="900" rx="10" fill="url(#frame)"/>
+  <rect x=".5" y=".5" width="899" height="899" rx="9.5" fill="none" stroke="${T.frameHi}" stroke-opacity=".5"/>
+  <rect x="${F}" y="${F}" width="${INNER}" height="${INNER}" fill="url(#play)"/>
+  <rect x="${F}" y="${F}" width="${INNER}" height="${INNER}" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="2"/>`;
+  for (const [y0, y1] of [[40, 450], [450, 860]])
+    s += `<rect x="864" y="${y0 + 8}" width="32" height="${y1 - y0 - 16}" rx="8" fill="${T.trayFill}" fill-opacity="${T.trayOpacity}" stroke="${T.trayFill}" stroke-opacity=".45"/>`;
+  for (let n = 1; n <= 24; n++)
+    s += `<path d="${triPath(n)}" fill="${T.tri}" stroke="${T.triStroke}" stroke-width="2.6" stroke-linejoin="round"/>`;
+  for (let n = 1; n <= 24; n++) {
+    const [cx, by, top] = rawPoint(n); const ty = top ? by + PH : by - PH;
+    s += `<circle cx="${cx}" cy="${ty}" r="4.5" fill="${T.pip}" stroke="${T.triStroke}" stroke-width=".8"/>`;
+  }
+  s += `<line x1="450" y1="40" x2="450" y2="860" stroke="${T.barLine}" stroke-opacity=".55" stroke-width="1.2"/>`;
+  s += diamond(F + HALFW / 2, 450) + diamond(F + HALFW + BAR + HALFW / 2, 450);
+  if (selection) for (const n of TARGETS)
+    s += `<path d="${triPath(n)}" fill="none" stroke="${T.hl}" stroke-width="5" stroke-linejoin="round"/>`;
+  for (const [n, stack] of Object.entries(POSITION))
+    [...stack].forEach((c, i) => { const [x, y] = checkerCenter(+n, i); s += checker(x, y, c); });
+  if (selection) [...POSITION[SELECTED]].forEach((c, i) => {
+    const [x, y] = checkerCenter(SELECTED, i);
+    s += `<circle cx="${x}" cy="${y}" r="${R + 3.2}" fill="none" stroke="${T.hl}" stroke-width="3.4"/>`;
+  });
+  if (withDice) s += die(450 - 34, 450, 5) + die(450 + 34, 450, 3);
+  return s + '</svg>';
+}
+
+function disc(color, size = 18) {
+  return `<span class="disc" style="width:${size}px;height:${size}px;background:${color};box-shadow:inset 0 0 0 1px ${T.chromeDiscStroke}"></span>`;
+}
+
+function gameScreen() {
+  return `<div class="phone">${statusBar()}
+    <div class="navbar">
+      <span class="btn secondary" style="width:48px">${ICON.chevL}</span>
+      <span class="btn secondary" style="width:48px">${ICON.gear}</span>
+      <span class="btn secondary" style="width:48px">${ICON.dots}</span>
+      <span class="spacer"></span>
+      <span class="chip">${disc(T.chromeWhite)}0</span>
+      <span class="chip">${disc(T.chromeRed)}0</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="status">
+      <div class="variant">Plakoto</div>
+      <div class="turn">Choose destination</div>
+      <div class="score">You<b>1 – 0</b>Computer · Game 2 of 3</div>
+      <div class="controls">
+        <span class="btn secondary">${ICON.undo}Undo</span>
+        <span class="btn primary">${ICON.check}Done</span>
+      </div>
+    </div>
+    ${board()}
+    <div class="home"></div>
+  </div>`;
+}
+
+function startScreen() {
+  const resume = ICON.resume.replaceAll('VAR_BG', T.surface);
+  return `<div class="phone">${statusBar()}
+    <div class="topbar">
+      <span class="iconbtn">${ICON.chart}</span><span class="iconbtn">${ICON.tray}</span><span class="iconbtn">${ICON.gear}</span>
+    </div>
+    <div class="startcol">
+      <div class="wordmark">Tavlo</div>
+      <div class="card continue">
+        <span style="color:${T.accent};display:flex">${resume}</span>
+        <div style="flex:1;min-width:0"><div class="t">Continue last game</div>
+          <div class="s">Plakoto vs Computer · Level 8</div><div class="s">Today 21:14 · 23 moves</div></div>
+        <span style="color:${T.text2}">${ICON.chevR}</span>
+      </div>
+      <div class="pair">
+        <span class="btn primary play"><span class="l1">Play the computer ${disc(T.chromeWhite, 16)}</span>
+          <span class="l2">Level 8 · Plakoto · Best of 3</span></span>
+        <span class="btn secondary adjust">${ICON.sliders}</span>
+      </div>
+      <span class="btn secondary row">${ICON.people}<span>Two players on this iPhone</span><span class="chev">${ICON.chevR}</span></span>
+      <span class="btn secondary row">${ICON.globe}<span>Play Online</span><span class="chev">${ICON.chevR}</span></span>
+    </div>
+    <div class="home"></div>
+  </div>`;
+}
+
+const root = document.getElementById('root');
+root.innerHTML = screen === 'start' ? startScreen() : gameScreen();
+applyVars(root.firstElementChild);
+document.body.style.background = T.bg;
+</script>
+</body>
+</html>

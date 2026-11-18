@@ -8,7 +8,7 @@ import TavliEngine
 ///
 /// Defaults: play as White, opening-roll ceremony, auto-roll on, AI animation on,
 /// win-probability bar off, in-play analysis off, AI level 8 = full strength (#189),
-/// best-of-three, Plakoto (#174 moved the colour and auto-roll defaults). Each `@AppStorage` declaration in a view must carry
+/// best-of-three, Plakoto, appearance = System (#191) (#174 moved the colour and auto-roll defaults). Each `@AppStorage` declaration in a view must carry
 /// the same default as the matching accessor here so view bindings and these reads
 /// agree. Manual dice entry was removed in #174; an old stored `settings.diceMode`
 /// value is simply never read. The variant, match length, AI level and Play as are
@@ -219,6 +219,31 @@ enum GameVariantSetting: String, CaseIterable, Identifiable {
 }
 
 /// `UserDefaults` keys for the persisted settings.
+/// App appearance (#191): follow the iOS setting (default) or force light / dark.
+/// Applied app-wide by `TavliApp` as the windows' `overrideUserInterfaceStyle`, so
+/// sheets, alerts and Game Center's own controllers follow it too.
+enum AppearanceSetting: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: return String(localized: "System")
+        case .light:  return String(localized: "Light")
+        case .dark:   return String(localized: "Dark")
+        }
+    }
+
+    var interfaceStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+}
+
 enum SettingsKey {
     static let preferredColor     = PlayAsPreference.storageKey
     static let startingPlayer     = "settings.startingPlayer"
@@ -232,12 +257,18 @@ enum SettingsKey {
     static let onlineMatchLength   = "settings.onlineMatchLength"
     /// The selected variant's id (#143) — the engine's `VariantPreference.key`.
     static let variant             = VariantPreference.key
+    /// Light / dark / follow-the-system appearance (#191, default `.system`).
+    static let appearance          = "settings.appearance"
 }
 
 /// Static, non-reactive reads of the persisted settings, for contexts where
 /// `@AppStorage` isn't available (static funcs / initialisers). Views should bind
 /// to `@AppStorage` instead, so the UI updates live as settings change.
 enum AppSettings {
+    static var appearance: AppearanceSetting {
+        raw(SettingsKey.appearance).flatMap(AppearanceSetting.init) ?? .system
+    }
+
     static var preferredColor: PreferredColorSetting {
         raw(SettingsKey.preferredColor).flatMap(PreferredColorSetting.init) ?? .white
     }

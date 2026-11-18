@@ -9,7 +9,7 @@ private typealias SColor = SwiftUI.Color
 /// `AppSettings` accessors' (each `@AppStorage` default here must match its accessor).
 ///
 /// Sections (#174): **Game** (play as, auto-roll), **Advanced** (first move, analyze
-/// during play), **Display**. Variant, match length and the AI level live in the
+/// during play), **Display** (appearance, #191). Variant, match length and the AI level live in the
 /// new-game sheet only (#189, `NewGameSheet`).
 ///
 /// Styled to the Caramel chrome (background, `ChromeType` fonts, `ChromeTheme` tints)
@@ -23,10 +23,11 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.aiAnimation) private var aiAnimation = true
     @AppStorage(SettingsKey.showWinProbability) private var showWinProbability = false
     @AppStorage(SettingsKey.inPlayAnalysis) private var inPlayAnalysis = false
+    @AppStorage(SettingsKey.appearance) private var appearance: AppearanceSetting = .system
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     header
@@ -54,6 +55,11 @@ struct SettingsView: View {
                     }
 
                     section("Display") {
+                        choiceRow("Appearance",
+                                  selection: $appearance,
+                                  options: AppearanceSetting.allCases,
+                                  label: \.label,
+                                  caption: "System follows your device's light or dark mode.")
                         toggleRow("Animate computer moves",
                                   isOn: $aiAnimation,
                                   caption: "Slow dice roll and one-by-one checker hops on the computer's turn.")

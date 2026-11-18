@@ -43,6 +43,12 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
 
+**Appearance (#191).** The app follows the iOS light/dark setting by default (Settings → Display →
+Appearance: System / Light / Dark, applied in `App.swift` as the windows'
+`overrideUserInterfaceStyle`). Every colour token is a light/dark pair; light mode is unchanged and
+dark is the "C3 · Espresso + warm text" chrome with a walnut board (`design/dark-mode/`). Token
+tables and rules: `TavliApp/TavliApp/Views/CLAUDE.md` + its `REFERENCE.md`.
+
 **Online multiplayer (#134, #145, Game Center).** The GameKit bridge — `GameKitCoordinator`
 (`TavliApp/Online/`, app target, not covered by `swift test`) — maps a `GKTurnBasedMatch` to a
 human-vs-human `GameSession`: it pushes each completed local turn with `endTurn` and feeds the

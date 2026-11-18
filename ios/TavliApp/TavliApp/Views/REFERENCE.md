@@ -60,6 +60,31 @@ bear-off tray chrome (`trayFill` `#2a1408`, `trayEdge` `#1a0a04`, both applied a
 low opacity). `Color(hex: UInt32)` unpacks `0xRRGGBB`. Add later-ticket colors
 (dice) here as those views land.
 
+**Dark mode (#191).** Tokens that change in dark are declared
+`Color(light: 0x…, dark: 0x…)` (optional `lightOpacity:`/`darkOpacity:`), a dynamic
+`UIColor` resolved from the trait collection — so it works in views **and** in `Canvas`
+drawing (the `GraphicsContext` resolves it against its environment). The light value is
+always the original hex, so light mode is pixel-identical. The dark board is the
+"C3 · Espresso + warm text" walnut board from `design/dark-mode/themes.js` (the source of
+truth; README "Round 2" + the C table):
+
+| Token | Light | Dark |
+|---|---|---|
+| `frameTop/Mid/Bot` · `frameHi` | `#e8c089/#d4a466/#a87a3e` · `#f4d6a3` | `#6e4526/#553219/#341c0c` · `#c8904e` (caramel edge) |
+| `playTop/Bot` | `#8a4a22/#6a361a` | `#1f110a/#140a05` (near-black) |
+| `triangleFill` / `diamondFill` | `#fbeed1` | `#ead09a` (cream-gold) |
+| `triangleStroke` / `diamondBorder` / `diamondTileEdge` / `diamondDot` | `#2a1408` / … / `#1a0a04` | `#0a0503` |
+| `tipPip` · `barLine` | `#fff5d8` · `#2a1408` | `#fff0c8` · `#a8743e` |
+| `diamondTileDark/Light` | `#8a4a22/#f0dab0` | `#6e4526/#d9b77c` |
+| `trayRecess` (tray fill as drawn) · `trayEdge` | `#2a1408` @ 22 % · `#1a0a04` | black @ 45 % · black |
+| `whiteFill/Hi/Edge` | `#f1e6c8/#fbf3d8/#5a4828` | `#f4e9cd/#fffaea/#3a2d18` |
+| `redFill/Hi/Ring/Edge` | `#c0392b/#dc5040/#5e160b/#2a0a04` | `#d7412f/#f0604c/#6a1a0d/#1a0603` |
+| `hlBest` · `hlBoth` (and `hlRoute`) | `#2f7fd1` · `#3fa64a` | `#4a9bf0` · `#4cc25a` |
+| `frameText` (chrome text) | `#3a2510` | `#f4d7a4` |
+
+The amber `hl`/`hlFill`/`hlEdge`, `whiteRing`, and the checker label colours are shared.
+The die face (`DiceStyle.ivory`, `DiceView.swift`) is `#f5ead0` / `#efe2c2`.
+
 ## CheckersView.swift (T4 — checker stacks)
 
 Renders the checker stacks on top of `BoardView` — a **pure function of board
@@ -409,7 +434,7 @@ variants). Review falls back to `makeAgent(config:)` for a two-player game.
   - **Review gating:** `hasReviewableMoves` (any ply in `session.history` with half-moves) — a
     game resigned before any move offers no "Review game" in any overlay. Full Tavli also needs
     the leg's model; the match overlay only vs the AI; online never.
-  - Page background is `#ece6dc` (matches `RootView`'s picker).
+  - Page background is `ChromeKit.pageColor` (`#ece6dc`; matches `RootView`'s picker).
 - **`BackButton`** — chevron + "Back", `ChromeButton(role: .secondary)`, calling the
   injected `onBack`.
 - **`SaveButton`** (#61) — download glyph + "Save", `ChromeButton(role: .secondary)`,
@@ -531,16 +556,42 @@ sheets, debug pane) builds on it; the board, dice and checkers keep their own Ca
 styling. Sized for older players: every button renders ≥ 44 pt tall and secondary text
 never drops below 0.72 ink opacity.
 
-- **`ChromeKit`** — tokens: `cardRadius` 16, `buttonRadius` 12, `cardColor` `#f6f0e3`
-  (a touch brighter than the `#ece6dc` page so cards lift without borders), `cardShadow`
-  (black @ 0.10), and `inkSecondary` (`ChromeTheme.ink.opacity(0.72)`) — the single
-  allowed dimmed text color (replaces the scattered 0.5/0.6 opacities).
+- **`ChromeKit`** — tokens: `cardRadius` 16, `buttonRadius` 12, `pageColor` `#ece6dc`
+  (every screen/sheet background), `cardColor` `#f6f0e3` (a touch brighter than the page so
+  cards lift without borders), `cardShadow` (black @ 0.10), and `inkSecondary`
+  (`ChromeTheme.ink` @ 0.72) — the single allowed dimmed text color (replaces the scattered
+  0.5/0.6 opacities). **Dark mode (#191)** — every colour token is a `Color(light:dark:)`
+  pair (light = the values above, unchanged; dark = "C3 · Espresso + warm text",
+  `design/dark-mode/themes.js`):
+
+  | Token | Light | Dark |
+  |---|---|---|
+  | `pageColor` | `#ece6dc` | `#0e0805` (espresso-black) |
+  | `cardColor` | `#f6f0e3` | `#1d130b` |
+  | `selectedSegmentColor` · `trackColor` | `#fdf9f1` · `#e6dccb` | `#2b1c10` (elevated) · `#0e0805` |
+  | `cardShadow` · `cardEdge` | black 10 % · clear | black 35 % · `#ffbe6e` @ 8 % (1 px hairline instead of a shadow) |
+  | `ChromeTheme.ink` | `#3a2510` | `#f4d7a4` (cream-caramel) |
+  | `inkSecondary` · `inkDim(x)` | ink @ 0.72 · ink @ x | `#cf9f62` tan (≥ 7:1 on every surface) |
+  | `iconInk` | ink @ 0.75 | `#d9ad72` |
+  | `ChromeTheme.undoTint` (accent) · `onAccent` | `#a87a3e` · white | `#e09a42` · `#140a02` (dark label) |
+  | `secondaryFill` / `…Pressed` | accent @ 16 % / 34 % | `#ffbe6e` @ 11 % / 22 % |
+  | `ChromeTheme.doneTint` · `surrenderTint` | `#6a8a4a` · `#b05a44` | `#86c46c` · `#ff8d72` |
+  | `ChromeTheme.checkerColor` White / Red | `#fbeed1` / `#a83a2a` | `#f3e8cc` / `#e04a35` |
+
+  `inkDim(x)` replaces `ChromeTheme.ink.opacity(x)` for dimmed **text** (review/drill
+  captions): light is exactly the old opacity, dark is the solid tan so captions keep AA
+  instead of fading. Low-alpha ink *fills* (chips, separators, bars at 0.06–0.12) stay
+  `ink.opacity(x)` — over dark surfaces they read as warm veils. The view-local status
+  colours (`DrillView` correct/close/wrong, the review best/gap, `StatsPanelView`
+  win/loss) follow the same light → dark mapping (olive → `#86c46c`, amber → `#e09a42`,
+  red → `#ff8d72`).
 - **`.chromeCard(padding:)`** (View extension) — pads content (default 20), card fill,
-  `cardRadius` corners, soft drop shadow (radius 10, y 3).
+  `cardRadius` corners, a 1 px `cardEdge` border (clear in light, #191), soft drop shadow
+  (radius 10, y 3).
 - **`ChromeButton(role:fullWidth:)`** — the one button `ButtonStyle`: `ChromeType.callout`
   bold label, 12 pt vertical padding (≥ 44 pt total), `buttonRadius` corners, whole-shape
   hit area. Roles map to **intent, not screen**: `.primary` solid amber fill + white label
-  (the single most important action on a surface — e.g. Done, Play Again); `.secondary`
+  (`onAccent` label in dark; the single most important action on a surface — e.g. Done, Play Again); `.secondary`
   flat caramel tint + ink (everyday actions); `.destructive` flat brick tint + brick label
   (Resign); `.quiet` no fill + secondary ink. (Game-over overlays use the normal roles on
   their solid `GameOverCard`; there is no on-scrim role.) Pressed states deepen the fill. On a compact
@@ -861,7 +912,9 @@ a `ScrollView` capped at 560 pt. Every control binds to `@AppStorage`; each defa
   the new-game sheet), *Auto-roll* (default **on**).
 - **Advanced** — *First move* (`StartingPlayerSetting`: opening roll / I start / Computer
   starts), *Analyze during play* (#146, default off).
-- **Display** — *Animate computer moves* (default on), *Win-probability bar* (default off).
+- **Display** — *Appearance* (#191, `AppearanceSetting` System / Light / Dark, key
+  `settings.appearance`, default **System**), *Animate computer moves* (default on),
+  *Win-probability bar* (default off).
 
 Row builders: `choiceRow` (title + segmented picker + caption), `toggleRow`. Variant, match
 length and the AI level moved to `NewGameSheet` (#189); the #108 strength slider is gone (its
@@ -894,10 +947,17 @@ landscape shows only a caption header + the overall line) and from the mode pick
 
 ## App.swift
 
-`@main`. Minimal — `WindowGroup { RootView().preferredColorScheme(.light) }`; `init` sets
-`ChromeType.scale` from the screen size (#109, compact type on a phone). **Light only:** the
-app has one caramel design, so it never follows system dark mode — `.preferredColorScheme(.light)`
-at the root plus `UIUserInterfaceStyle = Light` in `Info.plist` (which also covers sheets,
-alerts and Game Center's own controllers); otherwise system segmented pickers turn
-dark-styled and unreadable on the light cards. (Earlier the T7 sign-off bootstrap
+`@main`. Minimal — `WindowGroup { RootView().modifier(AppearanceOverride()) }`; `init` sets
+`ChromeType.scale` from the screen size (#109, compact type on a phone), runs the settings
+migration, and styles dark segmented controls. **Appearance (#191):** the app follows the iOS
+appearance by default; Settings → Display → *Appearance* (System / Light / Dark) overrides it.
+`AppearanceOverride` reads the `@AppStorage` key and sets every window's
+`overrideUserInterfaceStyle` (`.unspecified` for System) on appear and on change — a
+window-level override (not `.preferredColorScheme`) so sheets, alerts and Game Center's own
+controllers follow it too and System restores cleanly. (Until #191 the app was light-only:
+`.preferredColorScheme(.light)` + `UIUserInterfaceStyle = Light` in `Info.plist`; both are gone.)
+`styleDarkSegmentedControls()` restyles `UISegmentedControl` via
+`appearance(for: UITraitCollection(userInterfaceStyle: .dark))` only — espresso track
+`#0e0805`, warm selected segment `#4a3320`, tan / cream titles — so the stock grey control
+doesn't clash with the dark chrome, and light mode keeps the system look unchanged. (Earlier the T7 sign-off bootstrap
 hosted `PlayableBoardView` on a fixed scenario here; T10 moved the entry to `RootView`.)

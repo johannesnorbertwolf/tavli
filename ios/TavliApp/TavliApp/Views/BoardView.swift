@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import BoardGeometry
 
 /// Static rendering of the empty Caramel board (T3): beechwood frame,
@@ -69,7 +70,7 @@ public struct BoardView: View {
         for slot in [0, 25] {
             let tray = geo.point(slot).hitRect.insetBy(dx: 4 * s, dy: 8 * s)
             let box = Path(roundedRect: tray, cornerRadius: 8 * s)
-            context.fill(box, with: .color(p.trayFill.opacity(0.22)))
+            context.fill(box, with: .color(p.trayRecess))
             context.stroke(box, with: .color(p.trayEdge.opacity(0.45)), lineWidth: 1 * s)
         }
 
@@ -174,40 +175,49 @@ public struct BoardView: View {
 
 /// Caramel palette, ported verbatim from the `CARAMEL` table in the design
 /// reference. Only the colors used by the empty board (T3) are included.
+///
+/// #191 dark mode: tokens declared `Color(light:dark:)` resolve per colour scheme — the
+/// light value is the original hex (light mode is unchanged), the dark value is the
+/// "C3 · Espresso + warm text" walnut board from `design/dark-mode/themes.js`: a dark
+/// walnut frame with a caramel edge, a near-black play surface, cream-gold points,
+/// slightly brighter checkers, a brighter review blue/green. Tokens with a single
+/// `Color(hex:)` are the same in both schemes (amber highlights, ring/text colours).
 enum CaramelPalette {
-    static let frameTop = Color(hex: 0xe8c089)
-    static let frameMid = Color(hex: 0xd4a466)
-    static let frameBot = Color(hex: 0xa87a3e)
-    static let frameHi = Color(hex: 0xf4d6a3)
-    static let frameText = Color(hex: 0x3a2510)
-    static let playTop = Color(hex: 0x8a4a22)
-    static let playBot = Color(hex: 0x6a361a)
-    static let triangleFill = Color(hex: 0xfbeed1)
-    static let triangleStroke = Color(hex: 0x2a1408)
-    static let tipPip = Color(hex: 0xfff5d8)
-    static let barLine = Color(hex: 0x2a1408)
-    static let diamondBorder = Color(hex: 0x2a1408)
-    static let diamondFill = Color(hex: 0xfbeed1)
-    static let diamondTileDark = Color(hex: 0x8a4a22)
-    static let diamondTileLight = Color(hex: 0xf0dab0)
-    static let diamondTileEdge = Color(hex: 0x2a1408)
-    static let diamondDot = Color(hex: 0x1a0a04)
+    static let frameTop = Color(light: 0xe8c089, dark: 0x6e4526)
+    static let frameMid = Color(light: 0xd4a466, dark: 0x553219)
+    static let frameBot = Color(light: 0xa87a3e, dark: 0x341c0c)
+    static let frameHi = Color(light: 0xf4d6a3, dark: 0xc8904e)
+    static let frameText = Color(light: 0x3a2510, dark: 0xf4d7a4)
+    static let playTop = Color(light: 0x8a4a22, dark: 0x1f110a)
+    static let playBot = Color(light: 0x6a361a, dark: 0x140a05)
+    static let triangleFill = Color(light: 0xfbeed1, dark: 0xead09a)
+    static let triangleStroke = Color(light: 0x2a1408, dark: 0x0a0503)
+    static let tipPip = Color(light: 0xfff5d8, dark: 0xfff0c8)
+    static let barLine = Color(light: 0x2a1408, dark: 0xa8743e)
+    static let diamondBorder = Color(light: 0x2a1408, dark: 0x0a0503)
+    static let diamondFill = Color(light: 0xfbeed1, dark: 0xead09a)
+    static let diamondTileDark = Color(light: 0x8a4a22, dark: 0x6e4526)
+    static let diamondTileLight = Color(light: 0xf0dab0, dark: 0xd9b77c)
+    static let diamondTileEdge = Color(light: 0x2a1408, dark: 0x0a0503)
+    static let diamondDot = Color(light: 0x1a0a04, dark: 0x0a0503)
 
     // Bear-off tray chrome (#31) — a recessed dark tint on the frame strip;
     // applied at low opacity so it reads as a subtle tray, not a solid block.
     static let trayFill = Color(hex: 0x2a1408)
-    static let trayEdge = Color(hex: 0x1a0a04)
+    /// The tray recess as drawn: `trayFill` at 22 % in light; walnut (#191) uses black at 45 %.
+    static let trayRecess = Color(light: 0x2a1408, lightOpacity: 0.22, dark: 0x000000, darkOpacity: 0.45)
+    static let trayEdge = Color(light: 0x1a0a04, dark: 0x000000)
 
     // Checkers (T4) — ported from the CARAMEL table. Engine `.black` → red.
-    static let whiteFill = Color(hex: 0xf1e6c8)
-    static let whiteHi = Color(hex: 0xfbf3d8)
+    static let whiteFill = Color(light: 0xf1e6c8, dark: 0xf4e9cd)
+    static let whiteHi = Color(light: 0xfbf3d8, dark: 0xfffaea)
     static let whiteRing = Color(hex: 0xa8915f)
-    static let whiteEdge = Color(hex: 0x5a4828)
+    static let whiteEdge = Color(light: 0x5a4828, dark: 0x3a2d18)
     static let whiteText = Color(hex: 0x2a1408)
-    static let redFill = Color(hex: 0xc0392b)
-    static let redHi = Color(hex: 0xdc5040)
-    static let redRing = Color(hex: 0x5e160b)
-    static let redEdge = Color(hex: 0x2a0a04)
+    static let redFill = Color(light: 0xc0392b, dark: 0xd7412f)
+    static let redHi = Color(light: 0xdc5040, dark: 0xf0604c)
+    static let redRing = Color(light: 0x5e160b, dark: 0x6a1a0d)
+    static let redEdge = Color(light: 0x2a0a04, dark: 0x1a0603)
     static let redText = Color(hex: 0xfff3d6)
 
     // Move highlight (T7) — ported from the `hl*` keys in the design reference.
@@ -218,8 +228,8 @@ enum CaramelPalette {
     // Review/drill move-comparison colors (#133): your move = amber (`hl`), the AI's
     // best move = blue, and an element played *and* best = green. Chosen to read on
     // both the ivory triangles and the mahogany frame.
-    static let hlBest = Color(hex: 0x2f7fd1)   // blue: the best move
-    static let hlBoth = Color(hex: 0x3fa64a)   // green: you played the best here
+    static let hlBest = Color(light: 0x2f7fd1, dark: 0x4a9bf0)   // blue: the best move
+    static let hlBoth = Color(light: 0x3fa64a, dark: 0x4cc25a)   // green: you played the best here
 
     // Route choice (#169): the candidate intermediate points of an ambiguous Portes
     // two-dice move. Live play never shows the review colours, so it reuses the review
@@ -229,6 +239,17 @@ enum CaramelPalette {
 }
 
 extension Color {
+    /// A colour that adapts to the light/dark colour scheme (#191). Resolved by the
+    /// environment, so it works in views and in `Canvas` drawing alike. The light side is
+    /// exactly `Color(hex: light).opacity(lightOpacity)`.
+    init(light: UInt32, lightOpacity: Double = 1, dark: UInt32, darkOpacity: Double = 1) {
+        self.init(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(hex: dark, alpha: darkOpacity)
+                : UIColor(hex: light, alpha: lightOpacity)
+        })
+    }
+
     init(hex: UInt32) {
         self.init(
             red: Double((hex >> 16) & 0xff) / 255,
@@ -238,8 +259,19 @@ extension Color {
     }
 }
 
+extension UIColor {
+    convenience init(hex: UInt32, alpha: Double = 1) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xff) / 255,
+            green: CGFloat((hex >> 8) & 0xff) / 255,
+            blue: CGFloat(hex & 0xff) / 255,
+            alpha: CGFloat(alpha)
+        )
+    }
+}
+
 #Preview {
     BoardView()
         .padding()
-        .background(Color(hex: 0xece6dc))
+        .background(ChromeKit.pageColor)
 }

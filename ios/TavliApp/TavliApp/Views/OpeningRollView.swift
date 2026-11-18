@@ -32,7 +32,7 @@ struct OpeningRollView: View {
         GeometryReader { screen in
             let layout = ChromeLayout(screen)
             ZStack {
-                SColor(hex: 0xece6dc).ignoresSafeArea()
+                ChromeKit.pageColor.ignoresSafeArea()
 
                 if layout.mode == .compactLandscape {
                     compactLandscapeLayout(layout)

@@ -84,7 +84,7 @@ private struct OnlineLobbyView: View {
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             // Scrolls on a phone (#109) when the lobby outgrows a landscape screen.
             FitOrScroll(enabled: ChromeType.isCompact) {
                 VStack(spacing: 24) {

@@ -250,7 +250,7 @@ struct FullTavliTransitionView: View {
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 24) {
                     Text("Full Tavli")
@@ -320,7 +320,7 @@ struct FullTavliResultView: View {
 
     var body: some View {
         ZStack {
-            SColor(hex: 0xece6dc).ignoresSafeArea()
+            ChromeKit.pageColor.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 24) {
                     Text(title)

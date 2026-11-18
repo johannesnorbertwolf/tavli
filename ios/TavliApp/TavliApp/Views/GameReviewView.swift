@@ -59,7 +59,7 @@ struct GameReviewView: View {
         GeometryReader { proxy in
             let compact = ChromeLayout(proxy).isCompact
             ZStack {
-                SColor(hex: 0xece6dc).ignoresSafeArea()
+                ChromeKit.pageColor.ignoresSafeArea()
                 content
                 // Floating Close while analysing / on a message screen. The review
                 // itself lays Close out as part of its chrome on every layout (#193),
@@ -101,16 +101,16 @@ struct GameReviewView: View {
                 ProgressView().progressViewStyle(.circular).tint(ChromeTheme.ink)
                 if total > 0 {
                     Text("Analyzing move \(done) of \(total)…")
-                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                 } else {
                     Text("Analyzing your moves…")
-                        .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                        .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
                 }
             }
         case .unavailable:
             centered {
                 Text("Review needs the AI model, which isn’t available.")
-                    .font(.callout).foregroundStyle(ChromeTheme.ink.opacity(0.7))
+                    .font(.callout).foregroundStyle(ChromeKit.inkDim(0.7))
             }
         case .nothingToReview:
             centered {
@@ -342,7 +342,7 @@ struct GameReviewView: View {
             if model.firstPassComplete, model.chartEvaluations.count >= 2 {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(scale.isEquity ? LocalizedStringKey("Equity through the game") : LocalizedStringKey("Win chance through the game"))
-                        .font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+                        .font(.caption).foregroundStyle(ChromeKit.inkDim(0.55))
                     WinProbabilityChart(evaluations: model.chartEvaluations,
                                         selectedPly: eval.plyNumber,
                                         blunders: model.blunderPlies, onScrub: onScrub)
@@ -432,7 +432,7 @@ struct GameReviewView: View {
                     legendDot(CaramelPalette.hlBoth, "both")
                 }
                 .font(.caption)
-                .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+                .foregroundStyle(ChromeKit.inkDim(0.6))
                 .opacity(overlay == .both ? 1 : 0)
             }
 
@@ -451,10 +451,10 @@ struct GameReviewView: View {
 
     private func moveLine(label: LocalizedStringKey, move: MoveNotation, pct: Double, tint: SColor) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+            Text(label).font(.caption).foregroundStyle(ChromeKit.inkDim(0.55))
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 MoveNotationLine(notation: move, font: .body.bold(), color: tint)
-                Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeTheme.ink.opacity(0.55))
+                Text("\(percent(pct))").font(.caption.monospacedDigit()).foregroundStyle(ChromeKit.inkDim(0.55))
             }
         }
     }
@@ -694,8 +694,8 @@ private struct ReviewButton: ButtonStyle {
 }
 
 private enum ReviewTint {
-    static let best = SColor(hex: 0x6a8a4a)   // olive-green (matches Done)
-    static let gap = SColor(hex: 0xa83a2a)    // deep red
+    static let best = SColor(light: 0x6a8a4a, dark: 0x86c46c)   // olive-green (matches Done)
+    static let gap = SColor(light: 0xa83a2a, dark: 0xff8d72)    // deep red
 }
 
 /// Amber pill flagging the current move as a blunder (#105), in the board's
@@ -721,7 +721,7 @@ private struct DepthChip: View {
         Text("\(depth)-ply")
             .font(.caption2.bold().monospacedDigit())
             .padding(.horizontal, 6).padding(.vertical, 2)
-            .foregroundStyle(ChromeTheme.ink.opacity(0.6))
+            .foregroundStyle(ChromeKit.inkDim(0.6))
             .background(ChromeTheme.ink.opacity(0.08), in: Capsule())
             .accessibilityLabel("\(depth)-ply analysis")
     }
@@ -771,6 +771,9 @@ private struct WinProbabilityChart: View {
     private static let insetX: CGFloat = 10
     private static let insetY: CGFloat = 14
     private static let corner: CGFloat = 10
+    /// The window's border: a dark edge on the light page; in dark mode (#191) the
+    /// walnut window would vanish into the card, so it gets the board's caramel edge.
+    private static let windowEdge = SColor(light: 0x000000, lightOpacity: 0.35, dark: 0xc8904e, darkOpacity: 0.55)
 
     var body: some View {
         GeometryReader { geo in
@@ -796,7 +799,7 @@ private struct WinProbabilityChart: View {
         ctx.fill(card, with: .linearGradient(
             Gradient(colors: [CaramelPalette.playTop, CaramelPalette.playBot]),
             startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
-        ctx.stroke(card, with: .color(.black.opacity(0.35)), lineWidth: 1.5)
+        ctx.stroke(card, with: .color(Self.windowEdge), lineWidth: 1.5)
 
         let left = Self.insetX, right = size.width - Self.insetX
         let top = Self.insetY, bottom = size.height - Self.insetY
