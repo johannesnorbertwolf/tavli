@@ -41,7 +41,7 @@ selfplay_seeded_fraction: 0.0     # Seed pool stores Plakoto boards — must sta
 selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
 selfplay_league_fraction: 0.0     # No Portes league opponents yet
 selfplay_league_opponents: []  # (Plakoto golds are not valid Portes opponents)
-gold_model_path: models/portes_gold_v0.pth # Portes reference; absent until the first promotion — training skips gold eval with a message
+gold_model_path: models/portes_gold_v5.pth # Final Portes gold (#140): stopped by the user after the v5 promotion (steady +1.45pp edge never plateaued)
 use_bearoff_db: false              # The bear-off DB models Plakoto boards only (supports_bearoff_db=False)
 # bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
                                          # Left unset by default so it resolves to a machine-global cache

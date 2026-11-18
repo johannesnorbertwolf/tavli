@@ -43,7 +43,7 @@ selfplay_seeded_fraction: 0.0  # No standard-Plakoto seed pool exists yet
 selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
 selfplay_league_fraction: 0.0  # No standard-Plakoto league opponents exist yet
 selfplay_league_opponents: []      # None for this variant yet
-gold_model_path: models/plakoto_standard_gold_v0.pth  # Not trained yet; the first promoted standard checkpoint goes here
+gold_model_path: models/plakoto_standard_gold_v7.pth # Final standard-Plakoto gold (#142): plateau after 3 stages, 26 rounds, 2.28M games
 use_bearoff_db: false  # Exact bear-off DB assumes exact-die bear-off — invalid under standard rules
 # bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
                                          # Left unset by default so it resolves to a machine-global cache

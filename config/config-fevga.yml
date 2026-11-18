@@ -44,7 +44,7 @@ selfplay_league_opponents:        # League opponent checkpoints, sampled uniform
   - models/gold_v8.pth
   - models/gold_v9.pth
   - models/gold_v10.pth
-gold_model_path: models/fevga_gold_v0.pth # Fevga reference (promote a trained Fevga model here)
+gold_model_path: models/fevga_gold_v4.pth # Final Fevga gold (#141): plateau after 3 stages, 18 rounds, 1.48M games
 use_bearoff_db: false              # Bear-off DB is Plakoto-only (FevgaRules.supports_bearoff_db = False)
 # bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
                                          # Left unset by default so it resolves to a machine-global cache
