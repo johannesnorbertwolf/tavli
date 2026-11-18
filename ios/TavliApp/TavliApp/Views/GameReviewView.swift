@@ -256,7 +256,20 @@ struct GameReviewView: View {
 
     /// Close + Drill on one bar (the drill button sized to its label; drilling is
     /// offered whenever the game had blunders). Every review layout leads with it.
+    @ViewBuilder
     private var topBar: some View {
+        if record.handicap?.altersDice == true {
+            // Weighted dice / rerolls (#148): the review's chances assume fair dice.
+            VStack(alignment: .leading, spacing: 6) {
+                closeDrillBar
+                HandicapReviewNote()
+            }
+        } else {
+            closeDrillBar
+        }
+    }
+
+    private var closeDrillBar: some View {
         HStack(spacing: 12) {
             CloseButton { dismiss() }
             Spacer(minLength: 0)

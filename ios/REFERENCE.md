@@ -678,6 +678,80 @@ SwiftUI-free (Foundation + Combine), so it's covered by `swift test`
   `HumanGameLogStore` (default `.default()`), `record(humanWon:)` appends + persists immediately
   and republishes so SwiftUI panels re-derive `stats`. `RootView` owns one (`@StateObject`) and
   wires `session.onGameOver` to `store.record(humanWon: winner == humanColor)`.
+- **Handicap games (#148)** — `HumanGameRecord.handicap` (optional, omitted when `nil`, so a log
+  without handicap games is unchanged). `stats` counts only normal games; `handicapStats` only
+  handicap games; `record(humanWon:handicap:)`.
+
+## Handicaps, tier 1 (#148)
+
+Spec: `docs/handicap-concept.md` (§3 tier 1, §4 builder, §5 estimator, §7 app). Engine files:
+`Handicap.swift` (types, start position) and `HandicapDice.swift` (dice maths, estimator, table).
+Tests: `HandicapTests` / `HandicapStatsTests`. **House Plakoto only** (`HandicapSetup.supports`);
+any other variant gets a normal game. **Off path:** with no (or an inactive) setup nothing changes
+— `GameSession.handicap == nil`, no new save key, same position, same dice path (pinned by
+`testNoHandicapLeavesSessionSaveAndPositionUnchanged`).
+
+**Types.**
+- `HandicapItems` — one side: `headStart` (0…8 checkers 6 pips ahead), `movesFirst`, `diceTilt`
+  (β, 0 = fair), `rerolls` (0…4 per game), `hints` (0…5 per game). Tolerant decode (missing = off),
+  `clamped`.
+- `HandicapSetup` — `version` (1) + `white`/`black` items, `subscript(color)`, `isActive`,
+  `normalized` (clamped; "moves first" on both sides cancels), `forcedStarter`, `altersDice`
+  (weighted dice or rerolls: the review notes fair-dice win chances), `needsEvaluator`,
+  `diceTiltSteps = [0, 2, 4, 8, 16]` (**the one β grid**, Off/Slight/Moderate/Strong/Very strong;
+  harness grid 1…16, β≈1 barely registers), `setUpInitialPosition(on:)`.
+- `HandicapGameState` — setup + `rerollsLeft`/`hintsLeft` (`SideCounts`). Persisted as the
+  optional **`GameSave.handicap`** (written only when present, never bumps `schemaVersion`; an old
+  reader ignores it and loads the game unhandicapped; malformed → `nil`). `GameRecord.handicap`
+  carries the setup (`GameSave.record` / `init(record:)` map it; a game-log entry gets full tokens).
+- `HumanGameRecord.handicap` (optional): handicap games are kept out of `HumanStatsStore.stats`
+  (the vs-Computer record) and summarised in `handicapStats`.
+
+**Start position.** `HandicapSetup.setUpInitialPosition` = the variant's start, then `m` checkers
+moved from the start point 6 pips forward (White 1 → 7, Black 24 → 18) — exactly
+`HandicappedPlakotoRules.initial_board` (`pip_headstart`), pinned against Python-generated boards
+for m = 0…8 both sides. Every replay from the start goes through
+`GameRecord.setUpInitialPosition(on:)`: `GameSession` init/`newGame`/`resume`, `GameReview`
+(`analyze`, `replayContexts`), `MoveNotation.game(..., handicap:)`.
+
+**Session hooks** (`GameSession`, all inert without `handicap`):
+- `init(..., handicap:, handicapAgent:)` — normalises, drops it for other variants, applies
+  `forcedStarter` (overrides `startingPlayer`), lays out the head start. `handicapAgent` (default
+  the session's `agent`) is the net for dice/rerolls/hints — a two-player game passes one.
+  `resume(from:..., handicapAgent:)` restores setup + tokens; `newGame` keeps the setup with
+  fresh tokens.
+- **Weighted dice** — when the side on move has β > 0 (and no undo-replay is queued), `roll()`,
+  auto-roll and the AI turn rate the 21 rolls off the main actor (`HandicapDice.rollValues` on a
+  board copy; `preparingDice` blocks input meanwhile, epoch-guarded) and draw with
+  `HandicapDice.weightedFaces(u1, u2, values, β)` from `handicapUniform` (injectable for tests).
+- **Rerolls** — human: `canReroll` / `reroll()` (picking/moving; built half-moves are taken back;
+  the new roll is weighted if that side has β, else fair from `handicapUniform`). Computer:
+  `takeHandicappedAITurn` draws, then rerolls **while tokens remain and**
+  `HandicapDice.shouldReroll(values, d1, d2, beta:)` (`lastComputerReroll` drives the UI note). A
+  restored pending roll (#171) is played as is.
+- **Hints** — `canHint` / `requestHint()`: full-strength `getBestMove` (`SearchConfig.standard`,
+  2-ply) on a board copy off the main actor; publishes `hint` (`[from, to]` pairs) without playing;
+  charged only when it arrives; cleared on the next checker move / new turn (`hintEpoch`).
+- Tokens publish through `handicap` (Equatable) so the app autosaves on a spend.
+
+**Dice maths (`HandicapDice`) — keep in sync with the Python** (`domain/handicap.py`
+`tilted_roll_probs`/`weighted_faces`, `ai/agent.py` `roll_values`, `ai/handicap_sweep.py`
+`wants_reroll`): rolls in `diceOutcomes` order (= `ROLLS`), p = 1/36 doubles, 2/36 others;
+`rollValues` = best 1-ply move value per roll, a no-move roll = `1 − value(opponent to move)`;
+`tilt` = `p'(r) ∝ p(r)·exp(β·v(r))` (β = 0 returns the fair p exactly); `weightedFaces` = inverse
+CDF of `u = (int(6u1)+u2)/6` over the 36 ordered outcomes (β = 0 is `(face(u1), face(u2))`);
+`shouldReroll` = `v(roll) < E_p[v] − 0.02` with p the side's own (tilted) distribution. Pinned by
+Python-generated cases. Differences: no bear-off DB in Swift (race values are the net's).
+
+**Estimate (`HandicapEstimator`, concept §5).** `positionWhiteWinChance(setup, agent, rule)`:
+from the handicap start, the starter's fair mean of `rollValues` (= harness `start_estimate`);
+"moves first" fixes the starter, else `HandicapStartRule` — `.rollOff` (the app's opening roll: a
+fair coin, the starter then rolls fresh) averages both starters (exactly 0.5 with no handicap),
+`.fixed(c)`. `combine(positionWhite:setup:table:)` adds log-odds: per side, the measured shift of
+its dice-lever cell (`weighted_dice:β`, `rerolls:N`, or an exact `+` combo) from `HandicapTable`
+(`HandicapTable.json` in the app bundle, keyed like `docs/handicap-e1-tier1.json`, generated by
+`ios/scripts/make_handicap_table.py`; shift = `logit(favoured win rate)`). Unmeasured levers are
+listed in `unmeasured` and left out of the number; hints only set `approximate`.
 
 ## Post-game blunder review (#62)
 

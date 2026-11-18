@@ -29,6 +29,9 @@ public struct GameRecord: Equatable, Sendable {
     /// `GameVariant.id` of the rules the game was played under (#136). Replays and
     /// reviews resolve the variant from it via `GameConfig(variantID:)`.
     public var variantID: String
+    /// The tier-1 handicap the game is played under (#148), or `nil` for a normal game
+    /// (the overwhelmingly common case — nothing else changes then).
+    public var handicap: HandicapSetup?
 
     public init(startingPlayer: Color,
                 aiColor: Color? = nil,
@@ -37,7 +40,9 @@ public struct GameRecord: Equatable, Sendable {
                 gameId: UUID = UUID(),
                 variantID: String = GameVariants.defaultID,
                 isDraw: Bool = false,
-                points: Int? = nil) {
+                points: Int? = nil,
+                handicap: HandicapSetup? = nil) {
+        self.handicap = handicap
         self.gameId = gameId
         self.isDraw = isDraw
         self.points = points
@@ -167,6 +172,12 @@ public struct GameSave: Codable, Equatable {
     /// ignores the key (and asks for a roll). An invalid or malformed stored value
     /// decodes as `nil`.
     public var pendingRoll: PendingRoll?
+    /// The tier-1 handicap and its tokens left (#148), or `nil` for a normal game.
+    /// Written only when present — like `fullTavli`/`pendingRoll` it never changes the
+    /// schema version: a save without a handicap is byte-identical to before, and an
+    /// older reader ignores the key (the game then loads unhandicapped). A malformed
+    /// value decodes as `nil`.
+    public var handicap: HandicapGameState?
 
     public init(schemaVersion: Int = GameSave.currentSchemaVersion,
                 gameId: UUID? = nil,
@@ -180,8 +191,10 @@ public struct GameSave: Codable, Equatable {
                 variant: String = GameVariants.defaultID,
                 points: Int? = nil,
                 fullTavli: FullTavliSession? = nil,
-                pendingRoll: PendingRoll? = nil) {
+                pendingRoll: PendingRoll? = nil,
+                handicap: HandicapGameState? = nil) {
         self.schemaVersion = schemaVersion
+        self.handicap = handicap
         self.pendingRoll = pendingRoll
         self.fullTavli = fullTavli
         self.points = points
@@ -198,7 +211,7 @@ public struct GameSave: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, gameId, name, savedAt, startingPlayer, aiColor, outcome, history, analysis, variant
-        case points, fullTavli, pendingRoll
+        case points, fullTavli, pendingRoll, handicap
     }
 
     /// The `outcome` string a drawn game is saved with.
@@ -223,6 +236,9 @@ public struct GameSave: Codable, Equatable {
         // Tolerant (#171): a malformed or out-of-range roll is dropped, never fatal.
         let roll = (try? c.decodeIfPresent(PendingRoll.self, forKey: .pendingRoll)) ?? nil
         pendingRoll = roll?.isValid == true ? roll : nil
+        // Tolerant (#148): an unreadable handicap loads the game unhandicapped.
+        let hc = (try? c.decodeIfPresent(HandicapGameState.self, forKey: .handicap)) ?? nil
+        handicap = hc?.setup.isActive == true ? hc : nil
     }
 
     /// Encode the version the on-disk shape actually warrants: `2` only when an
@@ -244,6 +260,7 @@ public struct GameSave: Codable, Equatable {
         try c.encodeIfPresent(points, forKey: .points)
         try c.encodeIfPresent(fullTavli, forKey: .fullTavli)
         try c.encodeIfPresent(pendingRoll, forKey: .pendingRoll)
+        try c.encodeIfPresent(handicap, forKey: .handicap)
     }
 }
 
@@ -263,7 +280,8 @@ public extension GameSave {
                   history: record.plies,
                   analysis: analysis,
                   variant: record.variantID,
-                  points: record.points)
+                  points: record.points,
+                  handicap: record.handicap.map { HandicapGameState(setup: $0) })
     }
 
     /// The save reinterpreted as a `GameRecord`, restoring its `gameId` (a fresh one
@@ -277,7 +295,8 @@ public extension GameSave {
             gameId: gameId ?? UUID(),
             variantID: variant,
             isDraw: outcome == GameSave.drawOutcome,
-            points: points
+            points: points,
+            handicap: handicap?.setup
         )
     }
 }
@@ -305,6 +324,7 @@ public extension GameSession {
     func snapshot(name: String, savedAt: Date = Date()) -> GameSave {
         var save = GameSave(record: record, name: name, savedAt: savedAt)
         save.pendingRoll = pendingRoll
+        save.handicap = handicap   // live tokens (#148); nil for a normal game
         return save
     }
 
@@ -315,6 +335,7 @@ public extension GameSession {
         var save = GameSave(record: record, name: name, savedAt: savedAt)
         save.fullTavli = fullTavli
         save.pendingRoll = pendingRoll
+        save.handicap = handicap   // live tokens (#148); nil for a normal game
         return save
     }
 }

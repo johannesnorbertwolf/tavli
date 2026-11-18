@@ -162,6 +162,12 @@ struct PlayableBoardView: View {
                     CheckersView(stacks: displayStacks, flipped: flipped)
                     SourceRingView(selectedPoint: ringPoint, stacks: displayStacks,
                                    flipped: flipped)
+                    if let hint = session.hint {
+                        // A handicap hint (#148): the best move in blue, not played.
+                        MoveHighlightView(playedMove: [], bestMove: hint, stacks: boardStacks,
+                                          flipped: flipped, variant: session.game.variant)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .contentShape(Rectangle())
                 .gesture(boardGesture(geo: geo))

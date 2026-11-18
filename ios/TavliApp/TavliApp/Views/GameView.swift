@@ -334,7 +334,8 @@ struct GameView: View {
                                    onReview: hasReviewableMoves ? { showReview = true } : nil,
                                    tournamentExit: tournamentExit,
                                    onlineExit: online?.onLeave,
-                                   showsStats: session.aiColor != nil)
+                                   // Handicap games aren't in the vs-Computer record (#148).
+                                   showsStats: session.aiColor != nil && session.handicap == nil)
                 }
             }
             .environment(\.chromeMode, layout.mode)
@@ -396,6 +397,8 @@ struct GameView: View {
             // …and as soon as a roll exists (#171): the human's (tap or auto-roll)
             // and the AI's, so a crash mid-turn resumes the same dice.
             .onChange(of: session.rollRevision) { _, _ in onAutosave() }
+            // …and when a handicap token is spent (#148; never fires in a normal game).
+            .onChange(of: session.handicap) { _, _ in onAutosave() }
             // Keep the live session in sync with the AI-animation setting (#77):
             // apply it on entry and whenever it's toggled, so the change lands on
             // the next AI turn without restarting the game.
@@ -526,6 +529,10 @@ struct GameView: View {
             }
             .frame(maxWidth: .infinity)
             .chromeCard(padding: 16)
+            // Handicap tag (#148): under the status card, where the narrow panel has room
+            // for its label; only in a handicap game.
+            HandicapTagButton(session: session)
+                .frame(maxWidth: .infinity, alignment: .leading)
             if let match {
                 MatchScoreboardView(state: match.state,
                                     localColor: match.localColor,
@@ -569,6 +576,7 @@ struct GameView: View {
                 BackButton(action: onBack)
             }
             SettingsButton { showSettings = true }
+            HandicapTagButton(session: session, compact: true)   // only in a handicap game (#148)
             if !session.isTerminal {
                 if let online {
                     LeaveButton(action: online.onLeave)
@@ -654,6 +662,7 @@ struct GameView: View {
             }
             SettingsButton { showSettings = true }
             gameMenu
+            HandicapTagButton(session: session, compact: true)   // only in a handicap game (#148)
             Spacer(minLength: 8)
             BorneOffView(session: session, color: .white, compact: true)
             BorneOffView(session: session, color: .black, compact: true)
@@ -1036,6 +1045,18 @@ private struct ControlsView: View {
     }
 
     var body: some View {
+        if session.handicap != nil {
+            // Reroll / Hint above Undo/Done, only in a handicap game (#148).
+            VStack(spacing: 10) {
+                HandicapActionsRow(session: session)
+                undoDone
+            }
+        } else {
+            undoDone
+        }
+    }
+
+    private var undoDone: some View {
         HStack(spacing: 12) {
             Button {
                 session.undo()
@@ -1306,7 +1327,8 @@ private struct HistoryView: View {
     private var turns: [Turn] {
         let notations = MoveNotation.game(session.history,
                                           startingPlayer: session.startingPlayer,
-                                          config: session.game.board.config)
+                                          config: session.game.board.config,
+                                          handicap: session.record.handicap)
         var rows: [Turn] = []
         var mover = session.startingPlayer
         for n in notations {

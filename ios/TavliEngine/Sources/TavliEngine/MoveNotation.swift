@@ -140,10 +140,15 @@ public struct MoveNotation: Equatable, Sendable {
 
     /// Notation for every ply of a game, replayed from the variant's starting position
     /// (movers alternate from `startingPlayer`, as `GameSession.replay` does).
+    /// `handicap` (#148) adds a head-start game's advanced checkers to the start.
     public static func game(_ plies: [PlyRecord], startingPlayer: Color,
-                            config: GameConfig) -> [MoveNotation] {
+                            config: GameConfig, handicap: HandicapSetup? = nil) -> [MoveNotation] {
         let board = GameBoard(config: config)
-        config.variant.setUpInitialPosition(on: board)
+        if let handicap {
+            handicap.setUpInitialPosition(on: board)
+        } else {
+            config.variant.setUpInitialPosition(on: board)
+        }
         var mover = startingPlayer
         var out: [MoveNotation] = []
         out.reserveCapacity(plies.count)

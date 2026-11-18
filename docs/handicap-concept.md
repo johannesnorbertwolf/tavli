@@ -1,6 +1,7 @@
 # Handicap system: concept for phases 2–4 (#148)
 
-Status: **concept, decisions taken 2026-11-18; nothing implemented or trained.** Builds on the
+Status: **concept, decisions taken 2026-11-18. Tier 1 implemented in the iOS app (§9) and in the
+Python harness; the dice-lever measurements (E1) are still to come.** Builds on the
 phase-1 measurements in `docs/handicap-phase1.md` (gold_v11 self-play, house Plakoto, 1-ply).
 
 ## Decisions (user, 2026-11-18)
@@ -146,3 +147,41 @@ no new labels in the game, no new sections in the statistics.
 - Exact wording of the head-start item, and the slider maximum (depends on E1).
 - Whether "Head start" uses 6- or 12-pip advances, or both (E1).
 - Whether the estimate is computed on-device from the net or looked up (E1 decides; same UI either way).
+
+## 9. Implementation notes: iOS tier 1 (#148)
+
+Engine detail: `ios/REFERENCE.md` ("Handicaps, tier 1"); views: `ios/TavliApp/TavliApp/Views/REFERENCE.md`
+("Handicap views").
+
+- **Data.** `HandicapSetup` (versioned, per side: head start 0…8, moves first, weighted-dice β,
+  rerolls 0…4, hints 0…5) is stored with the game as the optional `GameSave.handicap` (setup +
+  tokens left). No schema bump: an old build ignores the key and loads the game unhandicapped; a
+  normal game's save is unchanged. Finished handicap games go to the stats log with their setup and
+  are kept out of the vs-Computer record.
+- **Head start** reproduces `pip_headstart` (6 pips; White 1 → 7, Black 24 → 18), pinned against
+  Python-generated boards. 12-pip advances are not offered (E1 decides).
+- **Weighted dice** follow the harness exactly: 1-ply roll values (pass = 1 − opponent's static
+  value), `p' ∝ p·exp(β·v)`, `weighted_faces` inverse-CDF draw; β = 0 is the fair die. App steps
+  Off / Slight / Moderate / Strong / Very strong = β 0 / 2 / 4 / 8 / 16, in one place
+  (`HandicapSetup.diceTiltSteps`) so they can be retuned after E1. The tilt is disclosed only in the
+  Handicap tag ("Dice favour Red moderately"), never per roll.
+- **Rerolls.** Human: a "Reroll (n left)" button while picking (built half-moves are taken back).
+  Computer: the harness rule — reroll while tokens remain and v(roll) < E_p[v] − 0.02 with p its own
+  (tilted) distribution; the human sees "Computer used a reroll (n left)". Not offered on a roll
+  with no legal move (the turn passes at once).
+- **Hints**: the level-8 search (2-ply) shown as a blue move highlight, not played; charged when
+  shown. Human sides only.
+- **Estimate.** Position levers on device from the net (the starter's mean 1-ply value over its 21
+  rolls from the handicap start; the roll-off averages both starters, matching the app's opening
+  roll; "moves first" or a forced first move fixes the starter). Dice levers from the bundled
+  `HandicapTable.json` (keyed like the E1 cells, `weighted_dice:4`, `rerolls:2`, `+` combos;
+  regenerate with `ios/scripts/make_handicap_table.py`), combined by adding log-odds. Until E1
+  lands every dice cell is `null`: the line shows the position estimate plus "Weighted dice and
+  rerolls: not measured yet". Hints mark it "approx." and are left out.
+- **Where it applies.** House Plakoto, offline: vs the computer only for a *Single game* (best of 3
+  and Full Tavli play unhandicapped, the builder says so), two players for any single game. Online
+  never.
+- **Open.** E1 numbers for the table; whether head-start positions need the E2 fine-tune; the
+  Swift side has no bear-off database, so its race values (dice tilt, reroll decisions, estimate)
+  are the net's own rather than the DB's exact ones.
+
