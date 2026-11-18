@@ -26,6 +26,7 @@ selects one (`ConfigLoader.get_variant()` defaults to `plakoto`, `get_ruleset()`
 | `plakoto_standard` (#139) | `StandardPlakotoRules` → `StandardPlakotoBoard(Board)` + `plakoto_standard_moves` | `plakoto_std_v1` (494) | 1 / 2 (bear-off gammon, mother win); **draw** when both mothers pinned | random | `config/config-plakoto-standard.yml` |
 | `portes` (#137) | `PortesRules` → `PortesBoard` (signed slots, bars 0/25) + `portes_move_generation` | `portes_v1` (414) | 1 / 2 (gammon) | random | `config/config-portes.yml` |
 | `fevga` (#138) | `FevgaRules` → `FevgaBoard` (both colours run the same way; Black off = slot 0) | `fevga_v1` (406) | 1 / 2 (mars) | random | `config/config-fevga.yml` |
+| `plakoto_hc` (#148 E3) | `PlakotoHandicapRules` → `Board` (normal games) or `HandicapBoard` (tier-2 handicaps on the board) + `handicap_moves.legal_moves_tier2` | `unary_v3_hc1` (606) | 1 point, like `plakoto` | fixed | `config/config-handicap.yml` (warm start from gold_v11; loads `plakoto` checkpoints) |
 
 Only `plakoto` has `max_points == 1`, the bear-off DB, seed pool, aux heads and the gold ladder
 `models/gold_vN.pth`; it stays bit-identical (`tests/ai/test_determinism_gold.py`). The three new

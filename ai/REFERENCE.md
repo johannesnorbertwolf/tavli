@@ -111,6 +111,29 @@ float32, always from the mover's perspective (Black is mirrored: White slot `i` 
 | 492 / 493 | we / they have borne off ≥ 1 (safe from a bear-off double loss) | 0/1 |
 
 Mirror-symmetric like `unary_v3` (colour-swapped reflected board, other side to move ⇒ identical vector). ~1µs over `unary_v3` (one extra alloc + copy).
+
+---
+
+## handicap_encoder.py
+
+`HandicapEncoder(config)`: version `UNARY_V3_HC1 = "unary_v3_hc1"`, the default encoder of the `plakoto_hc` variant (the ONE handicap-aware house-Plakoto model, #148 E3). `PlakotoHandicapRules.make_encoder` builds it for `unary_v3_hc1`; any other version (`unary_v3` for gold_v11) falls through to `BoardEncoder`. Mover's perspective throughout. **`input_size` = 486 + 52 + 68 = 606.**
+
+| Range | Content |
+|---|---|
+| 0–485 | the unchanged `unary_v3` vector (`BoardEncoder`); a stack above `pieces_per_player` saturates its unary at 15 instead of spilling into the next slot (`BoardEncoder` clamps since #148) |
+| 486–537 | overflow: per mover-perspective slot s = 0..25 (same slot order as the unary block), two units `[count ≥ 16, count ≥ 17]`. With the prefix this is a capacity-17 unary encoding, laid out so the prefix stays byte-identical |
+| 538–571 | own (side to move) handicap block, 34 features |
+| 572–605 | opponent handicap block, 34 features |
+
+Per-side block (offsets): `+0` overshoot bear-off; `+1..+24` safe-point one-hot at index `p` (p = that side's own point number, 1 = its start; all zero = none); `+25` `(checkers − 15)/2`; `+26..+29` one-hot of checkers 13/14/16/17 (all zero = 15); `+30` `(6 − home)/3`; `+31..+33` one-hot of home 5/4/3 (all zero = 6). A plain `Board` has no `checkers` attribute and leaves the block zero; so does a `HandicapBoard` with no active lever.
+
+**Invariant:** every feature after the prefix is 0 in a normal game, so a net whose columns 486+ are zero computes exactly the unary_v3 net (the warm start), and normal-game values depend only on the shared weights, whatever the new columns learn. Swift port (P3b) needs the same layout.
+
+---
+
+## handicap_model.py
+
+Warm start of the handicap model. `widen_input(evaluator, new_input_size)` copies the net with `layers.0.weight` extended by zero columns (biases and every other layer unchanged). `init_handicap_model(source, out, config)` loads a `plakoto`/`unary_v3` checkpoint (refuses other variants or encoders, and a config whose `hidden_sizes` differ), widens it to `HandicapEncoder.input_size`, and saves it as `plakoto_hc`/`unary_v3_hc1` without optimizer state. CLI `main.py --config config/config-handicap.yml handicap-init [--from models/gold_v11.pth] [--out P] [--force]`; the plateau driver runs it on its first start (`plateau.warm_start_from`). Measured on gold_v11: max |Δ value| over normal positions 1.2e-7 (float32 summation order only), identical move choices (`tests/ai/test_handicap_model.py`).
 ## fevga_encoder.py
 
 `FevgaEncoder(config, version="fevga_v1")` encodes a `FevgaBoard` (24 points, 6-point homes only) from the mover's perspective, indexed by the **mover's path index** p = 1..24 (White p = slot; Black p = slot−12 / slot+12). The colour flip is therefore a rotation by 12, and a position and its colour-swapped twin (colours exchanged, every checker moved to the same path index of the other colour, borne-off swapped) give identical vectors (unit-tested). `input_size = 24·(1+P) + 2 + 20` = **406** for P = 15 checkers; float32, all values in [0, 1]; ~20µs per call.
@@ -162,7 +185,7 @@ Construction: `sizes = [input_size] + hidden_sizes + [1]`; one `nn.Linear(sizes[
 
 Handles saving and loading model checkpoints. The canonical entry point for loading is `load_agent_from_checkpoint(path, config, device)` which returns a ready-to-use `(Agent, meta)` pair — never construct an `Agent` manually from a checkpoint. When `use_bearoff_db` is true in config, it also attaches the bear-off DB to the returned `Agent`, so standalone consumers (eval-gold, play, lookahead-eval) get exact race play for free.
 
-**Variants** (#136): `load_agent_from_checkpoint` reads `variant` from the checkpoint (missing → `plakoto`, `VARIANT_LEGACY`), calls `check_checkpoint_variant(meta, config, path)` (raises `VariantMismatchError`, a `ValueError`, when it differs from `config.get_variant()`), builds the encoder with `get_ruleset(variant).make_encoder(config, version=encoder_version)`, attaches the bear-off DB only if the ruleset `supports_bearoff_db`, and passes the ruleset to the `Agent`.
+**Variants** (#136): `load_agent_from_checkpoint` reads `variant` from the checkpoint (missing → `plakoto`, `VARIANT_LEGACY`), calls `check_checkpoint_variant(meta, config, path)` (raises `VariantMismatchError`, a `ValueError`, when it differs from `config.get_variant()`), builds the encoder with `get_ruleset(variant).make_encoder(config, version=encoder_version)`, attaches the bear-off DB only if the ruleset `supports_bearoff_db`, and passes the ruleset to the `Agent`. **Compatible variants** (#148 E3): a RuleSet may list `compatible_checkpoint_variants` (`plakoto_hc` lists `plakoto`). Such a checkpoint passes the variant check under that config, and the agent gets the *config's* (superset) ruleset — so gold_v11 under `config-handicap.yml` plays and searches by the tier-2 rules — with the encoder built for the checkpoint's own `encoder_version` (`unary_v3`). The reverse (a `plakoto_hc` checkpoint under a `plakoto` config) still raises.
 
 **Checkpoint format (format_version=2)**: a dict saved by `torch.save` containing:
 - `state_dict`: network weights
@@ -194,7 +217,7 @@ Exact equity for pure-race positions. Once a Plakoto position has **no pinned ch
 
 **Two-sided win probability** (`win_prob_on_roll(me, opp)`): exact P(player on roll wins) = `Σ_{n≥1} pmf_me[n] · (1 − cdf_opp[n−1])` — I win iff I finish on my n-th roll and the opponent still needs ≥ n. Terminal edges short-circuit (`sum(me)==0` → 1.0, `sum(opp)==0` → 0.0).
 
-**Race detector** (`race_state(board)`): single pass over points 1..board_size; returns `(white_counts, black_counts)` by distance, or `None` if any checker is pinned or outside its owner's home. White's distance at point `i` is `board_size+1−i`, Black's is `i`.
+**Race detector** (`race_state(board)`): single pass over points 1..board_size; returns `(white_counts, black_counts)` by distance, or `None` if any checker is pinned or outside its owner's home. White's distance at point `i` is `board_size+1−i`, Black's is `i`. **Handicap gate** (#148 E3): a board whose `bearoff_exact` is False (`domain.handicap.HandicapBoard`: overshoot bear-off on either side, more than 15 checkers, or a home larger than the quadrant) is never a DB race (`None`). A smaller home is exact (`is_home` only reports a race once every checker is inside it, and from there the DB's moves are the same); fewer checkers are just smaller states; a safe point cannot matter in a contact-free race. Plain boards have no attribute (`getattr` default True).
 
 **Value hook** (`exact_value_on_roll(board, persp_is_white, db)`): returns the exact win probability of the perspective player *assuming they are on roll* — deliberately the same quantity the value net answers for an encoded position — or `None` outside exact races (or when `db is None`). All integration points (agent leaf evals, TD targets) call this and fall back to the net on `None`.
 
@@ -303,6 +326,8 @@ Runs inside a worker subprocess spawned by the parallel training loop.
 
 `select_self_play_move` (shared by workers and the trainer's local-game path, which delegates to it): ε-softmax over 1-ply `agent.evaluate_moves` scores. With probability `1 − ε` greedy; with probability `ε` sample from softmax at temperature `exploration_temperature` (always on the 1-ply scores). When `selfplay_2ply_margin > 0` (#90), a greedy decision whose runner-up is within the margin of the best is *escalated*: the top `selfplay_2ply_max_moves` candidates are re-scored at 2-ply and the deep best is played — targeted policy improvement at the ambiguous decisions only, keeping most plies at 1-ply cost.
 
+**Tier-2 mix** (#148 E3): `maybe_handicap_board(game, config)` — with probability `handicap_selfplay_fraction` (default 0 = never touches the rng) replaces the start board by `tier2_board(sample_tier2_specs(random, handicap_lever_probs))`: one random side handicapped, the other none. Called by `play_one_game_record` (when the game is not seed-pool-started) and the trainer's local path. The variant must be `plakoto_hc` (`TdLambdaTraining` raises otherwise); its generator and encoder read the handicap from the board, so the trajectory, exact values and depth-2 bootstrap need nothing else.
+
 Workers always run in `eval()` mode (no gradient tracking). `torch.set_num_threads(1)` prevents thread contention between workers.
 
 ---
@@ -333,6 +358,8 @@ Each *pair* k uses one seed `s_k`. The same seed is set (`random.seed`/`np.rando
 
 with `a_wins_k = [A won o1] + [A won o2] ∈ {0,1,2}` and `d_k = a_wins_k − 1 ∈ {−1,0,+1}`. Sharing the dice cancels luck and playing both sides cancels the ~3pp first-mover edge, so a pair is decided only where the two models actually *disagree*; for near-identical models most pairs cancel to `d_k=0` and the estimator's variance collapses. The test is one-sided on `mean(d_k)`: `z = mean(d_k)·√n / std(d_k)`, significant at p<0.05 iff `z > 1.645`. The win-rate identity `rate = 0.5 + mean(d_k)/2` makes the result comparable to a plain head-to-head percentage. **Invariant** (and unit test): A vs itself yields `d_k = 0` for every pair, since the two orientations are byte-identical deterministic games. `run_pairs(agent_a, agent_b, config, seeds, lookahead)` is the single-process core (tested directly) and returns `(d_k, a_wins_k, a_points_k)` per pair (outcomes via `game.outcome()` + `score_for`: a draw is half a win; `a_points_k` = A's summed signed points; the starter comes from `ruleset.starting_player(WHITE)` on the same seed, so both orientations share it); `summarize(results, max_points=1)` adds the normalized points statistic `pts_mean_d/pts_std_d/pts_z/pts_rate` (d = a_points/(2·max_points); equal to the win statistic when max_points == 1) and `points_per_game`; `_worker` loads both checkpoints once per spawn process and streams these triples to the parent, which prints a live block (running rate, z, decisive ±/tie counts, variance-reduction factor) and a final summary. Bear-off DB stays on (deployment-realistic); races are then identical for both models and cancel automatically.
 
+**Handicapped mode** (#148 E3, `--handicap`, `evaluate_paired(..., handicap=True)`, plakoto_hc configs only): every pair starts from a random tier-2 setup `handicap_specs_for_seed(seed, lever_probs)` (drawn from its own salted `random.Random`, so the dice stream is untouched; `lever_probs` = the config's `handicap_lever_probs`). The handicap stays on its colour in both orientations, so A plays the favoured side in one game and the handicapped side in the other: the statistic measures play quality under handicaps, not the handicap itself. Self-comparison still gives `d_k = 0`. CLI also takes `--seed S` (base seed).
+
 ## plateau_driver.py
 
 Unattended "train until plateau" driver for training a variant from scratch with no reference model and nobody watching (#140–#142). Start/resume: `./run.sh --config config/config-<variant>.yml plateau` (caffeinate-wrapped; same as `main.py --config CFG plateau`). Poll: `main.py --config CFG plateau-status`. Settings: the `plateau:` section of the variant config (defaults documented as a commented block at the end of `config/config.yml`, and in `DEFAULTS`).
@@ -350,6 +377,12 @@ Unattended "train until plateau" driver for training a variant from scratch with
 **State / resume.** Everything lives in `plateau_state_<variant>.json` (atomic writes): `status` (running/finished/failed), `stage`, `round`, `stage_round`, `phase` (train → eval → decide → … → final → done), `ladder`, `streak`, `rounds` (per-round record: games, opponent, pairs, rate, z, mean_d, std_d, promoted/new_top, vs_random, pooled edge/UCB), `stage_results`, `games_played` (from the trainer's `training_state_path`), `pending` eval result, `verdict`, `error`. Killing the driver at any point and rerunning resumes the exact phase (a kill mid-train re-runs that round's training; mid-eval re-runs only the eval; a promotion's destination is fixed in state before copying). Snapshots found on disk but missing from state are adopted. Human-readable append-only log: `training_runs/plateau_<variant>.log` (one line per round + stage/verdict lines); subprocess eval output in `training_runs/plateau_<variant>/eval_output.log`.
 
 **Robustness.** A non-zero train/eval subprocess is retried `max_retries` (1) times, then `status: failed` with the error and exit 1 (never loops forever). Rerunning after FAILED resets the retry budget and resumes; rerunning after FINISHED prints the verdict and exits.
+
+**Handicap-aware model** (#148 E3, `config/config-handicap.yml`; all settings off by default):
+- `warm_start_from: <unary_v3 ckpt>` — on start, with no ladder yet, `_warm_start` runs `init_runner` (default subprocess `main.py --config CFG handicap-init --from SRC --out <ladder>/<variant>_gold_v1.pth.tmp`, then an atomic rename), adopts it as rung v1 and copies it to `model_save_path` if that does not exist. No bootstrap vs random. A failed warm start sets `status: failed`.
+- `eval_mode: handicap` — the round eval vs the ladder top passes `mode="handicap"` to the eval runner (`_eval` CLI gets a trailing `handicap` arg → `evaluate_paired(handicap=True)`): criterion (b), progress on handicapped games. The runner is called without `mode` in plain mode (old injected runners keep working).
+- `normal_gate_model` (+ `normal_gate_pairs` 2000, `normal_gate_min_rate` 0.49, `normal_gate_z` 1.645) — criterion (a). When a round's handicapped result would promote, phase `gate` runs a plain paired eval of the live model vs this model on NORMAL games (seed `round·1000003 + 500000`, `last_gate.json`); `gate_stats` → `{rate, se = std_d/(2√n), lcb = rate − z·se, pass = lcb ≥ min_rate}` is stored in `pending["gate"]`. `decide(..., gate=)` vetoes a promotion whose gate failed (`gate_blocked`); the round then joins the streak with its handicapped result (so a strong-but-blocked round delays a plateau; `max_rounds` still ends the stage). Round records carry `eval_mode`, `gate`, `gate_blocked`; log lines and `plateau-status` show `normal_gate=… lcb=…` / `BLOCKED`. With a gate model the final phase measures the ladder top vs it on normal games (`normal_gate_pairs`) instead of the live model vs random; `final_vs_random` then also records `opponent` / `model`.
+- Phases: train → eval → (gate) → decide.
 
 **Fragile bits.** Pooling assumes `paired_eval.summarize`'s scale (`d_k ∈ {−1,0,1}`, `rate = 0.5 + mean_d/2`); if summaries move to points/draws, update `pool_results`. The random-opponent eval calls `paired_eval.run_pairs` with a duck-typed `get_best_move` mover. Promotion compares `model_save_path` (raw weights, not the EMA shadow).
 
@@ -369,6 +402,8 @@ Phase-1 exploration harness for the handicap system (#148). `python main.py hand
 - Cost (1 worker, machine under load): ~0.1 s per pair for baseline/position cells, ~0.3 s for rerolls, ~1.5 s for any cell with weighted dice (21 batched 1-ply evaluations per favoured turn).
 
 **Start-position estimate** (`start_estimate(agent, config, cell)`, concept doc §5): for cells made only of `ESTIMABLE_KINDS` (`first_mover`, `pip_headstart`, `pre_borne`), the net's prediction of the measured rate, computed as the pair is played: per orientation, `v` = the first mover's pre-roll value at the start position (fair mean of `roll_values`), the handicapped side scoring `v` if it moves first and `1 − v` otherwise; mean of A and B. Without `first_mover` that is the roll-off average; baseline = 0.5 exactly. `run_sweep` loads the model once in the main process and writes it as `net_estimate` (JSON) / *net est. %* (markdown; blank for dice cells).
+
+**Tier 2** (#148 E3). Kinds `overshoot:1`, `safe_point:p`, `checkers:n`, `smaller_house:k` and combos (`overshoot:1+safe_point:6+checkers:14`). `default_cells(only, tier2)`: without `--only` the tier-2-only kinds (`TIER2_ONLY_KINDS`) stay out of plain sweeps; `--tier2` runs baseline + the tier-2 grids + `DEFAULT_TIER2_COMBOS` (8 combos for the additive check). Meant for the handicap-aware model: `main.py --config config/config-handicap.yml handicap-sweep --tier2 --model models/plakoto_hc_gold_vK.pth`. `is_handicap_model(agent)` (encoder `unary_v3_hc1`) switches: the bear-off DB on for every cell (`cell_uses_bearoff_db(cell, True)`; the board gate does the rest), tier-2 kinds count as on-distribution and estimable (`is_estimable(cell, True)`: the net's start-position estimate covers them, since the net knows the rules), and the JSON records `handicap_model`. The app table: `ios/scripts/make_handicap_table.py [tier1.json] [out] --tier2 <tier2.json>` merges tier-2 cells keyed like the labels (`a:x+b:y`), `logOddsShift = logit(1 − rate)` of the handicapped side, combined additively like tier 1.
 
 **E1 script** `scripts/run_e1_tier1.sh` (env `WORKERS PAIRS MARGIN SEED OUT FINAL PY`; resumable per run): three `handicap-sweep` runs (position / dice / combos, each with its own baseline) at 1 000 pairs per cell, merged into `docs/handicap-e1-tier1.{json,md}` with an additive log-odds prediction per combination. All 1-ply (the harness has no 2-ply mode).
 

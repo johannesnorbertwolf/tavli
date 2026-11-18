@@ -73,7 +73,7 @@ recommended). Config: `config/config-plakoto-standard.yml`. Encoder `plakoto_std
   `supports_bearoff_db = False`, encoder `fevga_v1`. Tests: `tests/domain/test_fevga.py` (spec
   examples F1–F10 + a slow spec-literal reference generator cross-check).
 
-## handicap.py — handicap layer over house Plakoto (#148 phase 1)
+## handicap.py / handicap_moves.py / plakoto_hc_rules.py — handicaps over house Plakoto (#148)
 
 `HandicapSpec(kind, intensity, side)`: `side` is the *disadvantaged* colour; bonus kinds
 (`KINDS[k].bonus`: `dice_floor`, `pre_borne`, `pip_headstart`, `larger_house`) modify the opponent
@@ -95,6 +95,29 @@ for β = 0 is exactly `(face(u1), face(u2))` — fair dice bit-for-bit, same uni
 aligned. Cannot share a side with the face kinds (ceiling/floor/forced-low/no-doubles).
 `rerolls:N` only exposes `reroll_tokens(color)`; when to reroll is a player policy in the game loop
 (`ai/handicap_sweep.py`). `needs_roll_values(color)` / `roll_beta(color)` tell the loop when values are needed.
+
+**Tier 2** (#148 E3; rules for the ONE handicap-aware model, variant `plakoto_hc`). The rules live on
+the board: `HandicapBoard` carries per colour `home_white/home_black`, `checkers[c]`, `overshoot[c]`,
+`safe_point[c]` (own numbering, 1 = start; 0 = none) and overrides `is_home`, `is_open_for` (a lone
+checker on its owner's safe point is closed to the opponent), `all_borne_off` (own count), `clone`;
+`bearoff_exact` (False with overshoot, > 15 checkers or a home > 6) and `is_handicapped()`. Kinds
+(`TIER2_KINDS`): `overshoot:1` (bonus), `safe_point:p` (bonus, 2..23; candidates
+`SAFE_POINT_CANDIDATES` = 2/4/6/8/10/12 — opponent's home + near outer board, where runners get
+pinned; 1 = mother protection, rejected), `checkers:n` (13..17; `target` = favoured side if n < 15,
+else the handicapped side), `smaller_house:k`. `sample_tier2_specs(rng, lever_probs)` draws one setup
+(random handicapped colour; levers independent, `DEFAULT_LEVER_PROBS` 0.5/0.5/0.4/0.4, uniform over
+`TIER2_GRID`; ≥ 1 lever); `tier2_board(specs, config)` builds its start board.
+
+- `handicap_moves.py` — `legal_moves_tier2(board, color, dice)`: the house generator unless the mover
+  has overshoot; then a copy of its structure (pairs, merged jumps, rule-2 singles, the pasch loop with
+  its persistent flags) plus overshoot bear-offs `HalfMove(src, off)`: all own checkers home and none
+  (movable or pinned) farther than `src`, checked in each order on the board after the first half (the
+  pasch loop tracks this turn's steps). Equal to the house generator wherever no overshoot can arise
+  (tested on > 4 checkers outside); always de-duplicated.
+- `plakoto_hc_rules.py` — `PlakotoHandicapRules(PlakotoRules)`, registered `"plakoto_hc"`: `legal_moves =
+  legal_moves_tier2`, encoder `unary_v3_hc1` (`unary_v3` still built for gold_v11),
+  `compatible_checkpoint_variants = ("plakoto",)` (RuleSet attribute, default `()`), bear-off DB on
+  (gated per board). A normal game under it is exactly house Plakoto. Tests: `tests/domain/test_handicap_tier2.py`.
 
 ---
 

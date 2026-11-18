@@ -182,6 +182,12 @@ class TdLambdaTraining:
                     f"(build it with: python main.py seed-pool)")
             from ai.seed_pool import SeedPool
             self.seed_pool = SeedPool(pool_path)
+        if self.config.get_handicap_selfplay_fraction() > 0.0:
+            # Tier-2 boards need the handicap-aware generator + encoder (#148 E3).
+            if self.ruleset.name != "plakoto_hc":
+                raise ValueError("handicap_selfplay_fraction > 0 needs variant: plakoto_hc")
+            from domain.handicap import sample_tier2_specs
+            sample_tier2_specs(random.Random(0), self.config.get_handicap_lever_probs())  # validate
         self.selfplay_league_fraction = self.config.get_selfplay_league_fraction()
         self.league_opponents = None
         if self.selfplay_league_fraction > 0.0:
@@ -702,6 +708,9 @@ class TdLambdaTraining:
         game.player = game.ruleset.starting_player(game.player)
         if self.seed_pool is not None and random.random() < self.selfplay_seeded_fraction:
             game.board, game.player = self.seed_pool.sample(self.config)
+        else:
+            from ai.self_play_worker import maybe_handicap_board
+            maybe_handicap_board(game, self.config)
         opponent, opponent_color = None, 0
         if self.league_opponents and random.random() < self.selfplay_league_fraction:
             opponent = self.league_opponents[random.randrange(len(self.league_opponents))]

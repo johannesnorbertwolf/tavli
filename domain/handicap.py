@@ -34,10 +34,21 @@ harness stays aligned (a tilt only moves the CDF boundaries; the uniform is the 
 Rerolls are a per-game token count (`reroll_tokens`); deciding *when* to reroll is a player
 policy and lives in the game loop (ai/handicap_sweep.py).
 
+Tier 2 (#148, concept doc §3; needs the handicap-aware net `plakoto_hc`): rule-changing
+levers that live on the board itself (`HandicapBoard`), so every consumer — the plain move
+generator, the `plakoto_hc` RuleSet, the encoder, the bear-off gate — reads them from the board:
+- `overshoot:1` (bonus): the favoured side bears off with a higher die when no own checker
+  (movable or pinned) sits farther from the bear-off slot (standard-Plakoto rule); the other side
+  keeps exact-die. Needs its own generator (domain/handicap_moves.py).
+- `safe_point:p` (bonus): a lone favoured checker on point p (favoured side's own numbering,
+  p = 1 its start) cannot be pinned (`HandicapBoard.is_open_for`). p in 2..23; p = 1 would be
+  "mother protection", which the user rejected.
+- `checkers:n`: n < 15 -> the favoured side plays with n (target = opponent of `side`), n > 15
+  -> the handicapped side plays with n; 13..17. Win = all of a side's own n checkers off.
+- `smaller_house:k` (already phase 1): the handicapped side bears off from its last k points.
+`TIER2_KINDS` lists them; `sample_tier2_specs` draws the self-play / eval mix.
+
 Kinds deliberately not implemented (see docs/handicap-phase1.md):
-- fewer checkers: mechanically identical to `pre_borne` on the same side (win = all
-  remaining checkers off); removing checkers *helps* that side, so as a handicap it is
-  `pre_borne` for the weaker side.
 - stacked start: house Plakoto already starts all 15 checkers on one point.
 - shifted-back start for the stronger side: the start point is already the last point;
   the inverse lever is `pip_headstart` for the weaker side.
@@ -89,7 +100,28 @@ KINDS: Dict[str, KindInfo] = {
                               "you bear off from a {x}-point home board"),
     "larger_house": KindInfo("geometry", True, (7, 9), False,
                              "opponent bears off from a {x}-point home board"),
+    # --- tier 2 (handicap-aware net only) ---
+    "overshoot": KindInfo("rules", True, (1,), False,
+                          "{side} may bear off with a higher die"),
+    "safe_point": KindInfo("rules", True, (2, 4, 6, 8, 10, 12), False,
+                           "{side}'s lone checker on point {x} cannot be pinned"),
+    "checkers": KindInfo("position", False, (13, 14, 16, 17), False,
+                         "{x} checkers (fewer: favoured side; more: handicapped side)"),
 }
+
+#: Rule-changing levers the handicap-aware net (`plakoto_hc`, encoder `unary_v3_hc1`) covers.
+TIER2_KINDS: Tuple[str, ...] = ("overshoot", "safe_point", "checkers", "smaller_house")
+
+#: Candidate safe points (favoured side's own numbering, 1 = its start point). Even points from
+#: the opponent's home (2/4/6: where the favoured side's runners get pinned and the pinner can sit
+#: until it bears in) through the near outer board (8/10/12: the landing zone of the first runs).
+#: Point 1 is excluded (mother protection, rejected); 13+ matter far less (pins there are rare
+#: and short-lived). Fewer candidates = more training games per one-hot input.
+SAFE_POINT_CANDIDATES: Tuple[int, ...] = (2, 4, 6, 8, 10, 12)
+
+#: Encoder capacity: largest checker count a side may have (unary_v3_hc1 encodes up to 17).
+MAX_CHECKERS = 17
+MIN_CHECKERS = 13
 
 #: The 21 distinct rolls (d1 <= d2, fair probability) in the order every per-roll value list
 #: uses — identical to ai.agent._DICE_OUTCOMES.
@@ -123,7 +155,10 @@ class HandicapSpec:
 
     @property
     def target(self) -> int:
-        """Colour whose rules are modified (the opponent of `side` for bonus kinds)."""
+        """Colour whose rules are modified (the opponent of `side` for bonus kinds).
+        `checkers`: fewer than 15 goes to the favoured side, more to the handicapped side."""
+        if self.kind == "checkers":
+            return -self.side if self.intensity < 15 else self.side
         return -self.side if KINDS[self.kind].bonus else self.side
 
     def with_side(self, side: int) -> "HandicapSpec":
@@ -148,6 +183,9 @@ def _validate(kind: str, x) -> None:
         "pip_headstart": lambda: 0 <= x <= 15 and float(x).is_integer(),
         "smaller_house": lambda: 1 <= x <= 6 and float(x).is_integer(),
         "larger_house": lambda: 6 <= x <= 12 and float(x).is_integer(),
+        "overshoot": lambda: x in (0, 1),
+        "safe_point": lambda: 2 <= x <= 23 and float(x).is_integer(),
+        "checkers": lambda: MIN_CHECKERS <= x <= MAX_CHECKERS and float(x).is_integer(),
     }[kind]()
     if not ok:
         raise ValueError(f"invalid intensity {x!r} for handicap '{kind}'")
@@ -224,26 +262,100 @@ class _DemotedDoubleDice(Dice):
 
 
 class HandicapBoard(Board):
-    """Plakoto `Board` with a per-colour home-board size (bear-off geometry).
-    Everything else — state, apply/undo, win conditions — is inherited unchanged;
-    the move generator reaches home size only through `is_home`."""
+    """Plakoto `Board` carrying per-colour handicap state (tier 1 geometry + tier 2 rules).
 
-    __slots__ = ("home_white", "home_black")
+    Per colour c (dicts keyed WHITE / BLACK):
+      home_white / home_black  bear-off home size (`is_home`)
+      checkers[c]              c's checker count; c wins when all of them are off
+      overshoot[c]             c may bear off with a higher die (domain/handicap_moves.py)
+      safe_point[c]            point p (c's own numbering, 1 = its start; 0 = none) where a lone
+                               c checker cannot be pinned (`is_open_for`)
+    State, apply/undo and the pin win are inherited unchanged. The house move generator
+    reaches the geometry only through `is_home` / `is_open_for`, so it needs no change except
+    for overshoot, which `domain.handicap_moves.legal_moves_tier2` dispatches on."""
+
+    __slots__ = ("home_white", "home_black", "checkers", "overshoot", "safe_point", "_safe_slot")
 
     def __init__(self, board_size: int = 24, home_size: int = 6, pieces_per_player: int = 15,
-                 home_white: Optional[int] = None, home_black: Optional[int] = None) -> None:
+                 home_white: Optional[int] = None, home_black: Optional[int] = None,
+                 checkers: Optional[Dict[int, int]] = None,
+                 overshoot: Optional[Dict[int, bool]] = None,
+                 safe_point: Optional[Dict[int, int]] = None) -> None:
         super().__init__(board_size, home_size, pieces_per_player)
         self.home_white = home_size if home_white is None else home_white
         self.home_black = home_size if home_black is None else home_black
+        self.checkers = {WHITE: pieces_per_player, BLACK: pieces_per_player}
+        if checkers:
+            self.checkers.update(checkers)
+        self.overshoot = {WHITE: False, BLACK: False}
+        if overshoot:
+            self.overshoot.update({c: bool(v) for c, v in overshoot.items()})
+        self.safe_point = {WHITE: 0, BLACK: 0}
+        if safe_point:
+            self.safe_point.update({c: int(v) for c, v in safe_point.items()})
+        self._sync_safe_slots()
+
+    def _sync_safe_slots(self) -> None:
+        """Board slot of each colour's safe point (-1 = none)."""
+        bs = self.board_size
+        self._safe_slot = {
+            c: (-1 if not p else (p if c == WHITE else bs + 1 - p))
+            for c, p in self.safe_point.items()}
+
+    def set_safe_point(self, color: int, point: int) -> None:
+        self.safe_point[color] = int(point)
+        self._sync_safe_slots()
+
+    def home_size_of(self, c: int) -> int:
+        return self.home_white if c == WHITE else self.home_black
 
     def is_home(self, c: int, i: int) -> bool:
         if c == WHITE:
             return self.board_size - self.home_white + 1 <= i <= self.board_size
         return 1 <= i <= self.home_black
 
+    def is_open_for(self, i: int, c: int) -> bool:
+        n = self.n[i]
+        if n == 0 or self.color[i] == c:
+            return True
+        if n != 1 or self.pinned[i]:
+            return False
+        # A lone opponent checker: pinnable unless it sits on the opponent's safe point.
+        return i != self._safe_slot[-c]
+
+    def all_borne_off(self, c: int) -> bool:
+        return self.borne_off[c] >= self.checkers[c]
+
+    @property
+    def bearoff_exact(self) -> bool:
+        """True iff the exact bear-off DB (ai/bearoff.py: exact-die, <= 15 checkers, 6-point
+        quadrant) is exact for BOTH sides here. A smaller home is fine (a race only starts once
+        every checker is inside it, and from there the DB's moves are the same), fewer checkers
+        are fine, a safe point cannot matter in a contact-free race. Overshoot, > 15 checkers
+        or a home larger than the quadrant are not."""
+        hs = self.home_size
+        return (not self.overshoot[WHITE] and not self.overshoot[BLACK]
+                and self.checkers[WHITE] <= 15 and self.checkers[BLACK] <= 15
+                and self.home_white <= hs and self.home_black <= hs)
+
+    def is_handicapped(self) -> bool:
+        """Any tier-2 / geometry lever active (False = a plain game on this class)."""
+        hs, ppp = self.home_size, self.pieces_per_player
+        return (self.home_white != hs or self.home_black != hs
+                or any(self.overshoot.values()) or any(self.safe_point.values())
+                or self.checkers[WHITE] != ppp or self.checkers[BLACK] != ppp)
+
     def clone(self) -> "HandicapBoard":
-        b = HandicapBoard(self.board_size, self.home_size, self.pieces_per_player,
-                          self.home_white, self.home_black)
+        b = HandicapBoard.__new__(HandicapBoard)
+        b.board_size = self.board_size
+        b.home_size = self.home_size
+        b.pieces_per_player = self.pieces_per_player
+        b.home_white = self.home_white
+        b.home_black = self.home_black
+        b.checkers = dict(self.checkers)
+        b.overshoot = dict(self.overshoot)
+        b.safe_point = dict(self.safe_point)
+        b._safe_slot = dict(self._safe_slot)
         b.n = self.n[:]
         b.color = self.color[:]
         b.pinned = self.pinned[:]
@@ -306,7 +418,12 @@ class HandicappedPlakotoRules(PlakotoRules):
         # Instance attribute (plain function, no binding): the plain generator unless
         # a no-doubles handicap can hand it a demoted double.
         any_demote = any("no_doubles" in self._by_target[c] for c in (WHITE, BLACK))
-        self.legal_moves = _legal_moves_with_demotion if any_demote else _plakoto_legal_moves
+        self._tier2 = any(s.kind in TIER2_KINDS and s.kind != "smaller_house" for s in self.specs)
+        if any(self._by_target[c].get("overshoot") for c in (WHITE, BLACK)):
+            from domain.handicap_moves import legal_moves_tier2  # handles demoted doubles too
+            self.legal_moves = legal_moves_tier2
+        else:
+            self.legal_moves = _legal_moves_with_demotion if any_demote else _plakoto_legal_moves
 
     # --- position ---
 
@@ -314,19 +431,22 @@ class HandicappedPlakotoRules(PlakotoRules):
         hw = int(self._house(WHITE))
         hb = int(self._house(BLACK))
         bs = config.get_board_size()
-        if hw == hb == config.get_home_size():
+        ppp = config.get_pieces_per_player()
+        count = {c: int(self._by_target[c].get("checkers", ppp)) for c in (WHITE, BLACK)}
+        if hw == hb == config.get_home_size() and not self._tier2:
             b = Board.from_config(config)
         else:
-            b = HandicapBoard(bs, config.get_home_size(), config.get_pieces_per_player(),
-                              home_white=hw, home_black=hb)
-        ppp = b.pieces_per_player
+            b = HandicapBoard(
+                bs, config.get_home_size(), ppp, home_white=hw, home_black=hb, checkers=count,
+                overshoot={c: bool(self._by_target[c].get("overshoot", 0)) for c in (WHITE, BLACK)},
+                safe_point={c: int(self._by_target[c].get("safe_point", 0)) for c in (WHITE, BLACK)})
         for c in (WHITE, BLACK):
             mods = self._by_target[c]
             start = 1 if c == WHITE else bs
             off = bs + 1 if c == WHITE else 0
             borne = int(mods.get("pre_borne", 0))
             ahead = int(mods.get("pip_headstart", 0))
-            on_start = ppp - borne - ahead
+            on_start = count[c] - borne - ahead
             if on_start < 1:
                 raise ValueError("handicap leaves no checker on the start point")
             b.set_point(start, c, on_start)
@@ -394,6 +514,58 @@ def make_handicapped_rules(specs: Iterable[HandicapSpec] = (),
     if not specs:
         return get_ruleset("plakoto")
     return HandicappedPlakotoRules(specs, roll_valuer)
+
+
+# --- tier-2 sampling (self-play mix and the handicapped paired eval) ---
+
+#: Default per-lever probabilities of the tier-2 sampler (each lever independent; a draw with
+#: no lever on is redrawn, so every handicapped game has at least one). Overridable from config
+#: (`handicap_lever_probs`).
+DEFAULT_LEVER_PROBS: Dict[str, float] = {
+    "overshoot": 0.5, "safe_point": 0.5, "checkers": 0.4, "smaller_house": 0.4}
+
+#: Intensity grid per lever, drawn uniformly. `checkers`: 13/14 go to the favoured side, 16/17
+#: to the handicapped side (HandicapSpec.target).
+TIER2_GRID: Dict[str, Tuple] = {
+    "overshoot": (1,),
+    "safe_point": SAFE_POINT_CANDIDATES,
+    "checkers": (13, 14, 16, 17),
+    "smaller_house": (5, 4, 3),
+}
+
+
+def sample_tier2_specs(rng, lever_probs: Optional[Dict[str, float]] = None
+                       ) -> Tuple[HandicapSpec, ...]:
+    """One random tier-2 setup: a uniformly random handicapped colour (the favoured side is its
+    opponent), each lever independently on with its probability and a uniform intensity from
+    `TIER2_GRID`, at least one lever on. Consumes only `rng` (a random.Random or the `random`
+    module) — never numpy."""
+    probs = dict(DEFAULT_LEVER_PROBS)
+    if lever_probs:
+        probs.update({k: float(v) for k, v in lever_probs.items()})
+    for k in probs:
+        if k not in TIER2_GRID:
+            raise ValueError(f"unknown tier-2 lever '{k}'; known: {', '.join(TIER2_GRID)}")
+    if not any(p > 0 for p in probs.values()):
+        raise ValueError("all tier-2 lever probabilities are 0")
+    side = WHITE if rng.random() < 0.5 else BLACK
+    while True:
+        specs = []
+        for kind in TIER2_GRID:  # fixed order: reproducible draws
+            if rng.random() < probs.get(kind, 0.0):
+                grid = TIER2_GRID[kind]
+                specs.append(HandicapSpec(kind, grid[int(rng.random() * len(grid))], side))
+        if specs:
+            return tuple(specs)
+
+
+def tier2_board(specs: Sequence[HandicapSpec], config) -> Board:
+    """Start position (a HandicapBoard carrying the rules) of a tier-2 setup."""
+    return HandicappedPlakotoRules(specs).initial_board(config)
+
+
+def specs_label(specs: Sequence[HandicapSpec]) -> str:
+    return "+".join(s.label() for s in specs) or "baseline"
 
 
 # --- plain-rules counterparts so a game loop can treat both uniformly ---

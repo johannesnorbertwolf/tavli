@@ -56,6 +56,9 @@ class RuleSet(ABC):
     #: False: today's fixed starters (self-play Black, eval White). True: self-play
     #: and eval pick the starter uniformly at random from the (seeded) global rng.
     random_starting_player: bool = False
+    #: Other variants whose checkpoints load (and play) under this one, because their games are
+    #: a subset of this variant's (plakoto_hc: a normal game is exactly plakoto).
+    compatible_checkpoint_variants: Tuple[str, ...] = ()
 
     @abstractmethod
     def initial_board(self, config):
@@ -159,6 +162,7 @@ def _load_builtins() -> None:
         import domain.portes_rules  # noqa: F401  (registers "portes")
         import domain.plakoto_standard_rules  # noqa: F401  (registers "plakoto_standard")
         import domain.fevga_rules  # noqa: F401  (registers "fevga")
+        import domain.plakoto_hc_rules  # noqa: F401  (registers "plakoto_hc")
 
 
 def get_ruleset(name: str) -> RuleSet:

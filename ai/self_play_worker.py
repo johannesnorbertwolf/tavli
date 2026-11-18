@@ -25,6 +25,22 @@ def _never(_color):
     return False
 
 
+def maybe_handicap_board(game, config, fraction=None, lever_probs=None):
+    """With probability `handicap_selfplay_fraction` (#148 E3), replace the start position by
+    a random tier-2 setup's (one random side handicapped, the other none). Uses the seeded
+    global `random` only when the fraction is > 0. Returns the specs (or ())."""
+    if fraction is None:
+        fraction = config.get_handicap_selfplay_fraction()
+    if fraction <= 0.0 or random.random() >= fraction:
+        return ()
+    from domain.handicap import sample_tier2_specs, tier2_board
+    if lever_probs is None:
+        lever_probs = config.get_handicap_lever_probs()
+    specs = sample_tier2_specs(random, lever_probs)
+    game.board = tier2_board(specs, config)
+    return specs
+
+
 def select_self_play_move(agent, board, possible_moves, current_player, epsilon,
                           exploration_temperature, twoply_margin=0.0, twoply_max_moves=4):
     """Shared self-play move selection (workers and the trainer's local path).
@@ -75,6 +91,8 @@ def play_one_game_record(agent, encoder, config, epsilon, exploration_temperatur
     legal_moves = game.ruleset.legal_moves
     if seed_pool is not None and seeded_fraction > 0.0 and random.random() < seeded_fraction:
         game.board, game.player = seed_pool.sample(config)
+    else:
+        maybe_handicap_board(game, config)
     opponent, opponent_color = None, 0
     if league_opponents and league_fraction > 0.0 and random.random() < league_fraction:
         opponent = league_opponents[random.randrange(len(league_opponents))]

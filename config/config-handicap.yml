@@ -1,0 +1,122 @@
+# Handicap-aware house Plakoto (#148 E3, tier 2): the ONE model for every rule-changing handicap
+# (overshoot bear-off, safe point, checker count, smaller home) and any combination of them.
+# Cloned from config/config.yml (the gold_v11 settings) with its own output paths.
+# Launch (resumable; warm-starts from gold_v11 on the first start):
+#   .venv/bin/python main.py --config config/config-handicap.yml plateau
+#   .venv/bin/python main.py --config config/config-handicap.yml plateau-status
+variant: plakoto_hc        # house Plakoto + tier-2 handicaps (domain/plakoto_hc_rules.py); encoder unary_v3_hc1 (606 inputs)
+board_size: 24
+pieces_per_player: 15
+home_size: 6
+die_sides: 6
+
+# Training parameters
+alpha: 0.0003              # DEPRECATED (was learning rate for manual TD update); ignored by Adam path
+discount_factor: 1.0       # No discounting — correct for a finite terminal-reward game
+epsilon_start: 0.0         # Warm start from gold_v11: no random exploration (E1 #81: dice explore enough)
+epsilon_end: 0.0           # EXP E1 (#81): dice randomness explores enough; random moves corrupt λ-returns
+epsilon_decay: 0.9995      # Slower decay to allow for more exploration
+epsilon_decay_games: 0     # If >0, linearly decay epsilon to epsilon_end over this many games
+exploration_temperature: 1.0  # Softmax temperature during self-play exploration
+num_epochs: 10             # Number of training epochs
+games_per_epoch: 100       # Number of self-play games to generate per epoch
+max_grad_norm: 5.0         # Clip global L2 norm of gradients pre-Adam; 0 disables
+hidden_sizes: [256, 128, 64]  # Net2Net-expanded from [128, 64]. E10 (#96) widened to [512,256,128] and measured flat after ~1M games — reverted; re-expand via `main.py expand-net` if a future signal change pays off
+alpha_decay: 0.9999        # DEPRECATED; ignored by Adam path
+alpha_decay_every: 1000    # DEPRECATED; ignored by Adam path
+alpha_min: 0.00005         # DEPRECATED; ignored by Adam path
+training_seed: null        # Set to an integer for reproducible benchmark runs
+eval_every_epochs: 10      # Run quick eval against random every N epochs
+eval_games_per_color: 100  # Eval budget per color at each eval point
+eval_seed: null            # Optional fixed eval seed; null means choose a new random seed each evaluation run
+eval_against_random: false # Keep optional random baseline eval
+eval_against_gold: false   # The plateau driver owns evaluation (handicapped pairs vs ladder + normal-game gate vs gold_v11)
+eval_candidate_lookahead_plies: 1 # Expectimax lookahead for candidate at eval
+eval_gold_lookahead_plies: 1      # Expectimax lookahead for gold opponent at eval
+play_time_budget_s: 20.0          # Max time budget per AI move (iterative-deepening search)
+beam_threshold: 0.08              # Absolute beam fallback (used only when search_relative_cutoff unset)
+search_relative_cutoff: 0.08      # Keep moves within this relative fraction of the best
+search_max_branch: 5              # Hard cap on moves expanded per node, on top of the relative cutoff
+search_max_depth: 2               # Stop iterative deepening here. Set to 2 to disable 3-ply during play for now (3-ply works but is slow; revert to 3 to re-enable).
+num_self_play_workers: 6          # Parallel self-play processes (1 = single-process)
+selfplay_2ply_margin: 0.0         # Escalate self-play decisions to 2-ply when runner-up is within this of the best 1-ply score (0 = off). E8 (#90) measured 0.03 flat at 13x cost — keep off
+selfplay_2ply_max_moves: 2        # Max candidates re-scored at 2-ply when escalating
+selfplay_seeded_fraction: 0.0     # Fraction of self-play games started from seed-pool positions (0 = off). E9 (#83) measured 0.25 flat — keep off
+selfplay_seed_pool_path: models/seed_pool.npz # High-residual position pool; build with `python main.py seed-pool`
+selfplay_league_fraction: 0.0     # Fraction of self-play games with one side played by a frozen gold (0 = off). E11 (#83) measured 0.2 flat — keep off
+selfplay_league_opponents: []     # (league play off; gold_v7..v10 are unary_v3 plakoto nets)
+
+# Tier-2 handicap mix (#148 E3). Each self-play game: with this probability one random side gets a
+# random tier-2 combination (domain.handicap.sample_tier2_specs), the other side none; otherwise a
+# normal game. Levers are independent (probabilities below), intensities uniform over
+# TIER2_GRID (overshoot on; safe point 2/4/6/8/10/12; checkers 13/14 for the favoured side or
+# 16/17 for the other; smaller home 5/4/3 for the other side); a draw with no lever is redrawn.
+handicap_selfplay_fraction: 0.7
+handicap_lever_probs: {overshoot: 0.5, safe_point: 0.5, checkers: 0.4, smaller_house: 0.4}
+gold_model_path: models/gold_v11.pth # Normal-game reference; the plateau driver points this at its ladder top per stage
+use_bearoff_db: true               # Exact bear-off DB: exact equity at race leaves (search + self-play) and as TD bootstrap targets
+# bearoff_db_path: models/bearoff_db.npz # Cached one-sided bear-off database (built once on first use, ~few minutes).
+                                         # Left unset by default so it resolves to a machine-global cache
+                                         # (~/.cache/tavli/, or $TAVLI_BEAROFF_DB) shared across all git worktrees.
+                                         # Set this to pin a specific path.
+training_state_path: training_state_plakoto_hc.json # Persisted scheduler state for resumed training
+# Per-run output paths — give each variant config its own so parallel trainings never clobber each other.
+model_save_path: trained_model_plakoto_hc.pth                      # Live trained model (warm start = models/plakoto_hc_gold_v1.pth)
+gold_eval_log_path: training_runs/eval_gold_history_plakoto_hc.log # Eval-vs-gold history (eval-gold-stats / eval-gold-graph)
+training_log_path: training_log_td_plakoto_hc.txt                  # stdout tee target of the train subprocess
+last_game_log_path: last_game_log_plakoto_hc.txt                   # Verbose log of each epoch's last local self-play game
+state_save_every_games: 100 # Save scheduler state every N games
+model_save_every_epochs: 1   # Save model checkpoint every N epochs (0 disables)
+lambda_decay_games: 0      # Disable lambda decay; use fixed lambda for this test
+
+# TD(Lambda) parameters
+lambda_start: 0.7          # Fixed TD(lambda) for stronger long-horizon credit assignment
+lambda_end: 0.7            # Fixed TD(lambda) for stronger long-horizon credit assignment
+lambda_decay: 0.999        # Decay rate for lambda per episode
+bootstrap_depth: 2         # E14 (#80): 1 = raw net bootstrap; 2 = one-ply expectimax backup (avg over 21 dice) as the TD bootstrap target. ~17x slower self-play. KEPT — first lever to beat the gate since gold_v10: paired gate 50.50% over 40k duplicate-dice games (z=2.34, p=0.0097)
+
+# Auxiliary output heads (#106): training-only side targets sharing the trunk
+aux_heads: 0               # 0 = off; 2 = [win-by-pin, final borne-off margin]. E12 (#106) measured 2 flat — keep off
+aux_loss_weight: 0.3       # Weight of the aux BCE term relative to the main value loss (when aux_heads > 0)
+
+# Optimizer + replay buffer (Adam replaces manual TD update)
+learning_rate: 0.00003         # E5-proven value; E6's further drop to 1e-5 measured flat (#81)
+lr_warmup_steps: 1000          # Linear warmup 0.1·lr → lr over this many optimizer steps; 0 disables
+lr_restart_period_games: 0     # E16 (#81): SGDR warm restarts — self-play games per cosine cycle; 0 = off. OFF — measured WORSE: peak 5× LR over 50k games scored 48.34% vs the depth-2 fixed point (paired z=−7.64). Net is at a genuine optimum, not a sharp basin; perturbing it degrades it. Machinery kept, off.
+lr_restart_peak_factor: 5.0    # E16: peak LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
+lr_restart_min_factor: 0.03    # E16: floor LR of each cycle = this × learning_rate (only read when lr_restart_period_games > 0)
+ema_decay: 0.0                 # EMA/Polyak shadow weights (E13, #81): 0 disables. Confirmed FLAT by a high-power paired gate — EMA 50.03% over 40k duplicate-dice games (z=0.21, true edge bounded to ±0.3pp). The earlier 50.59% (z=1.18) was noise. Machinery kept for a future signal change
+replay_buffer_capacity: 50000  # Samples held in the replay buffer
+minibatch_size: 128            # SGD minibatch size
+updates_per_game: 5            # Adam SGD steps run per ingested trajectory
+min_buffer_to_train: 2000      # Don't start training until buffer holds at least this many samples
+
+# Interactive play settings
+play:
+  eval_lookahead_plies: 4       # Default lookahead depth for ranked moves
+  drill_correct_floor: 0.01     # Absolute floor for drill "correct" threshold (1 pp)
+  drill_correct_relative: 0.03  # Fraction of best_score for drill "correct" threshold (3%)
+
+# Unattended train-until-plateau driver (ai/plateau_driver.py), handicap mode (#148 E3):
+#  * warm start: ladder v1 = gold_v11 widened with zero columns (identical on normal games);
+#  * round = train round_games self-play games (70 % handicapped) + 2000 paired trials vs the ladder
+#    top on random tier-2 setups (criterion (b): promote on z >= 2 and >= 52 %);
+#  * a would-be promotion first runs 2000 paired trials vs gold_v11 on NORMAL games (criterion (a):
+#    one-sided 95 % lower bound of the rate >= 49 %, else the promotion is vetoed);
+#  * plateau = 4 non-promoting rounds with pooled handicapped edge UCB < +1.5pp.
+# Ladder: models/plakoto_hc_gold_vK.pth; state plateau_state_plakoto_hc.json; log
+# training_runs/plateau_plakoto_hc.log.
+plateau:
+  warm_start_from: models/gold_v11.pth
+  eval_mode: handicap
+  normal_gate_model: models/gold_v11.pth
+  normal_gate_pairs: 2000
+  normal_gate_min_rate: 0.49
+  round_games: 20000
+  eval_pairs: 2000
+  patience: 4
+  stages:
+    # Depth-1 bootstrap first: the new input columns start at zero and must learn the rules;
+    # cheap rounds at the proven learning rate. Then the gold_v11 setting (depth-2 bootstrap).
+    - {name: depth1, round_games: 50000, overrides: {bootstrap_depth: 1, learning_rate: 0.00003}}
+    - {name: depth2, round_games: 20000, overrides: {bootstrap_depth: 2, learning_rate: 0.00003}}

@@ -29,6 +29,21 @@ Decision per round (pure functions below, unit-tested):
 
 All state lives in `plateau_state_<variant>.json` (atomic writes, phase-tracked), so
 the driver can be killed at any time and resumes the exact phase it was in.
+
+Handicap-aware model (#148 E3, `config/config-handicap.yml`, variant plakoto_hc):
+  * `warm_start_from: models/gold_v11.pth` — on the first start (no ladder yet) the driver
+    builds `<variant>_gold_v1.pth` from it (`main.py handicap-init`: input widened with zero
+    columns, so v1 plays exactly like gold_v11) and copies it to the live model if none exists.
+    No bootstrap vs random.
+  * `eval_mode: handicap` — the round eval vs the ladder top plays every pair from a random
+    tier-2 setup (`ai.paired_eval.handicap_specs_for_seed`), so promotion / plateau measure
+    progress on handicapped games (criterion (b)).
+  * `normal_gate_model: models/gold_v11.pth` — criterion (a), non-regression on normal games:
+    a round whose handicapped eval would promote first runs a paired eval vs this model on
+    NORMAL games (phase "gate"); promotion needs its one-sided lower confidence bound
+    rate - normal_gate_z * SE >= normal_gate_min_rate (non-inferiority, default 49%). A blocked
+    round counts as non-promoting (joins the streak with its handicapped result). The final
+    phase measures the ladder top's live model vs this model on normal games instead of random.
 """
 
 import glob
@@ -64,6 +79,13 @@ DEFAULTS = {
     "state_path": None,             # None -> plateau_state_<variant>.json
     "log_path": None,               # None -> training_runs/plateau_<variant>.log
     "work_dir": None,               # None -> training_runs/plateau_<variant> (derived cfgs)
+    # --- handicap-aware model (#148 E3); all off by default ---
+    "warm_start_from": None,        # unary_v3 checkpoint -> ladder v1 via `main.py handicap-init`
+    "eval_mode": "plain",           # "plain" | "handicap" (round eval on random tier-2 setups)
+    "normal_gate_model": None,      # non-regression gate opponent on normal games (None = off)
+    "normal_gate_pairs": 2000,      # paired trials of the gate
+    "normal_gate_min_rate": 0.49,   # gate passes iff one-sided LCB of the rate >= this
+    "normal_gate_z": 1.645,         # one-sided 95% LCB
 }
 
 
@@ -117,23 +139,40 @@ def plateau_check(streak, settings):
     return is_plateau, pooled
 
 
-def decide(has_ladder, result, streak, stage_rounds, settings):
+def gate_stats(summary, min_rate, z=1.645):
+    """Non-inferiority gate from a paired-eval summary (#148 E3, criterion (a)): passes iff
+    the one-sided lower confidence bound rate - z * SE(rate) is >= min_rate, with
+    SE(rate) = std_d / (2 sqrt(n)) (rate = 0.5 + mean_d / 2)."""
+    n = max(1, int(summary["num_pairs"]))
+    se = float(summary["std_d"]) / (2.0 * math.sqrt(n))
+    lcb = float(summary["rate"]) - z * se
+    return {"rate": float(summary["rate"]), "se": se, "lcb": lcb, "min_rate": float(min_rate),
+            "num_pairs": n, "z": float(summary.get("z", 0.0)), "pass": lcb >= min_rate}
+
+
+def decide(has_ladder, result, streak, stage_rounds, settings, gate=None):
     """Decide one round. `streak` = prior non-promoting results this stage (vs the
-    current top); `stage_rounds` includes this round. Returns
-    {promote: bool, stage_end: None|'plateau'|'max_rounds', pooled: dict|None}."""
+    current top); `stage_rounds` includes this round. `gate`: the normal-game non-regression
+    result (`gate_stats`) when one was run — a failed gate vetoes the promotion. Returns
+    {promote: bool, stage_end: None|'plateau'|'max_rounds', pooled: dict|None,
+     gate_blocked: bool}."""
     pooled = None
     stage_end = None
+    gate_blocked = False
     if not has_ladder:
         promote = result.get("win_rate", result["rate"]) >= settings["random_promote_winrate"]
     else:
         promote = should_promote(result, settings["promote_z"], settings["promote_min_winrate"])
+        if promote and gate is not None and not gate["pass"]:
+            promote, gate_blocked = False, True
         if not promote:
             is_plateau, pooled = plateau_check(list(streak) + [result], settings)
             if is_plateau:
                 stage_end = "plateau"
     if stage_end is None and stage_rounds >= settings["max_rounds"]:
         stage_end = "max_rounds"
-    return {"promote": promote, "stage_end": stage_end, "pooled": pooled}
+    return {"promote": promote, "stage_end": stage_end, "pooled": pooled,
+            "gate_blocked": gate_blocked}
 
 
 # ---------------------------------------------------------------- settings / paths
@@ -146,8 +185,11 @@ def load_settings(base_cfg):
               "final_random_eval_pairs", "max_retries"):
         s[k] = int(s[k])
     for k in ("min_edge", "plateau_ucb_z", "promote_z", "promote_min_winrate",
-              "random_promote_winrate"):
+              "random_promote_winrate", "normal_gate_min_rate", "normal_gate_z"):
         s[k] = float(s[k])
+    s["normal_gate_pairs"] = int(s["normal_gate_pairs"])
+    if s["eval_mode"] not in ("plain", "handicap"):
+        raise ValueError(f"plateau.eval_mode must be 'plain' or 'handicap', got {s['eval_mode']!r}")
     s["stages"] = list(s.get("stages") or []) or [{"name": "default", "overrides": {}}]
     s["variant"] = variant
     try:
@@ -222,13 +264,27 @@ def subprocess_train(config_path, num_epochs, log_path):
         return subprocess.call(cmd, stdout=fh, stderr=subprocess.STDOUT, env=_sub_env())
 
 
+def subprocess_init(config_path, source, out_path, log_path):
+    """`main.py --config CFG handicap-init --from SRC --out OUT` (the warm start)."""
+    cmd = [sys.executable, os.path.join(REPO_ROOT, "main.py"), "--config", config_path,
+           "handicap-init", "--from", source, "--out", out_path]
+    os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+    with open(log_path, "a") as fh:
+        fh.write(f"\n===== plateau driver: {' '.join(cmd)} @ {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        fh.flush()
+        return subprocess.call(cmd, stdout=fh, stderr=subprocess.STDOUT, env=_sub_env())
+
+
 def subprocess_eval(config_path, model_a, opponent, num_pairs, base_seed, workers,
-                    out_json, log_path):
-    """Run the paired eval in a subprocess; returns (exit_code, summary|None)."""
+                    out_json, log_path, mode="plain"):
+    """Run the paired eval in a subprocess; returns (exit_code, summary|None).
+    `mode="handicap"`: every pair from a random tier-2 setup (plakoto_hc)."""
     if os.path.exists(out_json):
         os.remove(out_json)
     cmd = [sys.executable, "-m", "ai.plateau_driver", "_eval", config_path, model_a,
            opponent, str(int(num_pairs)), str(int(base_seed)), str(int(workers)), out_json]
+    if mode != "plain":
+        cmd.append(mode)
     os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
     with open(log_path, "a") as fh:
         fh.write(f"\n===== plateau driver: {' '.join(cmd)} @ {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -289,8 +345,9 @@ def _eval_vs_random(config, model_a, num_pairs, base_seed, workers):
 
 
 def _eval_main(argv):
-    """`python -m ai.plateau_driver _eval CFG MODEL_A OPP|random PAIRS SEED WORKERS OUT`."""
-    config_path, model_a, opponent, pairs, seed, workers, out_json = argv
+    """`python -m ai.plateau_driver _eval CFG MODEL_A OPP|random PAIRS SEED WORKERS OUT [MODE]`."""
+    config_path, model_a, opponent, pairs, seed, workers, out_json = argv[:7]
+    mode = argv[7] if len(argv) > 7 else "plain"
     from config.config_loader import ConfigLoader
     config = ConfigLoader(config_path)
     pairs, seed, workers = int(pairs), int(seed), max(1, int(workers))
@@ -299,7 +356,7 @@ def _eval_main(argv):
     else:
         from ai.paired_eval import evaluate_paired
         s = evaluate_paired(config, model_a, opponent, num_pairs=pairs,
-                            num_workers=workers, base_seed=seed)
+                            num_workers=workers, base_seed=seed, handicap=(mode == "handicap"))
     s = {k: (None if isinstance(v, float) and math.isinf(v) else v) for k, v in s.items()}
     _atomic_write_json(out_json, s)
 
@@ -311,7 +368,8 @@ class PlateauDriver:
     `eval_runner(cfg_path, a, opp, pairs, seed, workers, out_json, log) -> (rc, summary)`
     are injectable for tests; defaults run real subprocesses."""
 
-    def __init__(self, config_path, train_runner=None, eval_runner=None, out=print):
+    def __init__(self, config_path, train_runner=None, eval_runner=None, out=print,
+                 init_runner=None):
         self.config_path = config_path
         with open(config_path) as fh:
             self.base_cfg = yaml.safe_load(fh) or {}
@@ -319,6 +377,7 @@ class PlateauDriver:
         self.variant = self.s["variant"]
         self.train_runner = train_runner or subprocess_train
         self.eval_runner = eval_runner or subprocess_eval
+        self.init_runner = init_runner or subprocess_init
         self.out = out
         self.model_path = self.base_cfg.get("model_save_path", "trained_model.pth")
         self.training_state_path = self.base_cfg.get("training_state_path", "training_state.json")
@@ -388,6 +447,39 @@ class PlateauDriver:
         except Exception:
             return self.state["games_played"]
 
+    # -- warm start (#148 E3) --------------------------------------------------
+    def _warm_start(self):
+        """First start with `warm_start_from`: build ladder v1 from it, seed the live model.
+        Idempotent: a rung on disk is adopted, an existing live model is kept."""
+        src = self.s["warm_start_from"]
+        if not src or self.state["ladder"]:
+            return True
+        dest = os.path.join(self.s["ladder_dir"], f"{self.variant}_gold_v1.pth")
+        if not os.path.exists(dest):
+            os.makedirs(self.s["ladder_dir"] or ".", exist_ok=True)
+            tmp = dest + ".tmp"
+            rc = self.init_runner(self.config_path, src, tmp, self.training_log_path)
+            if rc != 0 or not os.path.exists(tmp):
+                self.state.update(status="failed",
+                                  error=f"warm start from {src} failed (exit {rc or 1})")
+                self._log(f"FAILED: {self.state['error']}")
+                self.save()
+                return False
+            os.replace(tmp, dest)
+        self.state["ladder"].append(dest)
+        if not os.path.exists(self.model_path):
+            shutil.copyfile(dest, self.model_path)
+        self._log(f"warm start: {os.path.basename(dest)} built from {src} "
+                  f"(zero-initialised new inputs = identical play on normal games); "
+                  f"live model {self.model_path}")
+        self.state["attempts"] = 0
+        self.save()
+        return True
+
+    def _eval_kwargs(self):
+        """Only pass `mode` when it is not plain (injected test runners predate it)."""
+        return {"mode": "handicap"} if self.s["eval_mode"] == "handicap" else {}
+
     # -- phases ---------------------------------------------------------------
     def _fail_or_retry(self, what, rc):
         self.state["attempts"] += 1
@@ -422,13 +514,35 @@ class PlateauDriver:
         pairs = self.s["eval_pairs"] if self.top else self.s["random_eval_pairs"]
         workers = self.s["eval_workers"] or int(cfg.get("num_self_play_workers", 1))
         out_json = os.path.join(self.s["work_dir"], "last_eval.json")
+        kw = self._eval_kwargs() if self.top else {}
         rc, summary = self.eval_runner(cfg_path, self.model_path, opp, pairs, rnd * 1_000_003,
+                                       workers, out_json,
+                                       os.path.join(self.s["work_dir"], "eval_output.log"), **kw)
+        if rc != 0 or summary is None:
+            return self._fail_or_retry("eval", rc)
+        pending = decision_stats(summary, self.s["max_points"])
+        pending["opponent"] = opp
+        pending["eval_mode"] = kw.get("mode", "plain")
+        self.state["pending"] = pending
+        needs_gate = (self.top and self.s["normal_gate_model"]
+                      and should_promote(pending, self.s["promote_z"], self.s["promote_min_winrate"]))
+        self.state.update(phase="gate" if needs_gate else "decide", attempts=0)
+        self.save()
+        return True
+
+    def _phase_gate(self, cfg_path, cfg):
+        """Criterion (a): live model vs `normal_gate_model` on normal games (#148 E3)."""
+        rnd = self.state["round"] + 1
+        workers = self.s["eval_workers"] or int(cfg.get("num_self_play_workers", 1))
+        out_json = os.path.join(self.s["work_dir"], "last_gate.json")
+        rc, summary = self.eval_runner(cfg_path, self.model_path, self.s["normal_gate_model"],
+                                       self.s["normal_gate_pairs"], rnd * 1_000_003 + 500_000,
                                        workers, out_json,
                                        os.path.join(self.s["work_dir"], "eval_output.log"))
         if rc != 0 or summary is None:
-            return self._fail_or_retry("eval", rc)
-        self.state["pending"] = decision_stats(summary, self.s["max_points"])
-        self.state["pending"]["opponent"] = opp
+            return self._fail_or_retry("normal-game gate eval", rc)
+        self.state["pending"]["gate"] = gate_stats(summary, self.s["normal_gate_min_rate"],
+                                                   self.s["normal_gate_z"])
         self.state.update(phase="decide", attempts=0)
         self.save()
         return True
@@ -437,7 +551,8 @@ class PlateauDriver:
         st = self.state
         res = st["pending"]
         has_ladder = res["opponent"] != "random"
-        d = decide(has_ladder, res, st["streak"], st["stage_round"] + 1, self.s)
+        d = decide(has_ladder, res, st["streak"], st["stage_round"] + 1, self.s,
+                   gate=res.get("gate"))
         new_top = None
         if d["promote"]:
             # Destination is fixed in state before copying, so a crash mid-copy resumes
@@ -468,6 +583,8 @@ class PlateauDriver:
             "vs_random": res.get("win_rate", res["rate"]) if not has_ladder else None,
             "pooled_edge": d["pooled"]["edge"] if d["pooled"] else None,
             "pooled_ucb": d["pooled"]["edge_ucb"] if d["pooled"] else None,
+            "eval_mode": res.get("eval_mode", "plain"),
+            "gate": res.get("gate"), "gate_blocked": bool(d.get("gate_blocked")),
         }
         st["rounds"].append(rec)
         st["round"] = rnd
@@ -486,6 +603,10 @@ class PlateauDriver:
                    f"ppg={res['ppg']:+.3f}] " if res.get("metric") == "points" else "")
                 + f"promoted={'yes->' + os.path.basename(new_top) if new_top else 'no'} "
                 f"streak={len(st['streak'])}/{self.s['patience']}")
+        if res.get("gate"):
+            g = res["gate"]
+            line += (f" normal_gate={g['rate']:.4f} lcb={g['lcb']:.4f}"
+                     f"{'' if g['pass'] else ' BLOCKED'} (min {g['min_rate']:.2f})")
         if d["pooled"]:
             line += f" pooled_edge={_fmt_pp(d['pooled']['edge'])} ucb={_fmt_pp(d['pooled']['edge_ucb'])}"
         if not has_ladder:
@@ -525,14 +646,19 @@ class PlateauDriver:
 
     def _phase_final(self, cfg_path, cfg):
         workers = self.s["eval_workers"] or int(cfg.get("num_self_play_workers", 1))
+        # With a normal-game gate model the final check is the ladder top vs it on normal
+        # games (criterion (a) at the end); otherwise the live model vs random as before.
+        gate_model = self.s["normal_gate_model"]
+        a, opp = (self.top, gate_model) if gate_model else (self.model_path, "random")
+        pairs = self.s["normal_gate_pairs"] if gate_model else self.s["final_random_eval_pairs"]
         out_json = os.path.join(self.s["work_dir"], "final_random.json")
-        rc, summary = self.eval_runner(cfg_path, self.model_path, "random",
-                                       self.s["final_random_eval_pairs"], 987_654_321, workers,
+        rc, summary = self.eval_runner(cfg_path, a, opp, pairs, 987_654_321, workers,
                                        out_json, os.path.join(self.s["work_dir"], "eval_output.log"))
         if rc != 0 or summary is None:
-            return self._fail_or_retry("final random eval", rc)
+            return self._fail_or_retry("final eval", rc)
         self.state["final_vs_random"] = {"rate": summary["rate"], "games": summary["num_games"],
-                                         "ppg": summary.get("points_per_game")}
+                                         "ppg": summary.get("points_per_game"),
+                                         "opponent": opp, "model": a}
         self.state["phase"] = "done"
         self.save()
         return True
@@ -546,7 +672,8 @@ class PlateauDriver:
             f"FINISHED {self.variant}: {len(self.s['stages'])} stage(s), {st['round']} rounds, "
             f"{st['games_played']} games. Ladder top: {self.top or 'none'} "
             f"({len(st['ladder'])} rungs). Last stage: {last['message'] if last else 'n/a'}."
-            + (f" Final vs random: {fr['rate']:.4f} over {fr['games']} games"
+            + (f" Final vs {os.path.basename(fr.get('opponent', 'random'))}: "
+               f"{fr['rate']:.4f} over {fr['games']} games"
                + (f", {fr['ppg']:+.3f} points/game." if fr.get("ppg") is not None else ".")
                if fr else ""))
         self._log(st["verdict"])
@@ -562,6 +689,8 @@ class PlateauDriver:
             self._log(f"resuming after FAILED ({st['error']}); retry budget reset")
             st.update(status="running", attempts=0, error=None)
         self._sync_ladder_from_disk()
+        if not self._warm_start():
+            return 1
         self.save()
         self._log(f"start/resume: variant={self.variant} stage={st['stage'] + 1}/"
                   f"{len(self.s['stages'])} round={st['round']} phase={st['phase']} "
@@ -575,6 +704,8 @@ class PlateauDriver:
                 ok = self._phase_train(cfg_path, cfg)
             elif st["phase"] == "eval":
                 ok = self._phase_eval(cfg_path, cfg)
+            elif st["phase"] == "gate":
+                ok = self._phase_gate(cfg_path, cfg)
             elif st["phase"] == "decide":
                 self._phase_decide()
                 ok = True
@@ -617,7 +748,8 @@ def format_status(config_path):
         lines.append(f"vs_random: {r['vs_random']:.4f} over {2 * r['num_pairs']} games (round {r['round']})")
     if st.get("final_vs_random"):
         fr = st["final_vs_random"]
-        lines.append(f"final vs_random: {fr['rate']:.4f} over {fr['games']} games"
+        lines.append(f"final vs {os.path.basename(fr.get('opponent', 'random'))}: "
+                     f"{fr['rate']:.4f} over {fr['games']} games"
                      + (f", {fr['ppg']:+.3f} points/game" if fr.get("ppg") is not None else ""))
     if s["max_points"] > 1:
         lines.append(f"decision statistic: normalized points (max_points={s['max_points']}; "
@@ -628,8 +760,11 @@ def format_status(config_path):
         promo = os.path.basename(r["new_top"]).replace(".pth", "") if r.get("new_top") else "-"
         win = r.get("win_rate", r["rate"])
         ppg = f"{r['ppg']:+.3f}" if r.get("ppg") is not None else "   n/a"
+        gate = r.get("gate")
+        gate_txt = (f"  gate {gate['rate']:.4f}/lcb {gate['lcb']:.4f}"
+                    f"{'' if gate['pass'] else ' BLOCKED'}") if gate else ""
         lines.append(f"  {r['round']:>3} {r['stage']:>3} {r['games']:>7}  {opp:<18} "
-                     f"{r['rate']:.4f} {r['z']:>6.2f}    {win:.4f} {ppg}  {promo}")
+                     f"{r['rate']:.4f} {r['z']:>6.2f}    {win:.4f} {ppg}  {promo}{gate_txt}")
     for sr in st.get("stage_results", []):
         lines.append(f"stage {sr['stage']}: {sr['reason']}")
     if st.get("error"):

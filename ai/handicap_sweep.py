@@ -38,6 +38,16 @@ Tier-1 dice kinds (concept doc §3):
   rerolls, so every later turn of both games in a pair still sees the same uniforms; only
   the rerolled turn itself differs (it gets the colour's next reroll uniforms).
 
+Tier 2 (#148 E3): cells may use the rule-changing kinds `overshoot:1`, `safe_point:p`,
+`checkers:n` and `smaller_house:k` (domain/handicap.py) and combos of them (`--tier2` runs the
+default tier-2 grid + `DEFAULT_TIER2_COMBOS`). They are meant for the handicap-aware model
+(`--config config/config-handicap.yml --model models/plakoto_hc_gold_vK.pth`); with it
+(`is_handicap_model`) the bear-off DB stays on for every cell — the board gate
+(`HandicapBoard.bearoff_exact`) switches it off exactly where it would be wrong — and every
+cell made of position + tier-2 kinds gets the net's start-position estimate (the net knows the
+rules). The app table (`ios/scripts/make_handicap_table.py --tier2 <json>`) uses the same
+log-odds additive model as tier 1.
+
 Start-position estimate (`start_estimate`, concept doc §5): for cells made only of position
 levers (`ESTIMABLE_KINDS`) the net's prediction of the measured rate, computed the way the
 pair is played — game A and B each contribute the start position's pre-roll value (average
@@ -55,8 +65,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from domain.constants import WHITE, BLACK
 from domain.handicap import (
-    KINDS, ROLLS, HandicapSpec, make_handicapped_rules, parse_spec, plain_roll, roll_index,
-    tilted_roll_probs,
+    KINDS, ROLLS, TIER2_KINDS, HandicapSpec, make_handicapped_rules, parse_spec, plain_roll,
+    roll_index, tilted_roll_probs,
 )
 
 MAX_PLIES = 1500
@@ -69,6 +79,27 @@ REROLL_MARGIN = 0.02
 #: Kinds whose effect is fully in the start position / first mover, so the net's
 #: start-position estimate applies (E1 compares it with the measured rate).
 ESTIMABLE_KINDS = frozenset({"first_mover", "pip_headstart", "pre_borne"})
+
+#: Tier-2 kinds the plain (phase-1 / tier-1) sweep leaves out of its default cells: only the
+#: handicap-aware net encodes them (smaller_house was already a phase-1 cell and stays).
+TIER2_ONLY_KINDS = frozenset(k for k in TIER2_KINDS if k != "smaller_house")
+
+#: Tier-2 combos for the additive-model check (`--tier2`).
+DEFAULT_TIER2_COMBOS = [
+    "overshoot:1+safe_point:6",
+    "overshoot:1+checkers:14",
+    "overshoot:1+smaller_house:4",
+    "safe_point:6+checkers:14",
+    "safe_point:6+smaller_house:4",
+    "checkers:16+smaller_house:4",
+    "overshoot:1+safe_point:6+checkers:14",
+    "overshoot:1+safe_point:6+checkers:14+smaller_house:4",
+]
+
+
+def is_handicap_model(agent) -> bool:
+    """True for the tier-2-aware net (encoder `unary_v3_hc1`)."""
+    return getattr(agent.board_encoder, "version", "") == "unary_v3_hc1"
 
 # A cell is a tuple of (kind, intensity) pairs; () is the baseline.
 Cell = Tuple[Tuple[str, float], ...]
@@ -188,16 +219,18 @@ def play_pair(agent, config, cell: Cell, seed: int,
     return out
 
 
-def is_estimable(cell: Cell) -> bool:
-    return all(k in ESTIMABLE_KINDS for k, _ in cell)
+def is_estimable(cell: Cell, handicap_model: bool = False) -> bool:
+    ok = ESTIMABLE_KINDS | (frozenset(TIER2_KINDS) if handicap_model else frozenset())
+    return all(k in ok for k, _ in cell)
 
 
 def start_estimate(agent, config, cell: Cell) -> Optional[float]:
     """Net estimate of the handicapped side's pair win rate from the start position alone
-    (None unless every kind is a position lever). Per orientation: v = the first mover's
-    pre-roll value (mean over the 21 opening rolls of its best 1-ply move value); the
-    handicapped side scores v if it moves first, else 1 − v. Returns the mean of A and B."""
-    if not is_estimable(cell):
+    (None unless every kind is a position lever, or — for the handicap-aware net — a tier-2
+    lever). Per orientation: v = the first mover's pre-roll value (mean over the 21 opening
+    rolls of its best 1-ply move value); the handicapped side scores v if it moves first,
+    else 1 − v. Returns the mean of A and B."""
+    if not is_estimable(cell, is_handicap_model(agent)):
         return None
     est = 0.0
     for side in (WHITE, BLACK):
@@ -224,17 +257,22 @@ def _init_worker(model_path: str, config_path: str, reroll_margin: float = REROL
     agent, _ = load_agent_from_checkpoint(model_path, config)
     _W["agent"], _W["config"], _W["db"] = agent, config, agent.bearoff
     _W["margin"] = reroll_margin
+    _W["hc"] = is_handicap_model(agent)
 
 
-def cell_uses_bearoff_db(cell: Cell) -> bool:
-    """The DB's race values assume 6-point homes: off for geometry handicaps."""
+def cell_uses_bearoff_db(cell: Cell, handicap_model: bool = False) -> bool:
+    """Phase-1 rule (kept for comparability): the DB is off for geometry handicaps. With the
+    handicap-aware net it is always on: `HandicapBoard.bearoff_exact` gates it per position
+    (a smaller home is exact; overshoot, > 15 checkers and larger homes are not)."""
+    if handicap_model:
+        return True
     return not any(KINDS[k].category == "geometry" for k, _ in cell)
 
 
 def _task(args):
     cell, seed = args
     agent = _W["agent"]
-    agent.bearoff = _W["db"] if cell_uses_bearoff_db(cell) else None
+    agent.bearoff = _W["db"] if cell_uses_bearoff_db(cell, _W.get("hc", False)) else None
     return cell, play_pair(agent, _W["config"], cell, seed, _W["margin"])
 
 
@@ -279,7 +317,7 @@ def _wilson(p: float, n: int, z: float = 1.96) -> Tuple[float, float]:
     return max(0.0, c - w), min(1.0, c + w)
 
 
-def summarize_cell(cell: Cell, pairs: List[Dict]) -> Dict:
+def summarize_cell(cell: Cell, pairs: List[Dict], handicap_model: bool = False) -> Dict:
     n = len(pairs)
     x = [p["h"] / 2.0 for p in pairs]
     rate = sum(x) / n if n else 0.0
@@ -302,16 +340,24 @@ def summarize_cell(cell: Cell, pairs: List[Dict]) -> Dict:
         "pin_win_frac": sum(1 for g in games if g["pin"]) / len(games) if games else 0.0,
         "capped": sum(1 for g in games if g["winner"] is None),
         "mean_rerolls": sum(g.get("rerolls", 0) for g in games) / len(games) if games else 0.0,
-        "on_distribution": all(KINDS[k].on_distribution for k in kinds),
-        "bearoff_db": cell_uses_bearoff_db(cell),
+        "on_distribution": all(KINDS[k].on_distribution
+                               or (handicap_model and k in TIER2_KINDS) for k in kinds),
+        "bearoff_db": cell_uses_bearoff_db(cell, handicap_model),
         "categories": sorted({KINDS[k].category for k in kinds}),
     }
 
 
-def default_cells(only: Optional[Sequence[str]] = None) -> List[Cell]:
+def default_cells(only: Optional[Sequence[str]] = None, tier2: bool = False) -> List[Cell]:
+    """Baseline + every kind's default grid. Without `only`, the tier-2-only kinds are left
+    out unless `tier2` (then only the tier-2 kinds run)."""
     cells: List[Cell] = [()]
     for kind, info in KINDS.items():
-        if only and kind not in only:
+        if only:
+            if kind not in only:
+                continue
+        elif tier2 and kind not in TIER2_KINDS:
+            continue
+        elif not tier2 and kind in TIER2_ONLY_KINDS:
             continue
         cells += [((kind, x),) for x in info.intensities]
     return cells
@@ -333,6 +379,8 @@ def _note(s: Dict) -> str:
     if s["label"] == "baseline":
         return "reference"
     db = "" if s.get("bearoff_db", True) else "; DB off"
+    if s["on_distribution"] and set(s.get("categories", ())) & {"rules", "position", "geometry"}:
+        return "tier 2, handicap-aware net (DB gated per position)"
     if s["on_distribution"]:
         return "dice/tempo only (net assumes fair dice ahead)" + db
     return "position/geometry off-distribution" + db
@@ -359,10 +407,12 @@ def to_markdown(summaries: List[Dict]) -> str:
 def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
               only: Optional[Sequence[str]] = None, combos: Optional[Sequence[str]] = None,
               base_seed: int = 0, out_json: str = "training_runs/handicap_sweep.json",
-              out_md: Optional[str] = None, reroll_margin: float = REROLL_MARGIN) -> List[Dict]:
-    cells = default_cells(only)
+              out_md: Optional[str] = None, reroll_margin: float = REROLL_MARGIN,
+              tier2: bool = False) -> List[Dict]:
+    cells = default_cells(only, tier2)
     # Explicit --combos always run; the default combos follow the --only filter.
-    for c in (DEFAULT_COMBOS if combos is None else combos):
+    default_combos = DEFAULT_TIER2_COMBOS if tier2 else DEFAULT_COMBOS
+    for c in (default_combos if combos is None else combos):
         cell = parse_cell(c)
         if combos is not None or not only or all(k in only for k, _ in cell):
             cells.append(cell)
@@ -372,9 +422,10 @@ def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
           f"{workers} workers, model={model_path}", flush=True)
     results = run_cells(cells, num_pairs, model_path, config.config_file, workers, base_seed,
                         reroll_margin=reroll_margin)
-    summaries = [summarize_cell(c, results[c]) for c in cells]
     from ai.checkpoint_io import load_agent_from_checkpoint
     est_agent, _ = load_agent_from_checkpoint(model_path, config)
+    hc = is_handicap_model(est_agent)
+    summaries = [summarize_cell(c, results[c], hc) for c in cells]
     for c, s in zip(cells, summaries):
         s["net_estimate"] = start_estimate(est_agent, config, c)
     base = summaries[0]
@@ -385,7 +436,9 @@ def run_sweep(config, model_path: str, games: int = 500, workers: int = 2,
     md = to_markdown(summaries)
     payload = {"model": model_path, "pairs_per_cell": num_pairs, "base_seed": base_seed,
                "lookahead_plies": 1, "reroll_margin": reroll_margin,
-               "bearoff_db": "on (from config) except geometry cells",
+               "bearoff_db": ("on (from config), gated per position by HandicapBoard.bearoff_exact"
+                              if hc else "on (from config) except geometry cells"),
+               "handicap_model": hc,
                "baseline_first_mover_win": base["first_mover_win"],
                "cells": summaries}
     import os

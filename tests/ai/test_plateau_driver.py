@@ -10,7 +10,7 @@ import yaml
 
 from ai.paired_eval import summarize
 from ai.plateau_driver import (
-    DEFAULTS, PlateauDriver, decide, decision_stats, format_status, load_settings,
+    DEFAULTS, PlateauDriver, decide, decision_stats, format_status, gate_stats, load_settings,
     plateau_check, pool_results, should_promote,
 )
 
@@ -314,6 +314,106 @@ class TestDriverStateMachine(unittest.TestCase):
         self.assertEqual(s["state_path"], "plateau_state_fevga.json")
         self.assertEqual(len(s["stages"]), 1)
         self.assertEqual(s["patience"], 4)
+
+
+class TestHandicapGate(unittest.TestCase):
+    """#148 E3: non-inferiority gate on normal games + handicapped round eval."""
+
+    def test_gate_stats_lower_bound(self):
+        g = gate_stats(R(0.50, 0.0, n=2000, std=0.5), 0.49)
+        self.assertAlmostEqual(g["se"], 0.5 / (2 * 2000 ** 0.5))
+        self.assertAlmostEqual(g["lcb"], 0.5 - 1.645 * g["se"])
+        self.assertTrue(g["pass"])
+        self.assertFalse(gate_stats(R(0.485, -1.0, n=2000, std=0.5), 0.49)["pass"])
+        self.assertFalse(gate_stats(R(0.495, 0.0, n=100, std=0.7), 0.49)["pass"])  # too noisy
+
+    def test_failed_gate_vetoes_promotion(self):
+        res = R(0.55, 5.0)
+        self.assertTrue(decide(True, res, [], 1, SETTINGS)["promote"])
+        ok = decide(True, res, [], 1, SETTINGS, gate={"pass": True})
+        self.assertTrue(ok["promote"])
+        self.assertFalse(ok["gate_blocked"])
+        d = decide(True, res, [], 1, SETTINGS, gate={"pass": False})
+        self.assertFalse(d["promote"])
+        self.assertTrue(d["gate_blocked"])
+        self.assertIsNotNone(d["pooled"])
+
+    def test_settings_validate_eval_mode(self):
+        with self.assertRaises(ValueError):
+            load_settings({"plateau": {"eval_mode": "nope"}})
+        s = load_settings({"variant": "plakoto_hc"})
+        self.assertEqual((s["eval_mode"], s["normal_gate_model"]), ("plain", None))
+
+
+class _HcFakes(_Fakes):
+    def __init__(self, model_path, rates, gate_rates):
+        super().__init__(model_path, rates)
+        self.gate_rates = list(gate_rates)
+        self.modes = []
+        self.init_calls = []
+
+    def init(self, cfg_path, src, out, log):
+        self.init_calls.append((src, out))
+        with open(out, "wb") as fh:
+            fh.write(b"warm-start")
+        return 0
+
+    def eval(self, cfg_path, a, opp, pairs, seed, workers, out_json, log, mode="plain"):
+        self.modes.append((os.path.basename(opp), mode))
+        if opp.endswith("gold_v11.pth"):
+            rate = self.gate_rates.pop(0)
+            return 0, dict(R(rate, 0.0, n=pairs, std=0.5), num_pairs=pairs, num_games=2 * pairs)
+        return super().eval(cfg_path, a, opp, pairs, seed, workers, out_json, log)
+
+
+class TestHandicapDriver(unittest.TestCase):
+    def test_warm_start_handicap_eval_and_gate(self):
+        with tempfile.TemporaryDirectory() as d:
+            model = os.path.join(d, "m.pth")
+            cfg = {
+                "variant": "plakoto_hc", "games_per_epoch": 10, "model_save_path": model,
+                "training_state_path": os.path.join(d, "ts.json"),
+                "training_log_path": os.path.join(d, "train.log"),
+                "plateau": {
+                    "round_games": 10, "eval_pairs": 5000, "patience": 2, "max_rounds": 3,
+                    "warm_start_from": "models/gold_v11.pth", "eval_mode": "handicap",
+                    "normal_gate_model": "models/gold_v11.pth", "normal_gate_pairs": 2000,
+                    "ladder_dir": os.path.join(d, "models"),
+                    "state_path": os.path.join(d, "state.json"),
+                    "log_path": os.path.join(d, "plateau.log"),
+                    "work_dir": os.path.join(d, "work"),
+                },
+            }
+            cfg_path = os.path.join(d, "cfg.yml")
+            with open(cfg_path, "w") as fh:
+                yaml.safe_dump(cfg, fh)
+            # r1: handicapped 0.7 + gate 0.50 -> v2; r2: 0.7 but gate 0.47 -> BLOCKED (joins
+            # the streak, so it delays a plateau); r3: flat -> max_rounds; final: top vs
+            # gold_v11 on normal games.
+            f = _HcFakes(model, [0.7, 0.7, 0.5], [0.50, 0.47, 0.501])
+            drv = PlateauDriver(cfg_path, train_runner=f.train, eval_runner=f.eval,
+                                init_runner=f.init, out=lambda *_: None)
+            self.assertEqual(drv.run(), 0)
+            st = _json(os.path.join(d, "state.json"))
+            self.assertEqual(st["status"], "finished")
+            v1 = os.path.join(d, "models", "plakoto_hc_gold_v1.pth")
+            self.assertEqual(f.init_calls, [("models/gold_v11.pth", v1 + ".tmp")])
+            self.assertEqual(st["ladder"][0], v1)
+            self.assertEqual(len(st["ladder"]), 2)                 # v1 + one promotion
+            self.assertEqual(_bytes(v1), b"warm-start")
+            rounds = st["rounds"]
+            self.assertTrue(rounds[0]["promoted"])
+            self.assertTrue(rounds[0]["gate"]["pass"])
+            self.assertFalse(rounds[1]["promoted"])
+            self.assertTrue(rounds[1]["gate_blocked"])
+            self.assertIsNone(rounds[2]["gate"])                   # no would-be promotion
+            self.assertEqual(st["stage_results"][0]["reason"], "max_rounds")
+            self.assertEqual(f.modes, [
+                ("plakoto_hc_gold_v1.pth", "handicap"), ("gold_v11.pth", "plain"),
+                ("plakoto_hc_gold_v2.pth", "handicap"), ("gold_v11.pth", "plain"),
+                ("plakoto_hc_gold_v2.pth", "handicap"), ("gold_v11.pth", "plain")])
+            self.assertEqual(st["final_vs_random"]["opponent"], "models/gold_v11.pth")
+            self.assertIn("BLOCKED", format_status(cfg_path))
 
 
 class TestPlateauSmokeEndToEnd(unittest.TestCase):
