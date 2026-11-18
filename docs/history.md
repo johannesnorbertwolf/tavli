@@ -80,3 +80,18 @@ The current effort builds a **fresh, offline, on-device** iPad app for the *curr
 Phase 1 achieved exactly that — byte-equivalent encodings, identical legal moves, and
 identical 1-ply move choices (see `docs/ios_port_plan.md`). The old Swift worktree served as
 a structural reference; the brain it talks to is the live, current network.
+
+## 8. Variant networks (#140–#142, November 2026)
+
+Each new variant was trained from scratch by the unattended plateau driver
+(`ai/plateau_driver.py`). The driver works through three stages: depth-1 at lr 1e-4, depth-1
+at lr 3e-5, then depth-2 TD bootstrap. It builds its own gold ladder
+`models/<variant>_gold_vK.pth` and promotes a model on z ≥ 2 with at least 52% points share.
+
+| Variant | Final gold | How it ended |
+|---|---|---|
+| Standard Plakoto | `plakoto_standard_gold_v7` | Plateau after 26 rounds / 2.28M games (pooled edge +0.84pp, UCB 1.27pp). 99.8% vs random |
+| Fevga | `fevga_gold_v4` | Plateau after 18 rounds / 1.48M games (pooled edge +1.16pp, UCB 1.45pp) |
+| Portes | `portes_gold_v5` | Stopped by the user after v5's promotion. A steady ~+1.45pp edge never met the plateau rule. The extension run used `config/config-portes-ext.yml` |
+
+The app bundles these as `PlakotoStandardValue` / `FevgaValue` / `PortesValue`.
