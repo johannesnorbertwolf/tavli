@@ -151,8 +151,8 @@ struct RootView: View {
                         autosaveName = Self.newAutosaveName()
                         match = Self.newMatch(baseStartingPlayer: startingPlayer)
                     }
-                    // A handicap (#148) only for a standalone single game (never a Full
-                    // Tavli leg or a best-of-three game).
+                    // A handicap (#148) for a single game or every game of a best-of-three,
+                    // never a Full Tavli leg.
                     let handicap = fullTavli == nil
                         ? HandicapPreferences.setupForNewGame(humanColor: pending, variant: pendingVariant)
                         : nil
@@ -338,8 +338,8 @@ struct RootView: View {
     private func beginGame(humanColor color: EngineColor, variant: GameVariantSetting) {
         guard AppSettings.aiAvailable(variant) else { return }
         leaveFullTavli()
-        // Handicap (#148): only for a single house-Plakoto game; "moves first" skips the
-        // opening roll.
+        // Handicap (#148): house Plakoto, single game or best-of-three; "moves first"
+        // skips the opening roll.
         let handicap = HandicapPreferences.setupForNewGame(humanColor: color, variant: variant)
         if let starter = handicap?.forcedStarter
             ?? AppSettings.startingPlayer.startingPlayer(humanColor: color) {
@@ -388,10 +388,15 @@ struct RootView: View {
     /// ceremony — the starter alternates deterministically from the match's base.
     private func startNextMatchGame() {
         guard let match else { return }
+        // A handicap match (#148) keeps the setup the match started with; every game gets
+        // fresh tokens, and "moves first" overrides the alternating starter.
+        let handicap = session?.record.handicap
         autosaveName = Self.newAutosaveName()
         session = Self.makeSession(humanColor: humanColor,
-                                   startingPlayer: match.currentStartingPlayer,
-                                   variant: currentVariant)
+                                   startingPlayer: HandicapSetup.startingPlayer(
+                                       for: handicap, default: match.currentStartingPlayer),
+                                   variant: currentVariant,
+                                   handicap: handicap)
     }
 
     /// Start a brand-new match after one has finished (#145, the win overlay's

@@ -956,16 +956,17 @@ only when a handicap is active / exists.
   "You"/"White", `.b` = "Computer"/"Red"); weighted dice as a `HandicapDiceStrength` step mapped
   onto the engine's `HandicapSetup.diceTiltSteps`. `setup(humanColor:)` resolves roles into a
   per-colour `HandicapSetup` (vs the computer `.a` = the human, hints always the human's; two
-  players `.a` = White). `applies(variant:length:vsComputer:)`: house Plakoto, offline, vs the
-  computer only a **Single game** (best-of-three / Full Tavli play unhandicapped), two players
-  anything but Full Tavli. `setupForNewGame` = load + applies + resolve. `HandicapTableResource`
+  players `.a` = White). `applies(variant:length:vsComputer:)`: house Plakoto, offline, a single
+  game or **every game of a best-of-three** (vs the computer or two players); Full Tavli plays
+  unhandicapped. `setupForNewGame` = load + applies + resolve. `HandicapTableResource`
   loads the bundled `HandicapTable.json`; `HandicapCopy` words the tag sheet ("You: 2 checkers start
   6 points ahead", "Dice favour Red moderately").
 - **Settings card.** `HandicapSettingsRow` is a standalone `.chromeCard` at the end of
   `SettingsView` ("Handicap" + "Off"/summary + chevron) presenting `HandicapSettingsView` as a sheet.
 - **Builder.** `HandicapSettingsView`: header + intro, a card with the master toggle, the label
-  switch (`@State vsComputer`, labels only) and the applicability caption (brick tint when the next
-  game won't use it), then one `itemCard` per item (title, segmented side picker ≤ 210 pt, an integer
+  switch (`@State vsComputer`, labels only) and the applicability caption ("Applies to offline
+  games of Plakoto (house rules), single or Best of 3. Not online or Full Tavli."; brick tint only
+  when the next game is another variant or Full Tavli), then one `itemCard` per item (title, segmented side picker ≤ 210 pt, an integer
   `Slider` with its value label or a toggle, a caption), dimmed/disabled while off, then the estimate
   card. The estimate evaluates side A as White (colour-symmetric) with the start rule the app would
   use: two players → White starts; vs the computer → Settings "First move" (opening roll = roll-off).
@@ -987,13 +988,17 @@ only when a handicap is active / exists.
 - **Review.** `GameReviewView.topBar` adds `HandicapReviewNote` ("Handicap game: win chances
   assume fair dice") when `record.handicap.altersDice`.
 - **Stats.** `RootView` records a finished vs-Computer handicap game with its setup
-  (`statsStore.record(humanWon:handicap:)`); My Record shows `HandicapRecordBlock` under
+  (`statsStore.record(humanWon:handicap:)`) — every game of a handicap match too, never the
+  vs-Computer record (the match overlay shows no record at all); My Record shows `HandicapRecordBlock` under
   `StatsPanelView` only when `handicapStats.total > 0` (the sheet grows from 480 to 680 pt then).
 - **Starting games.** `RootView.beginGame` / opening-roll completion / `beginTwoPlayer` call
   `HandicapPreferences.setupForNewGame`; a forced starter ("moves first") skips the opening roll;
   `makeSession(handicap:)` gives a two-player game a `handicapAgent` when the setup needs the net;
-  `prepareResume` does the same for a two-player handicap save. Best-of-three next games, rematches
-  in a match and Full Tavli legs never get one.
+  `prepareResume` does the same for a two-player handicap save. A best-of-three's next game
+  (`startNextMatchGame`) reuses the finished game's `record.handicap` (the setup the match started
+  with, fresh tokens) and its starter is `HandicapSetup.startingPlayer(for:default:)` ("moves
+  first" beats the alternation); "Rematch" re-reads the settings via `beginGame`. Full Tavli legs
+  never get one.
 
 ## App.swift
 

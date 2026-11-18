@@ -146,11 +146,11 @@ struct HandicapPreferences: Codable, Equatable {
     }
 
     /// Whether a new game of this kind is handicapped (concept §7): house Plakoto only,
-    /// offline only, a single game (vs the computer: the "Single game" length; two
-    /// players: anything but Full Tavli).
+    /// offline only, a single game or every game of a best-of-three — never Full Tavli
+    /// (online never reaches this). Same rule vs the computer and for two players.
     static func applies(variant: GameVariantSetting, length: MatchLengthSetting, vsComputer: Bool) -> Bool {
         guard HandicapSetup.supports(variantID: variant.rawValue) else { return false }
-        return vsComputer ? length == .single : length != .fullTavli
+        return length != .fullTavli
     }
 
     /// The setup for a new offline game, or `nil` when handicaps are off or don't apply

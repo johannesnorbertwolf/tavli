@@ -757,6 +757,8 @@ public final class GameSession: ObservableObject {
     /// there's nothing to rewind.
     public func undoLastDecision() {
         guard isUndoablePhase, let target = lastDecisionIndex() else { return }
+        // A reroll still tumbling (#148) must not land on the rewound position.
+        if handicap != nil { discardPendingHandicapRoll(); humanDiceRolling = false }
 
         // Discard any half-moves built this turn but not yet recorded.
         for hm in moveBuilder.built.reversed() { game.variant.undoHalfMove(hm, on: game.board) }
@@ -1099,15 +1101,35 @@ public final class GameSession: ObservableObject {
         legalMoves = []
         handicap?.rerollsLeft[currentPlayer] -= 1
         phase = .awaitingRoll
-        if weightedTiltForCurrentPlayer != nil {
-            let pending = startHandicappedRoll()
-            Task { @MainActor [weak self] in
-                guard let self, await self.finishHandicappedRoll(pending) else { return }
-                self.beginTurn()
-            }
-        } else {
+        let tumble = animationTimings.aiDiceRollDuration
+        if weightedTiltForCurrentPlayer == nil && tumble <= 0 {
             drawHandicapRoll(values: nil)
             beginTurn()
+            return
+        }
+        // Weighted dice rate the rolls off the main actor first; with animation on, the new
+        // dice then tumble like an auto-roll (`humanDiceRolling`) before the turn resumes.
+        let weighted = weightedTiltForCurrentPlayer != nil
+        let pending: Int
+        if weighted {
+            pending = startHandicappedRoll()
+        } else {
+            pending = handicapEpoch
+            drawHandicapRoll(values: nil)
+            humanDiceRolling = true
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if weighted {
+                guard await self.finishHandicappedRoll(pending) else { return }
+            }
+            if tumble > 0 {
+                self.humanDiceRolling = true
+                await GameSession.sleep(tumble)
+                self.humanDiceRolling = false
+                guard self.handicapEpoch == pending, !Task.isCancelled else { return }
+            }
+            self.beginTurn()
         }
     }
 
@@ -1156,6 +1178,14 @@ public final class GameSession: ObservableObject {
     /// Await a pending hint (tests).
     func awaitHintForTesting() async {
         while hintPending { try? await Task.sleep(nanoseconds: 5_000_000) }
+    }
+
+    /// Stand the session at the start of a turn whose roll was restored from a save
+    /// (#171) — what `resume` does — so tests can exercise `start()` on a custom board.
+    func restorePendingRollForTesting(_ roll: PendingRoll) {
+        game.dice.set(roll.die1, roll.die2)
+        pendingRoll = roll
+        restoreRollOnStart = true
     }
 
     /// Await a pending weighted roll (tests).
@@ -1243,18 +1273,46 @@ public final class GameSession: ObservableObject {
             guard self.handicapEpoch == epoch, self.aiTurnEpoch == turnEpoch else { return }
             self.preparingDice = false
             self.drawHandicapRoll(values: values)
-            let mover = self.currentPlayer
-            if let values {
-                while self.rerollsLeft(mover) > 0,
-                      HandicapDice.shouldReroll(values: values, d1: self.game.dice.die1.value,
-                                                d2: self.game.dice.die2.value,
-                                                beta: self.handicap?.setup[mover].diceTilt ?? 0) {
-                    self.handicap?.rerollsLeft[mover] -= 1
-                    self.lastComputerReroll = mover
-                    self.drawHandicapRoll(values: values)
-                }
-            }
+            self.applyComputerRerolls(values: values)
             self.playAITurn(animateDiceRoll: true)
+        }
+    }
+
+    /// The harness reroll rule for the computer on move, on the dice already set: reroll
+    /// while tokens remain and the roll is worth less than a fresh one (minus the margin).
+    /// Returns whether it rerolled.
+    @discardableResult
+    private func applyComputerRerolls(values: [Float]?) -> Bool {
+        guard let values else { return false }
+        let mover = currentPlayer
+        var rerolled = false
+        while rerollsLeft(mover) > 0,
+              HandicapDice.shouldReroll(values: values, d1: game.dice.die1.value,
+                                        d2: game.dice.die2.value,
+                                        beta: handicap?.setup[mover].diceTilt ?? 0) {
+            handicap?.rerollsLeft[mover] -= 1
+            lastComputerReroll = mover
+            rerolled = true
+            drawHandicapRoll(values: values)
+        }
+        return rerolled
+    }
+
+    /// A restored mid-turn roll for the computer (#171) in a handicap game: make the same
+    /// reroll decision a live roll gets, then play (tumbling only if the dice changed).
+    private func resumeHandicappedAIRoll() {
+        lastComputerReroll = nil
+        phase = .aiThinking
+        let epoch = handicapEpoch
+        let turnEpoch = aiTurnEpoch
+        preparingDice = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let values = await self.computeRollValues()
+            guard self.handicapEpoch == epoch, self.aiTurnEpoch == turnEpoch else { return }
+            self.preparingDice = false
+            let rerolled = self.applyComputerRerolls(values: values)
+            self.playAITurn(animateDiceRoll: rerolled)
         }
     }
 
@@ -1381,7 +1439,11 @@ public final class GameSession: ObservableObject {
         guard phase == .awaitingRoll, let roll = pendingRoll else { return }
         game.dice.set(roll.die1, roll.die2)
         if isAITurn {
-            playAITurn(animateDiceRoll: false)
+            if handicap != nil, computerMayReroll {
+                resumeHandicappedAIRoll()   // #148: the restored roll gets its reroll decision
+            } else {
+                playAITurn(animateDiceRoll: false)
+            }
         } else {
             beginTurn()
         }
