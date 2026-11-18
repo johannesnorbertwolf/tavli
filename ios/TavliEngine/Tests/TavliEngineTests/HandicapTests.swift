@@ -475,3 +475,159 @@ final class HandicapStatsTests: XCTestCase {
         XCTAssertEqual(store.handicapStats.total, 0)
     }
 }
+
+/// Best-of-three handicap matches and the follow-up fixes (#148): moves first each game,
+/// fresh tokens per game, stats routing, undo across a reroll, the reroll tumble, and the
+/// restored computer roll's reroll decision.
+@MainActor
+final class HandicapMatchTests: XCTestCase {
+
+    private func uniforms(_ values: [Double]) -> () -> Double {
+        var i = 0
+        return { defer { i += 1 }; return values[i % values.count] }
+    }
+
+    private func loadAgent() throws -> Agent {
+        let bundle = Bundle.module
+        let url = bundle.url(forResource: "PlakotoValue", withExtension: "mlpackage", subdirectory: "Fixtures")
+            ?? bundle.url(forResource: "PlakotoValue", withExtension: "mlpackage")
+        guard let url else { throw XCTSkip("PlakotoValue.mlpackage not found") }
+        let compiled = try MLModel.compileModel(at: url)
+        let cfg = MLModelConfiguration()
+        cfg.computeUnits = .cpuOnly
+        return Agent(model: try MLModel(contentsOf: compiled, configuration: cfg),
+                     encoder: BoardEncoder(config: .standard))
+    }
+
+    /// Play the first legal move for the human on move.
+    private func playFirstMove(_ s: GameSession) {
+        guard let chosen = s.moveBuilder.activeMoves.first else { return }
+        while s.phase == .picking || s.phase == .moving {
+            guard let h = nextOfferedHalf(s.moveBuilder, of: chosen) else { return }
+            s.selectPoint(h.from.position)
+            s.commitHalfMove(from: h.from.position, to: h.to.position)
+        }
+    }
+
+    func testMovesFirstOverridesTheAlternatingStarterEveryGame() {
+        let setup = HandicapSetup(black: HandicapItems(movesFirst: true, rerolls: 2, hints: 1))
+        var match = MatchState.bestOfThree(baseStartingPlayer: .white)
+        var starters: [Color] = []
+        for winner in [Color.white, .black, .white] {
+            let starter = HandicapSetup.startingPlayer(for: setup, default: match.currentStartingPlayer)
+            let s = GameSession(startingPlayer: starter, aiColor: .white, animationTimings: .off,
+                                handicap: setup)
+            starters.append(s.startingPlayer)
+            // Fresh tokens every game of the match.
+            XCTAssertEqual(s.rerollsLeft(.black), 2)
+            XCTAssertEqual(s.hintsLeft(.black), 1)
+            match.recordGame(winner: winner)
+        }
+        XCTAssertEqual(starters, [.black, .black, .black])
+        // Without the handicap the match alternates as before.
+        var plain = MatchState.bestOfThree(baseStartingPlayer: .white)
+        var alternating: [Color] = []
+        for winner in [Color.white, .black] {
+            alternating.append(HandicapSetup.startingPlayer(for: nil, default: plain.currentStartingPlayer))
+            plain.recordGame(winner: winner)
+        }
+        XCTAssertEqual(alternating, [.white, .black])
+    }
+
+    func testEveryGameOfAHandicapMatchGoesToTheHandicapRecord() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hmatch-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = HumanStatsStore(store: HumanGameLogStore(fileURL: url))
+        let setup = HandicapSetup(white: HandicapItems(headStart: 2))
+        for won in [true, false, true] {
+            let s = GameSession(startingPlayer: .white, aiColor: .black, animationTimings: .off,
+                                handicap: setup)
+            // RootView's game-over hook: record with the game's own setup.
+            store.record(humanWon: won, handicap: s.record.handicap)
+        }
+        XCTAssertEqual(store.stats.total, 0, "a handicap match never touches the vs-Computer record")
+        XCTAssertEqual(store.handicapStats.total, 3)
+        XCTAssertEqual(store.handicapStats.wins, 2)
+    }
+
+    func testUndoAcrossARerollReplaysTheSameDice() {
+        // vs a random-fallback computer (no model), animation off: everything synchronous.
+        let s = GameSession(startingPlayer: .white, aiColor: .black, animationTimings: .off,
+                            handicap: HandicapSetup(white: HandicapItems(rerolls: 1)))
+        s.handicapUniform = uniforms([0.99, 0.95])     // the reroll → 6-6
+        s.setDice(2, 1)
+        s.reroll()
+        XCTAssertEqual(s.pendingRoll, PendingRoll(die1: 6, die2: 6))
+        playFirstMove(s)
+        // The computer rolled and played; the human now awaits a roll.
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.history.count, 2)
+        let firstWhite = s.history[0], firstBlack = s.history[1]
+        XCTAssertEqual([firstWhite.die1, firstWhite.die2], [6, 6])
+
+        s.undoLastDecision()
+        // Back at the human's decision with the rerolled dice, no reroll refunded.
+        XCTAssertEqual(s.phase, .picking)
+        XCTAssertEqual([s.game.dice.die1.value, s.game.dice.die2.value], [6, 6])
+        XCTAssertEqual(s.rerollsLeft(.white), 0)
+        playFirstMove(s)
+        // The computer's turn replays its recorded roll.
+        XCTAssertEqual(s.history.count, 2)
+        XCTAssertEqual([s.history[1].die1, s.history[1].die2], [firstBlack.die1, firstBlack.die2])
+    }
+
+    func testHumanRerollTumblesWithTheRollAnimation() async throws {
+        let s = GameSession(startingPlayer: .white,
+                            animationTimings: AnimationTimings(aiDiceRollDuration: 0.05,
+                                                               aiMoveAnimationDuration: 0),
+                            handicap: HandicapSetup(white: HandicapItems(rerolls: 1)))
+        s.handicapUniform = uniforms([0.5, 0.5])
+        s.setDice(2, 1)
+        s.reroll()
+        XCTAssertTrue(s.humanDiceRolling, "the new dice tumble")
+        XCTAssertEqual(s.phase, .awaitingRoll)
+        XCTAssertEqual(s.pendingRoll, PendingRoll(die1: 4, die2: 4))
+        while s.phase != .picking { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertFalse(s.humanDiceRolling)
+        XCTAssertEqual(s.rerollsLeft(.white), 0)
+    }
+
+    func testRestoredComputerRollGetsItsRerollDecision() async throws {
+        let agent = try loadAgent()
+        let s = GameSession(startingPlayer: .black, agent: agent, aiColor: .black,
+                            searchConfig: SearchConfig(maxDepth: 1), animationTimings: .off,
+                            handicap: HandicapSetup(black: HandicapItems(rerolls: 2)))
+        // The exact-die bear-off from the live-reroll test, with the worst roll restored.
+        let b = s.game.board
+        for i in b.points.indices { b.setPoint(i, pieces: []) }
+        b.setPoint(0, pieces: Array(repeating: .black, count: 13))
+        b.setPoint(6, pieces: [.black])
+        b.setPoint(5, pieces: [.black])
+        b.setPoint(25, pieces: Array(repeating: .white, count: 14))
+        b.setPoint(19, pieces: [.white])
+        let values = try HandicapDice.rollValues(agent: agent, board: b, color: .black)
+        let worst = HandicapDice.outcomes[values.indices.min { values[$0] < values[$1] }!]
+        let best = HandicapDice.outcomes[values.indices.max { values[$0] < values[$1] }!]
+        func u(_ d: Int) -> Double { (Double(d) - 0.5) / 6 }
+        s.handicapUniform = uniforms([u(best.d1), u(best.d2)])
+        s.restorePendingRollForTesting(PendingRoll(die1: worst.d1, die2: worst.d2))
+        s.start()
+        while s.phase == .aiThinking || s.preparingDice { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(s.rerollsLeft(.black), 1)
+        XCTAssertEqual(s.lastComputerReroll, .black)
+        let ply = try XCTUnwrap(s.history.first)
+        XCTAssertEqual(HandicapDice.outcomeIndex(ply.die1, ply.die2),
+                       HandicapDice.outcomeIndex(best.d1, best.d2))
+    }
+
+    func testRestoredComputerRollWithoutRerollsPlaysAsBefore() async throws {
+        // No tokens → the plain restored path (no rating, dice unchanged).
+        let s = GameSession(startingPlayer: .black, aiColor: .black, animationTimings: .off,
+                            handicap: HandicapSetup(white: HandicapItems(headStart: 1)))
+        s.restorePendingRollForTesting(PendingRoll(die1: 3, die2: 5))
+        s.start()
+        XCTAssertEqual(s.history.first.map { [$0.die1, $0.die2] }, [3, 5])
+        XCTAssertNil(s.lastComputerReroll)
+    }
+}

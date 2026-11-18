@@ -122,6 +122,13 @@ public struct HandicapSetup: Codable, Equatable, Hashable, Sendable {
         return nil
     }
 
+    /// The starter of a game under `setup`: the "moves first" side, else `defaultStarter`
+    /// (the opening roll's winner, a forced first move, or a best-of-three game's
+    /// alternating starter — "moves first" overrides the alternation every game).
+    public static func startingPlayer(for setup: HandicapSetup?, default defaultStarter: Color) -> Color {
+        setup?.forcedStarter ?? defaultStarter
+    }
+
     /// Whether either side's dice are tilted.
     public var hasWeightedDice: Bool { white.diceTilt > 0 || black.diceTilt > 0 }
     /// Whether either side has rerolls.

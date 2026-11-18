@@ -148,12 +148,12 @@ struct HandicapSettingsView: View {
     }
 
     private var applicability: String {
-        let base = String(localized: "Applies to single offline games of Plakoto (house rules). Not online, not Best of 3 or Full Tavli.")
+        let base = String(localized: "Applies to offline games of Plakoto (house rules), single or Best of 3. Not online or Full Tavli.")
         guard prefs.isActive, !appliesNow else { return base }
         if variant != .plakoto {
             return String(localized: "Your next game is \(variant.name), so it will be played without a handicap.")
         }
-        return String(localized: "Your next game is \(matchLength.label), so it will be played without a handicap. Pick Single game to use it.")
+        return String(localized: "Your next game is Full Tavli, so it will be played without a handicap.")
     }
 
     // MARK: - Chrome

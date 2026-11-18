@@ -167,8 +167,10 @@ Engine detail: `ios/REFERENCE.md` ("Handicaps, tier 1"); views: `ios/TavliApp/Ta
   Handicap tag ("Dice favour Red moderately"), never per roll.
 - **Rerolls.** Human: a "Reroll (n left)" button while picking (built half-moves are taken back).
   Computer: the harness rule — reroll while tokens remain and v(roll) < E_p[v] − 0.02 with p its own
-  (tilted) distribution; the human sees "Computer used a reroll (n left)". Not offered on a roll
-  with no legal move (the turn passes at once).
+  (tilted) distribution; the human sees "Computer used a reroll (n left)". A human reroll tumbles
+  the dice like a normal roll; a computer roll restored from a save gets the same reroll decision;
+  undoing a move across a reroll replays the same (rerolled) dice, without refunding tokens. Not
+  offered on a roll with no legal move (the turn passes at once) — a known limitation, kept.
 - **Hints**: the level-8 search (2-ply) shown as a blue move highlight, not played; charged when
   shown. Human sides only.
 - **Estimate.** Position levers on device from the net (the starter's mean 1-ply value over its 21
@@ -178,9 +180,10 @@ Engine detail: `ios/REFERENCE.md` ("Handicaps, tier 1"); views: `ios/TavliApp/Ta
   regenerate with `ios/scripts/make_handicap_table.py`), combined by adding log-odds. Until E1
   lands every dice cell is `null`: the line shows the position estimate plus "Weighted dice and
   rerolls: not measured yet". Hints mark it "approx." and are left out.
-- **Where it applies.** House Plakoto, offline: vs the computer only for a *Single game* (best of 3
-  and Full Tavli play unhandicapped, the builder says so), two players for any single game. Online
-  never.
+- **Where it applies.** House Plakoto, offline, vs the computer or two players: a single game or
+  every game of a Best of 3 (each game with fresh rerolls/hints; "moves first" gives the favoured
+  side the start of every game, overriding the alternation). Full Tavli and online never. Every game
+  of a handicap match counts in the separate handicap record.
 - **Open.** E1 numbers for the table; whether head-start positions need the E2 fine-tune; the
   Swift side has no bear-off database, so its race values (dice tilt, reroll decisions, estimate)
   are the net's own rather than the DB's exact ones.

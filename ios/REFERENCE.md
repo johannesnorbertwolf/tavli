@@ -725,10 +725,22 @@ for m = 0…8 both sides. Every replay from the start goes through
   board copy; `preparingDice` blocks input meanwhile, epoch-guarded) and draw with
   `HandicapDice.weightedFaces(u1, u2, values, β)` from `handicapUniform` (injectable for tests).
 - **Rerolls** — human: `canReroll` / `reroll()` (picking/moving; built half-moves are taken back;
-  the new roll is weighted if that side has β, else fair from `handicapUniform`). Computer:
-  `takeHandicappedAITurn` draws, then rerolls **while tokens remain and**
+  the new roll is weighted if that side has β, else fair from `handicapUniform`; with animation on
+  the new dice tumble like an auto-roll — `humanDiceRolling` for `aiDiceRollDuration` — before the
+  turn resumes, epoch-guarded). Computer: `takeHandicappedAITurn` draws, then
+  `applyComputerRerolls` rerolls **while tokens remain and**
   `HandicapDice.shouldReroll(values, d1, d2, beta:)` (`lastComputerReroll` drives the UI note). A
-  restored pending roll (#171) is played as is.
+  restored pending roll (#171) for a computer with tokens goes through `resumeHandicappedAIRoll`:
+  the same reroll decision, tumbling only if the dice changed. A roll with **no legal move** is
+  never rerollable: the turn passes at once (known limitation, kept on purpose).
+- **Undo across a reroll** — `undoLastDecision` restores each rewound ply's *final* (post-reroll)
+  dice, and later turns replay their recorded dice from `diceReplays` (no weighting, no computer
+  reroll decision while a replay is queued), so the same dice come back. Tokens spent in the rewound
+  turns are not refunded. A reroll still tumbling is discarded (`handicapEpoch`).
+- **Best-of-three (#148 follow-up)** — every game of an offline best-of-three gets the match's
+  setup with fresh tokens (a new session per game); `HandicapSetup.startingPlayer(for:default:)`
+  lets "moves first" override the match's alternating starter. A resumed autosave is still a
+  standalone game, with its handicap restored.
 - **Hints** — `canHint` / `requestHint()`: full-strength `getBestMove` (`SearchConfig.standard`,
   2-ply) on a board copy off the main actor; publishes `hint` (`[from, to]` pairs) without playing;
   charged only when it arrives; cleared on the next checker move / new turn (`hintEpoch`).
