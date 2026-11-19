@@ -242,3 +242,48 @@ cell). Gains are percentage points for the favoured side.
 - Head start × dice levers is super-additive: the dice shift counts ≈ 1.4× at m = 4. The app
   multiplies the dice shift by 1 + 0.1·m (`HandicapEstimator.headStartDiceInteraction`).
 - Moves-first combos are within noise (±3 pp CI).
+
+## 11. E3 results: the handicap-aware model and tier-2 measurement (2026-11-19)
+
+**Training** (`docs/handicap-e3-training.log`). The plateau driver ran both stages: depth-1
+(4 rounds × 50k games) and depth-2 (4 rounds × 20k games), 280k self-play games, 70 % with random
+tier-2 setups. The net did learn the new inputs (mean |w| on the 68 handicap columns 0.20, on the old
+inputs 1.27), but **no candidate ever beat the warm start** on handicapped pairs: depth-1 dropped to
+−5 pp and recovered to −1 pp; depth-2 ended at exactly 50.0 % (pooled −0.9 pp, 8 000 pairs). The ladder
+top is still `plakoto_hc_gold_v1` = gold_v11 with zero-initialised new inputs. On normal games it is
+gold_v11 (50.0 % over 4 000 games).
+
+**Consequence.** The handicap-aware model *is* gold_v11 with a wider input that it ignores. gold_v11
+already plays the tier-2 rules as well as anything 280k games of retraining produced, because the rules
+reach it through the legal moves, not through the encoding. So the app needs **no second model**: the
+regular Core ML model plays tier-2 games, with the encoder capping a stack's unary units at 15 (stacks of
+16/17 only occur with extra checkers). This is the user's "one regular + one handicap model" policy with
+the second model collapsed into the first. If a future idea makes retraining pay off, the pipeline
+(`config/config-handicap.yml`, `plateau`) is ready.
+
+**Measurement** (`docs/handicap-e3-tier2.{json,md}`; `plakoto_hc_gold_v1`, 1-ply, 1 000 pairs/cell).
+Shift = change in the *handicapped* (spec `side`) colour's win rate:
+
+| Lever | Shift for the handicapped side (pp) |
+|---|---|
+| Overshoot bear-off for the opponent | −25.5 |
+| Smaller home 5 / 4 / 3 | −7.3 / −13.2 / −24.2 |
+| Safe point for the opponent at 2 / 4 / 6 / 8 / 10 / 12 | −1.0 / −2.2 / −3.3 / −2.3 / −2.5 / −2.3 |
+| Opponent plays with 13 / 14 checkers | **+21.5 / +12.6** |
+| Handicapped side plays with 16 / 17 checkers | **+11.6 / +16.8** |
+
+- **More checkers is the advantage**, not fewer: the design assumption (§3, "favoured side plays with
+  fewer") is backwards in house Plakoto. 15 vs 13 is worth +21.5 pp for the 15 side. Extra checkers mean
+  more blockers and more pinning material, which outweighs the longer bear-off. The app offers a per-side
+  checker count (13…17); the estimator uses the measured sign.
+- **Safe point is weak** (≤ 3.3 pp; best at point 6). Kept as a fine knob.
+- **Overshoot** is a single strong step (≈ 25 pp); smaller home is a 3-step slider up to ≈ 24 pp.
+- **Combinations are super-additive** in log-odds: pairs are within 0.3–6 pp of the additive model,
+  three/four levers 9 pp stronger (e.g. overshoot + safe point 6 + 14 checkers: measured 23.1 %, additive
+  32.3 %). The app uses the exact measured combo cell when one exists, else the additive sum.
+- The net's start-position estimate is useless for tier 2 (≈ 50 % everywhere: the new inputs are zero
+  weights), so tier-2 levers come only from the table.
+
+`ios/TavliApp/TavliApp/Resources/HandicapTable.json` now carries the 22 tier-2 cells too
+(`make_handicap_table.py ... --tier2 docs/handicap-e3-tier2.json`); the Swift reader ignores them until
+the P3b port (rules in the Swift engine, builder rows, board cues).

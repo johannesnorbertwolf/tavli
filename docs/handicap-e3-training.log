@@ -1,0 +1,14 @@
+2026-11-18 19:16:13 warm start: plakoto_hc_gold_v1.pth built from models/gold_v11.pth (zero-initialised new inputs = identical play on normal games); live model trained_model_plakoto_hc.pth
+2026-11-18 19:16:13 start/resume: variant=plakoto_hc stage=1/2 round=0 phase=train top=models/plakoto_hc_gold_v1.pth
+2026-11-18 19:32:50 stage=1/2 round=1 games=50000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4477 z=-8.32 promoted=no streak=1/4 pooled_edge=-5.22pp ucb=-4.19pp
+2026-11-18 19:48:59 stage=1/2 round=2 games=100000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4657 z=-5.46 promoted=no streak=2/4 pooled_edge=-4.32pp ucb=-3.59pp
+2026-11-18 20:05:05 stage=1/2 round=3 games=150000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4795 z=-3.26 promoted=no streak=3/4 pooled_edge=-3.57pp ucb=-2.97pp
+2026-11-18 20:21:07 stage=1/2 round=4 games=200000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4943 z=-0.88 promoted=no streak=4/4 pooled_edge=-2.82pp ucb=-2.30pp
+2026-11-18 20:21:07 stage 1 (depth1) PLATEAU after 4 non-promoting rounds: pooled edge vs plakoto_hc_gold_v1.pth -2.82pp (UCB -2.30pp < min_edge +1.50pp, 8000 pairs)
+2026-11-18 20:21:07 advancing to stage 2/2 (depth2): overrides={'bootstrap_depth': 2, 'learning_rate': 3e-05}
+2026-11-18 22:07:40 stage=2/2 round=5 games=220000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4840 z=-2.55 promoted=no streak=1/4 pooled_edge=-1.60pp ucb=-0.57pp
+2026-11-18 23:58:58 stage=2/2 round=6 games=240000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4825 z=-2.80 promoted=no streak=2/4 pooled_edge=-1.68pp ucb=-0.95pp
+2026-11-19 01:42:58 stage=2/2 round=7 games=260000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.4973 z=-0.43 promoted=no streak=3/4 pooled_edge=-1.21pp ucb=-0.61pp
+2026-11-19 03:25:48 stage=2/2 round=8 games=280000 vs=plakoto_hc_gold_v1 pairs=2000 rate=0.5000 z=0.00 promoted=no streak=4/4 pooled_edge=-0.91pp ucb=-0.39pp
+2026-11-19 03:25:48 stage 2 (depth2) PLATEAU after 4 non-promoting rounds: pooled edge vs plakoto_hc_gold_v1.pth -0.91pp (UCB -0.39pp < min_edge +1.50pp, 8000 pairs)
+2026-11-19 03:26:41 FINISHED plakoto_hc: 2 stage(s), 8 rounds, 280000 games. Ladder top: models/plakoto_hc_gold_v1.pth (1 rungs). Last stage: stage 2 (depth2) PLATEAU after 4 non-promoting rounds: pooled edge vs plakoto_hc_gold_v1.pth -0.91pp (UCB -0.39pp < min_edge +1.50pp, 8000 pairs). Final vs gold_v11.pth: 0.5000 over 4000 games, +0.000 points/game.

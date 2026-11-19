@@ -56,6 +56,117 @@
       "logOddsShift": 0.8688,
       "favouredWinRate": 0.7045,
       "games": 2000
+    },
+    "smaller_house:5": {
+      "logOddsShift": 0.2921,
+      "favouredWinRate": 0.5725,
+      "games": 2000
+    },
+    "smaller_house:4": {
+      "logOddsShift": 0.5408,
+      "favouredWinRate": 0.632,
+      "games": 2000
+    },
+    "smaller_house:3": {
+      "logOddsShift": 1.059,
+      "favouredWinRate": 0.7425,
+      "games": 2000
+    },
+    "overshoot:1": {
+      "logOddsShift": 1.1255,
+      "favouredWinRate": 0.755,
+      "games": 2000
+    },
+    "safe_point:2": {
+      "logOddsShift": 0.038,
+      "favouredWinRate": 0.5095,
+      "games": 2000
+    },
+    "safe_point:4": {
+      "logOddsShift": 0.0881,
+      "favouredWinRate": 0.522,
+      "games": 2000
+    },
+    "safe_point:6": {
+      "logOddsShift": 0.1322,
+      "favouredWinRate": 0.533,
+      "games": 2000
+    },
+    "safe_point:8": {
+      "logOddsShift": 0.0921,
+      "favouredWinRate": 0.523,
+      "games": 2000
+    },
+    "safe_point:10": {
+      "logOddsShift": 0.1001,
+      "favouredWinRate": 0.525,
+      "games": 2000
+    },
+    "safe_point:12": {
+      "logOddsShift": 0.0901,
+      "favouredWinRate": 0.5225,
+      "games": 2000
+    },
+    "checkers:13": {
+      "logOddsShift": -0.9198,
+      "favouredWinRate": 0.285,
+      "games": 2000
+    },
+    "checkers:14": {
+      "logOddsShift": -0.5172,
+      "favouredWinRate": 0.3735,
+      "games": 2000
+    },
+    "checkers:16": {
+      "logOddsShift": -0.4726,
+      "favouredWinRate": 0.384,
+      "games": 2000
+    },
+    "checkers:17": {
+      "logOddsShift": -0.7014,
+      "favouredWinRate": 0.3315,
+      "games": 2000
+    },
+    "overshoot:1+safe_point:6": {
+      "logOddsShift": 1.4565,
+      "favouredWinRate": 0.811,
+      "games": 2000
+    },
+    "overshoot:1+checkers:14": {
+      "logOddsShift": 0.8025,
+      "favouredWinRate": 0.6905,
+      "games": 2000
+    },
+    "overshoot:1+smaller_house:4": {
+      "logOddsShift": 1.7906,
+      "favouredWinRate": 0.857,
+      "games": 2000
+    },
+    "safe_point:6+checkers:14": {
+      "logOddsShift": -0.2778,
+      "favouredWinRate": 0.431,
+      "games": 2000
+    },
+    "safe_point:6+smaller_house:4": {
+      "logOddsShift": 0.6879,
+      "favouredWinRate": 0.6655,
+      "games": 2000
+    },
+    "checkers:16+smaller_house:4": {
+      "logOddsShift": 0.3207,
+      "favouredWinRate": 0.5795,
+      "games": 2000
+    },
+    "overshoot:1+safe_point:6+checkers:14": {
+      "logOddsShift": 1.2055,
+      "favouredWinRate": 0.7695,
+      "games": 2000
+    },
+    "overshoot:1+safe_point:6+checkers:14+smaller_house:4": {
+      "logOddsShift": 1.8878,
+      "favouredWinRate": 0.8685,
+      "games": 2000
     }
-  }
+  },
+  "tier2Source": "docs/handicap-e3-tier2.json"
 }
