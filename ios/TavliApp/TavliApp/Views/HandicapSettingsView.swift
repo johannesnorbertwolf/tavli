@@ -146,20 +146,15 @@ struct HandicapSettingsView: View {
                     }
                     .disabled(!prefs.enabled)
                     .opacity(prefs.enabled ? 1 : 0.5)
-
-                    HandicapEstimateView(estimate: prefs.isActive ? model.estimate : nil,
-                                         computing: model.computing,
-                                         unavailable: model.unavailable,
-                                         aName: HandicapRole.a.label(vsComputer: vsComputer),
-                                         bName: HandicapRole.b.label(vsComputer: vsComputer),
-                                         aColor: .white)
-                        .chromeCard(padding: 20)
-                        .opacity(prefs.isActive ? 1 : 0)
-                        .accessibilityHidden(!prefs.isActive)
                 }
                 .compactPadding(28, compact: 16)
                 .frame(maxWidth: 560)
                 .frame(maxWidth: .infinity)
+            }
+            // The estimate stays in view while the cards scroll underneath (pinned to the
+            // bottom of the sheet), so every edit's effect is visible without scrolling.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if prefs.isActive { pinnedEstimate }
             }
         }
         .onAppear(perform: refreshEstimate)
@@ -168,6 +163,24 @@ struct HandicapSettingsView: View {
     }
 
     // MARK: - Estimate
+
+    /// The live estimate, pinned below the scrolling cards on the page background.
+    private var pinnedEstimate: some View {
+        HandicapEstimateView(estimate: model.estimate,
+                             computing: model.computing,
+                             unavailable: model.unavailable,
+                             aName: HandicapRole.a.label(vsComputer: vsComputer),
+                             bName: HandicapRole.b.label(vsComputer: vsComputer),
+                             aColor: .white)
+            .chromeCard(padding: 16)
+            // Same width as the scrolling cards (their column is 560 wide incl. padding).
+            .padding(.horizontal, ChromeType.isCompact ? 16 : 28)
+            .frame(maxWidth: 560)
+            .padding(.top, 10)
+            .padding(.bottom, ChromeType.isCompact ? 8 : 16)
+            .frame(maxWidth: .infinity)
+            .background(ChromeKit.pageColor.ignoresSafeArea(edges: .bottom))
+    }
 
     /// Side A is evaluated as White (house Plakoto is colour-symmetric). The start rule
     /// mirrors the app: two players → White starts; vs the computer → the First-move
