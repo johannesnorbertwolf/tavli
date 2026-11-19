@@ -947,7 +947,7 @@ landscape shows only a caption header + the overall line) and from the mode pick
 
 ## Handicap views (#148 — `HandicapSettingsView.swift`, `HandicapViews.swift`, `HandicapSettings.swift`)
 
-Tier-1 handicaps (engine: `ios/REFERENCE.md` "Handicaps, tier 1"). **Hidden unless used**
+Tier-1 and tier-2 handicaps (engine: `ios/REFERENCE.md` "Handicaps, tier 1" / "Handicaps, tier 2"). **Hidden unless used**
 (concept §7): nothing on the start screen or new-game sheet; the game, review and stats change
 only when a handicap is active / exists.
 
@@ -985,6 +985,24 @@ only when a handicap is active / exists.
   `session.hint` as a blue `MoveHighlightView` over the checkers. `GameView` autosaves on a token
   change, hides the vs-Computer record in the win overlay of a handicap game, and passes
   `record.handicap` to the history notation.
+- **Tier 2 (P3b).** `HandicapPreferences` adds `overshoot`/`overshootSide`, `safePoint`/
+  `safePointSide`, `checkersA`/`checkersB` (a count per role, neutral: more is the advantage) and
+  `homeSize`/`homeSizeSide` (default side `.b`); `hasTier2`; summary parts "Overshoot bear-off · Safe
+  point 6 · Checkers 17–15 · Home 4 points". The builder adds a "Rule changes" heading and four cards
+  in the tier-1 style: Overshoot bear-off (side + toggle), Safe point (side + segmented Off/2…12),
+  Checkers (one `Stepper` row per role, 13…17), Home size (side + segmented 6/5/4/3). The estimate
+  model reuses its last net position estimate when only tier-2 items change (they come from the
+  table), so those edits update instantly. `HandicapCopy.lines` adds "You: may bear off with a higher
+  die", "safe point 6 (a lone checker there can't be pinned)", "plays with 17 checkers", "bears off
+  from the last 4 points only".
+- **Board cues (`HandicapBoardCuesView`).** A `Canvas` overlay between `BoardView` and the
+  highlights/checkers, drawn only when the board's `config.handicapRules` is set: a shield SF Symbol
+  in the side's checker fill/edge colours on the frame strip at the base of its safe point, and for
+  a smaller home the non-counting points of its home quadrant tinted with
+  `CaramelPalette.homeCueShade` (light/dark pair) plus a line in its checker colours along the frame
+  under the counting points. Used by `PlayableBoardView` (game + drill) and the review board
+  (`record.replayConfig`). Stacks of 16/17 use the existing count label; `CheckerStyle` is no longer
+  `fileprivate` (the cues reuse it). The review notation and drill use `record.replayConfig`.
 - **Review.** `GameReviewView.topBar` adds `HandicapReviewNote` ("Handicap game: win chances
   assume fair dice") when `record.handicap.altersDice`.
 - **Stats.** `RootView` records a finished vs-Computer handicap game with its setup

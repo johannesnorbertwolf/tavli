@@ -765,6 +765,72 @@ its dice-lever cell (`weighted_dice:β`, `rerolls:N`, or an exact `+` combo) fro
 `ios/scripts/make_handicap_table.py`; shift = `logit(favoured win rate)`). Unmeasured levers are
 listed in `unmeasured` and left out of the number; hints only set `approximate`.
 
+## Handicaps, tier 2 (#148 P3b)
+
+Spec: `docs/handicap-concept.md` §3, §11 (E3 results), §12. Rule levers per side, each describing
+that side's **own** rules (Python `HandicapBoard` per colour). Engine files: `HandicapRules.swift`
+(rules, board/variant hooks, move generator), `Handicap.swift` (items, setup, start position),
+`HandicapDice.swift` (table mapping). Tests: `Tier2Tests` + the committed Python fixture
+`Tests/TavliEngineTests/Tier2Fixtures/tier2_moves.json` (`ios/scripts/make_tier2_fixtures.py`).
+
+**Items.** `HandicapItems` gains `overshoot` (Bool), `safePoint` (0 or one of
+`HandicapSetup.safePointCandidates` = 2/4/6/8/10/12, own numbering), `checkers` (13…17, default 15;
+**more is the advantage**), `homeSize` (6/5/4/3). Tolerant decode (missing = normal), `clamped`.
+`HandicapSetup.currentVersion` = **2**; a version-1 build ignores the new keys (and would replay
+such a game under the normal rules). `setup.rules` → `HandicapRules?` (`nil` without tier-2 items),
+`hasTier2`, `tier1Only`.
+
+**Where the rules live.** `GameConfig.handicapRules: HandicapRules?` (part of equality/hash;
+`nil` = normal game). `GameConfig.applying(setup)` adds them for house Plakoto only;
+`GameRecord.replayConfig` = the record's variant + rules. Because every board copy is
+`GameBoard(config: board.config)`, the session, the search (hints, 2-ply, AI turn), in-play analysis,
+`MoveBuilder` scratch boards, `GameReview` (its entry points apply `record.handicap`), drill and
+notation all play the same rules with no extra plumbing. `piecesPerPlayer` stays the model's 15.
+- `GameBoard` caches per-side home size / checker count from the config (`homeSize(of:)`,
+  `checkerCount(_:)`): `isHomePoint`/`countCheckersOutsideHome` use the side's home size,
+  `allPlayersInGoal` the side's count (`>=`), `initializeBoard` the per-side stacks. With no rules
+  these equal the config values: the normal path is unchanged.
+- `PlakotoVariant` consults `board.config.handicapRules` only when set: `legalMoves` →
+  `HandicapMoveGenerator`; `isOpen` → `handicapIsOpen` (a lone checker on its owner's safe point is
+  closed to the opponent); `isLegalStep` → exact die, or (overshoot side) a bear-off with a larger
+  die when no own checker, movable or pinned, is farther from the slot; `intermediatePoints` →
+  midpoints through which a one-checker two-dice half is two legal steps (exact landings and
+  overshoot bear-offs, so `MoveBuilder` can split them).
+- **`HandicapMoveGenerator`** ports `domain/handicap_moves.py` `legal_moves_tier2` on a private
+  copy of the position (Python's `n`/`color`/`pinned` arrays, own apply/undo): pairs (legality
+  checked in each order on the board after the first half), merged exact single-checker jumps,
+  merged jumps whose second leg overshoots, rule-2 singles, and the pasch loop with its persistent
+  shorter-sequence flags and sources extended past the slot. A non-overshoot side runs the same code
+  with overshoot halves off, which equals the house generator over the rules' open points / homes.
+  Results deduplicated by their sorted halves. **Pinned to Python** by position sets on 1 041 cases
+  (random-play positions from random tier-2 starts incl. 13…17 checkers and head starts, plus
+  synthetic bear-off races with pins; doubles, overshoot bear-offs, safe points, homes 3…5), and
+  `MoveBuilder` playability is checked by exploring every gesture sequence on a quarter of them.
+
+**Start and win.** `HandicapSetup.setUpInitialPosition` puts each side's checker count (minus its
+head start) on its start point (`tier2_board`). A side wins with **all its own** checkers off; the
+mother-pin win is unchanged.
+
+**Encoder.** `BoardEncoder` caps a point's unary units at 15 (`ai/board_encoder.py`
+`count if count <= ppp else ppp`); 16/17 stacks only occur with extra checkers. The globals are
+unchanged (borne-off ratios may exceed 1, as in Python). **No second model**: E3's handicap-aware
+net never beat its warm start (gold_v11 with zero weights on the new inputs), so the regular
+`PlakotoValue` plays tier-2 games; the rules reach it through the legal moves.
+
+**Estimate.** The net's position estimate runs on `setup.tier1Only` (normal 15/15 start, head
+start only): the net cannot see tier-2 levers. They come from `HandicapTable.json` (E3 cells
+`overshoot:1`, `safe_point:p`, `checkers:n`, `smaller_house:k`, `+` combos), whose rate is the
+sweep's *handicapped* colour's (spec `side`), so `logOddsShift` favours that colour's opponent.
+`HandicapTable.tier2Groups(setup)` maps the app's per-side items to spec sides: overshoot / safe
+point → spec side = the holder's opponent; smaller home → the holder; fewer than 15 checkers → the
+holder's opponent (`HandicapSpec.target` = −side), more than 15 → the holder. Per spec side: an
+exact measured combo cell for the whole group in **any order** (`shift(for:)` now tries every
+permutation, also for tier-1 combos), else the sum of the singles; the group's shift is added for
+the spec side's opponent. Combined with tier 1 additively in logit. Signs pinned against the table
+(White overshoot ≈ 75.5 %, White 13 checkers ≈ 28.5 %, White 17 ≈ 66.9 %, Black home 4 ≈ 63.2 % White).
+A group of three levers without its exact cell sums singles even when a measured pair is in it
+(combos are super-additive, so such an estimate is conservative).
+
 ## Post-game blunder review (#62)
 
 `GameReview.swift` is the on-device analogue of the CLI's `review` command

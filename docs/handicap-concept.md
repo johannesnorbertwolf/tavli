@@ -1,7 +1,7 @@
 # Handicap system: concept for phases 2–4 (#148)
 
-Status: **concept, decisions taken 2026-11-18. Tier 1 implemented in the iOS app (§9) and in the
-Python harness; the dice-lever measurements (E1) are still to come.** Builds on the
+Status: **concept, decisions taken 2026-11-18. Tier 1 (§9, E1 §10) and tier 2 (E3 §11, iOS §12)
+implemented in the iOS app and the Python harness.** Builds on the
 phase-1 measurements in `docs/handicap-phase1.md` (gold_v11 self-play, house Plakoto, 1-ply).
 
 ## Decisions (user, 2026-11-18)
@@ -285,5 +285,32 @@ Shift = change in the *handicapped* (spec `side`) colour's win rate:
   weights), so tier-2 levers come only from the table.
 
 `ios/TavliApp/TavliApp/Resources/HandicapTable.json` now carries the 22 tier-2 cells too
-(`make_handicap_table.py ... --tier2 docs/handicap-e3-tier2.json`); the Swift reader ignores them until
-the P3b port (rules in the Swift engine, builder rows, board cues).
+(`make_handicap_table.py ... --tier2 docs/handicap-e3-tier2.json`); the Swift reader uses them since the
+P3b port (§12).
+
+## 12. Implementation notes: iOS tier 2 (P3b, 2026-11-19)
+
+Engine detail: `ios/REFERENCE.md` ("Handicaps, tier 2"); views: `ios/TavliApp/TavliApp/Views/REFERENCE.md`
+("Handicap views").
+
+- **One model.** Per §11 the regular `PlakotoValue` net plays tier-2 games; the Swift encoder caps a
+  stack's unary units at 15. No `plakoto_hc` Core ML model ships.
+- **Rules.** `HandicapItems` (setup version 2) adds per side overshoot, safe point (2/4/6/8/10/12),
+  checkers (13…17) and home size (6/5/4/3), each the side's own rules. They ride on
+  `GameConfig.handicapRules`, so every board copy (search, hints, review, drill, move builder) plays
+  them. The move generator ports `legal_moves_tier2` and is pinned to Python on 1 041 positions
+  (`ios/scripts/make_tier2_fixtures.py`). With no tier-2 item the config and the move generator are
+  exactly the old ones.
+- **Builder.** A "Rule changes" group: Overshoot bear-off and Safe point and Home size with a side
+  picker, Checkers as a neutral count per side (more checkers is the advantage, so no "favoured" side).
+- **Estimate.** The net estimates the normal 15/15 start with the head start only; tier-2 levers come
+  from the E3 cells, grouped by the handicapped colour, exact combo cell in any order when measured,
+  else the singles summed in log-odds, then added to tier 1 in logit.
+- **Board cues.** A small shield in the side's colour on the frame at its safe point; for a smaller
+  home the points that no longer count are dimmed and a line in the side's colour marks the counting
+  home. Light and dark palettes.
+- **Where it applies.** As tier 1: house Plakoto, offline, single game or every game of a Best of 3,
+  vs the computer or two players; never online or Full Tavli. Saves, resume and review replay carry
+  the rules through the setup.
+- **Open.** No Swift bear-off database (race values are the net's). A version-1 build reading a
+  tier-2 save ignores the rules and would replay it as a normal game.

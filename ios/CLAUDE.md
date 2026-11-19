@@ -41,6 +41,7 @@ Pure engine + Core ML agent live in `TavliEngine/Sources/TavliEngine/` (SwiftUI-
 | `BoardLayout.swift` (#143) | Engine → display slots for the board views, driven only by the variant hooks: trays show borne-off checkers only, bar checkers (Portes) move to slots 26/27; source↔slot mapping, borne-off/bar counts, hit detection for the bar animation; `reportsEquity`/`equity(fromValue:)` for 2-point variants. |
 | `ModelCatalog.swift` (#143) | Per-variant Core ML model lookup + `isAvailable` (the vs-AI gate; missing model = "Computer not available yet", never random moves) + `makeAgent`; `VariantPreference` persists the chosen variant id. |
 | `Handicap.swift` / `HandicapDice.swift` (#148, tier 1) | `HandicapSetup` (Codable, versioned, per-side `HandicapItems`: head start 0…4 (capped by E1), moves first, weighted-dice β, rerolls 0…4, hints 0…5; `diceTiltSteps` = the one β grid) + `HandicapGameState` (setup + tokens left; the optional `GameSave.handicap`, no version bump) + `GameRecord.handicap`/`setUpInitialPosition` (head start = Python `pip_headstart`). `HandicapDice`: per-roll 1-ply values, tilt `p∝p·exp(βv)`, Python `weighted_faces` draw, harness reroll rule. `HandicapEstimator` (net position estimate + `HandicapTable.json` log-odds). `GameSession` hooks (`handicap`, `reroll()`, `requestHint()`/`hint`, weighted/AI-reroll rolls off the main actor, `handicapUniform` seam) are inert when `handicap == nil`. **Keep in sync with `domain/handicap.py` / `ai/handicap_sweep.py`** (see `REFERENCE.md`). |
+| `HandicapRules.swift` (#148, tier 2) | Per-side rule levers (`SideRules`: overshoot bear-off, safe point, checkers 13…17, home size) carried as `GameConfig.handicapRules` (nil = normal game), so every board copy plays them. `PlakotoVariant` consults them only when set (`legalMoves` → `HandicapMoveGenerator`, a port of `domain/handicap_moves.py`; `isOpen`/`isLegalStep`/`intermediatePoints`). Pinned to Python by `Tier2Tests` (fixture from `ios/scripts/make_tier2_fixtures.py`). No second model: the regular net plays tier-2 games (encoder caps unary at 15). See `REFERENCE.md` "Handicaps, tier 2". |
 
 The SwiftUI views bind to `GameSession`'s published read-state + intents (no game logic in views).
 
@@ -97,7 +98,7 @@ cd ios/TavliEngine && swift test
   board in place and `undo` reverses it. Mirrors the retired v1 OO domain; validated against v2 by
   behavior, not structure.
 - **Encoder must match exactly.** `BoardEncoder` reproduces `ai/board_encoder.py`'s `unary_v3` path
-  bit-for-bit (486 floats). Any change to the Python encoder must be mirrored here, then fixtures
+  bit-for-bit (486 floats; unary units capped at 15 for tier-2 16/17 stacks). Any change to the Python encoder must be mirrored here, then fixtures
   regenerated.
 - **Never assume `dst = src + color*die`** in shared code (Fevga Black wraps 24→1; Portes enters
   from the bar at index 0/25): go through the variant's geometry hooks. Variants address the board
