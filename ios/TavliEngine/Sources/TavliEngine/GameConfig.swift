@@ -11,14 +11,19 @@ public struct GameConfig: Sendable, Hashable {
     public let dieSides: Int
     /// The rules in force. Equality/hashing go by `variant.id`.
     public let variant: any GameVariant
+    /// Tier-2 handicap rules (#148 P3b; house Plakoto only), `nil` = the normal game.
+    /// Part of the config so every board copy (`GameBoard(config: board.config)`) plays
+    /// the same rules. `piecesPerPlayer` stays the model's 15; per-side counts live here.
+    public let handicapRules: HandicapRules?
 
     public init(boardSize: Int = 24, piecesPerPlayer: Int = 15, homeSize: Int = 6, dieSides: Int = 6,
-                variant: any GameVariant = GameVariants.plakoto) {
+                variant: any GameVariant = GameVariants.plakoto, handicapRules: HandicapRules? = nil) {
         self.boardSize = boardSize
         self.piecesPerPlayer = piecesPerPlayer
         self.homeSize = homeSize
         self.dieSides = dieSides
         self.variant = variant
+        self.handicapRules = handicapRules
     }
 
     public static let standard = GameConfig()
@@ -32,7 +37,7 @@ public struct GameConfig: Sendable, Hashable {
     public static func == (lhs: GameConfig, rhs: GameConfig) -> Bool {
         lhs.boardSize == rhs.boardSize && lhs.piecesPerPlayer == rhs.piecesPerPlayer
             && lhs.homeSize == rhs.homeSize && lhs.dieSides == rhs.dieSides
-            && lhs.variant.id == rhs.variant.id
+            && lhs.variant.id == rhs.variant.id && lhs.handicapRules == rhs.handicapRules
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -41,5 +46,6 @@ public struct GameConfig: Sendable, Hashable {
         hasher.combine(homeSize)
         hasher.combine(dieSides)
         hasher.combine(variant.id)
+        hasher.combine(handicapRules)
     }
 }

@@ -220,7 +220,11 @@ public struct PlakotoVariant: GameVariant {
     }
 
     public func legalMoves(on board: GameBoard, color: Color, dice: Dice) -> [Move] {
-        PossibleMoves(board: board, color: color, dice: dice).findMoves()
+        if let rules = board.config.handicapRules {   // tier-2 handicap (#148)
+            var gen = HandicapMoveGenerator(board: board, color: color, rules: rules)
+            return gen.findMoves(dice: dice)
+        }
+        return PossibleMoves(board: board, color: color, dice: dice).findMoves()
     }
 
     public func applyHalfMove(_ halfMove: HalfMove, on board: GameBoard) { board.applyHalfMove(halfMove) }
@@ -231,7 +235,37 @@ public struct PlakotoVariant: GameVariant {
     public func hasWon(_ color: Color, on board: GameBoard) -> Bool { board.hasWon(color) }
 
     public func isOpen(_ point: Int, for color: Color, on board: GameBoard) -> Bool {
-        board.points[point].isOpen(for: color)
+        if let rules = board.config.handicapRules { return board.handicapIsOpen(point, for: color, rules: rules) }
+        return board.points[point].isOpen(for: color)
+    }
+
+    public func isLegalStep(from: Int, to: Int, color: Color, die: Int, on board: GameBoard) -> Bool {
+        if let rules = board.config.handicapRules {
+            return handicapIsLegalStep(from: from, to: to, color: color, die: die, on: board, rules: rules)
+        }
+        let n = board.boardSize
+        guard pathIndex(of: to, for: color, boardSize: n) - pathIndex(of: from, for: color, boardSize: n) == die,
+              movableCount(at: from, for: color, on: board) > 0,
+              isOpen(to, for: color, on: board) else { return false }
+        if to == bearOffPoint(for: color, boardSize: n) { return board.countCheckersOutsideHome(color) == 0 }
+        return true
+    }
+
+    public func intermediatePoints(of half: HalfMove, die1: Int, die2: Int, on board: GameBoard) -> [Int] {
+        if let rules = board.config.handicapRules {
+            return handicapIntermediatePoints(of: half, die1: die1, die2: die2, on: board, rules: rules)
+        }
+        let n = board.boardSize
+        let from = pathIndex(of: half.from.position, for: half.color, boardSize: n)
+        let to = pathIndex(of: half.to.position, for: half.color, boardSize: n)
+        guard to - from == die1 + die2 else { return [] }
+        var mids: [Int] = []
+        for step in [die1, die2] {
+            let mid = point(atPath: from + step, for: half.color, boardSize: n)
+            guard !mids.contains(mid), isOpen(mid, for: half.color, on: board) else { continue }
+            mids.append(mid)
+        }
+        return mids
     }
 
     /// Plakoto in this app scores every win as a single game (the match score counts

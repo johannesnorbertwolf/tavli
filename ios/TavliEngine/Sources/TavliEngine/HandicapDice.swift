@@ -154,7 +154,7 @@ public struct HandicapTable: Codable, Equatable, Sendable {
     func shift(for labels: [String]) -> (shift: Double, unmeasured: [String]) {
         guard !labels.isEmpty else { return (0, []) }
         if labels.count > 1 {
-            for perm in [labels, labels.reversed()] {
+            for perm in Self.permutations(labels) {
                 if let d = cells[perm.joined(separator: "+")]?.logOddsShift { return (d, []) }
             }
         }
@@ -165,6 +165,46 @@ public struct HandicapTable: Codable, Equatable, Sendable {
             else { missing.append(String(l.split(separator: ":")[0])) }
         }
         return (total, missing)
+    }
+
+    /// Every ordering of `items` (the harness joins combo labels in its own lever order).
+    static func permutations(_ items: [String]) -> [[String]] {
+        guard items.count > 1 else { return [items] }
+        var out: [[String]] = []
+        for (i, x) in items.enumerated() {
+            var rest = items
+            rest.remove(at: i)
+            for p in permutations(rest) { out.append([x] + p) }
+        }
+        return out
+    }
+
+    /// The tier-2 cells of `setup` (#148 E3) as harness labels grouped by the sweep's
+    /// *handicapped* colour (spec `side`), whose opponent the cell's `logOddsShift`
+    /// favours. Mapping from the app's per-side items (each describing its side's own
+    /// rules): overshoot / safe point → the side holding it is favoured (spec side =
+    /// its opponent); smaller home → the side with it is the spec side; fewer than 15
+    /// checkers → that side is the favoured one (`HandicapSpec.target` = −side), more
+    /// than 15 → that side is the spec side. (The measured checker shifts are negative:
+    /// more checkers is the advantage.)
+    public static func tier2Groups(_ setup: HandicapSetup) -> [Color: [String]] {
+        let s = setup.normalized
+        var groups: [Color: [String]] = [:]
+        for side in Color.allCases {
+            let items = s[side]
+            // Fixed order like the harness: overshoot, safe_point, checkers, smaller_house.
+            if items.overshoot { groups[side.opponent, default: []].append("overshoot:1") }
+            if items.safePoint > 0 { groups[side.opponent, default: []].append("safe_point:\(items.safePoint)") }
+            if items.checkers < HandicapSetup.normalCheckers {
+                groups[side.opponent, default: []].append("checkers:\(items.checkers)")
+            } else if items.checkers > HandicapSetup.normalCheckers {
+                groups[side, default: []].append("checkers:\(items.checkers)")
+            }
+            if items.homeSize < HandicapSetup.normalHomeSize {
+                groups[side, default: []].append("smaller_house:\(items.homeSize)")
+            }
+        }
+        return groups
     }
 }
 
@@ -190,6 +230,9 @@ public enum HandicapEstimator {
     /// starts; otherwise `rule` decides (the roll-off averages both starters).
     public static func positionWhiteWinChance(setup: HandicapSetup, agent: Agent,
                                               rule: HandicapStartRule) throws -> Double {
+        // Tier-2 levers are not in the net's view (its handicap inputs are zero, §11):
+        // the position estimate is the normal 15/15 start with the head start only.
+        let setup = setup.tier1Only
         let board = GameBoard(config: GameConfig(variant: agent.variant))
         setup.setUpInitialPosition(on: board)
         func white(ifStarts starter: Color) throws -> Double {
@@ -205,7 +248,8 @@ public enum HandicapEstimator {
     }
 
     /// Combine levers by adding log-odds (concept §5): the position estimate plus each
-    /// measured dice lever's shift (positive for White's levers, negative for Black's).
+    /// measured dice lever's shift (positive for White's levers, negative for Black's),
+    /// plus the tier-2 levers' measured shifts (`HandicapTable.tier2Groups`).
     /// Unmeasured dice levers are listed, not guessed; hints only flag "approx.".
     public static func combine(positionWhite: Double, setup: HandicapSetup,
                                table: HandicapTable) -> HandicapEstimate {
@@ -224,6 +268,17 @@ public enum HandicapEstimator {
                 // E1: a head start amplifies the same side's dice levers (combos with
                 // m = 4 measured 1.36–1.52× the dice shift on top of the head start).
                 logit += sign * shift * (1 + headStartDiceInteraction * Double(items.headStart))
+            } else {
+                for kind in missing where !unmeasured.contains(kind) { unmeasured.append(kind) }
+            }
+        }
+        // Tier 2 (#148 E3): one exact measured cell per handicapped colour when the
+        // whole group was measured as a combo (any order), else the sum of the singles.
+        // Each group shifts toward the spec side's opponent.
+        for (specSide, labels) in HandicapTable.tier2Groups(s) {
+            let (shift, missing) = table.shift(for: labels)
+            if missing.isEmpty {
+                logit += (specSide == .black ? 1 : -1) * shift
             } else {
                 for kind in missing where !unmeasured.contains(kind) { unmeasured.append(kind) }
             }

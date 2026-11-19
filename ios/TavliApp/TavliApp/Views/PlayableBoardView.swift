@@ -153,6 +153,8 @@ struct PlayableBoardView: View {
             ZStack {
                 ZStack {
                     BoardView(flipped: flipped)
+                    // Tier-2 handicap cues (#148): safe points, shortened homes.
+                    HandicapBoardCuesView(rules: session.game.board.config.handicapRules, flipped: flipped)
                     TargetHighlightView(targets: highlightTargets, style: highlightStyle,
                                         flipped: flipped)
                     if let choice = session.routeChoice {

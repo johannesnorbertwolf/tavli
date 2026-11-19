@@ -206,6 +206,8 @@ final class DrillModel: ObservableObject {
     private var blunders: [PlyEvaluation] = []
     private var agent: Agent?
     private var humanColor: TavliEngine.Color = .white
+    /// The game's rules (variant + any tier-2 handicap, #148), for the drill positions.
+    private var config: GameConfig?
     private var started = false
     private var solvedCount = 0
     private var skippedCount = 0
@@ -234,6 +236,7 @@ final class DrillModel: ObservableObject {
         started = true
         self.agent = agent
         self.humanColor = humanColor
+        self.config = record.replayConfig
 
         let result: GameReviewResult
         if let precomputed {
@@ -265,7 +268,7 @@ final class DrillModel: ObservableObject {
         solvedThisCard = false
         let b = blunders[i]
         let s = GameSession.drill(boardStacks: b.boardStacks, die1: b.die1, die2: b.die2,
-                                  mover: b.mover, agent: agent)
+                                  mover: b.mover, agent: agent, config: config)
         s.onMoveAttempt = { [weak self] move in self?.grade(move) }
         s.holdAttempts = true   // keep the attempt on the board until "Try again" (#114)
         session = s
@@ -280,8 +283,10 @@ final class DrillModel: ObservableObject {
         let stacks = b.boardStacks
         let mover = b.mover
         let best = b.bestScore
+        let config = config
         Task.detached(priority: .userInitiated) { [weak self] in
-            let score = try? agent.scoreCandidate(boardStacks: stacks, move: pairs, mover: mover)
+            let score = try? agent.scoreCandidate(boardStacks: stacks, move: pairs, mover: mover,
+                                                  config: config)
             await MainActor.run { self?.applyFeedback(score: score, best: best) }
         }
     }

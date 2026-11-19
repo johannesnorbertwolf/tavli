@@ -143,7 +143,7 @@ public struct MoveNotation: Equatable, Sendable {
     /// `handicap` (#148) adds a head-start game's advanced checkers to the start.
     public static func game(_ plies: [PlyRecord], startingPlayer: Color,
                             config: GameConfig, handicap: HandicapSetup? = nil) -> [MoveNotation] {
-        let board = GameBoard(config: config)
+        let board = GameBoard(config: config.applying(handicap))
         if let handicap {
             handicap.setUpInitialPosition(on: board)
         } else {

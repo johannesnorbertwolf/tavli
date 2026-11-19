@@ -18,11 +18,29 @@ public final class GameBoard: CustomStringConvertible {
     public init(config: GameConfig = .standard) {
         self.config = config
         self.points = (0...(config.boardSize + 1)).map { Point(position: $0) }
+        let r = config.handicapRules
+        homeWhite = r?.white.homeSize ?? config.homeSize
+        homeBlack = r?.black.homeSize ?? config.homeSize
+        checkersWhite = r?.white.checkers ?? config.piecesPerPlayer
+        checkersBlack = r?.black.checkers ?? config.piecesPerPlayer
     }
 
+    // Per-side home size / checker count (#148 tier 2): the config's unless its
+    // `handicapRules` say otherwise. Cached so the hot paths stay branch-free.
+    private let homeWhite: Int
+    private let homeBlack: Int
+    private let checkersWhite: Int
+    private let checkersBlack: Int
+
+    /// `color`'s checker count in this game (15, or its tier-2 count).
+    public func checkerCount(_ color: Color) -> Int { color.isWhite ? checkersWhite : checkersBlack }
+
+    /// `color`'s bear-off home size (6, or its tier-2 smaller home).
+    public func homeSize(of color: Color) -> Int { color.isWhite ? homeWhite : homeBlack }
+
     public func initializeBoard() {
-        points[1] = Point(position: 1, color: .white, count: numberOfPieces)
-        points[boardSize] = Point(position: boardSize, color: .black, count: numberOfPieces)
+        points[1] = Point(position: 1, color: .white, count: checkersWhite)
+        points[boardSize] = Point(position: boardSize, color: .black, count: checkersBlack)
     }
 
     /// Replace a point's stack (bottom -> top). Used to reconstruct serialized
@@ -101,8 +119,8 @@ public final class GameBoard: CustomStringConvertible {
 
     public func allPlayersInGoal(_ color: Color) -> Bool {
         color.isWhite
-            ? points[boardSize + 1].count == numberOfPieces
-            : points[0].count == numberOfPieces
+            ? points[boardSize + 1].count >= checkersWhite
+            : points[0].count >= checkersBlack
     }
 
     public func capturedStartingPosition(_ color: Color) -> Bool {
@@ -113,9 +131,9 @@ public final class GameBoard: CustomStringConvertible {
 
     public func isHomePoint(_ color: Color, _ pointIndex: Int) -> Bool {
         if color.isWhite {
-            return (boardSize - homeSize + 1) <= pointIndex && pointIndex <= boardSize
+            return (boardSize - homeWhite + 1) <= pointIndex && pointIndex <= boardSize
         }
-        return 1 <= pointIndex && pointIndex <= homeSize
+        return 1 <= pointIndex && pointIndex <= homeBlack
     }
 
     public func countCheckersOutsideHome(_ color: Color) -> Int {

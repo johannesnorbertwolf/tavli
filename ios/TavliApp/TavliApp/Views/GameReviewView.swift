@@ -177,6 +177,7 @@ struct GameReviewView: View {
     private func boardArea(_ eval: PlyEvaluation) -> some View {
         ZStack {
             BoardView(flipped: flipped)
+            HandicapBoardCuesView(rules: record.replayConfig.handicapRules, flipped: flipped)   // #148 tier 2
             CheckersView(stacks: eval.boardStacks, flipped: flipped, variant: variant)
             // Always show your move (amber); `.both` overlays the best move (blue),
             // with shared elements in green (#133).
@@ -527,7 +528,7 @@ struct GameReviewView: View {
     /// points, hits/pins derived from the pre-move board, highest point first.
     private func notation(_ eval: PlyEvaluation, _ move: [[Int]]) -> MoveNotation {
         MoveNotation.describe(move, die1: eval.die1, die2: eval.die2, mover: eval.mover,
-                              stacks: eval.boardStacks, config: GameConfig(variant: variant))
+                              stacks: eval.boardStacks, config: record.replayConfig)
     }
 }
 

@@ -4,8 +4,9 @@ import TavliEngine
 private typealias EngineColor = TavliEngine.Color
 
 /// The handicap builder (#148, concept §4): a master toggle, one card per tier-1 item
-/// (favoured-side picker + slider/toggle + a plain one-line explanation) and the live
-/// win-chance estimate. Edits the persisted `HandicapPreferences` directly. Sides read
+/// (favoured-side picker + slider/toggle + a plain one-line explanation), the tier-2
+/// "Rule changes" cards (overshoot, safe point, checkers per side, home size; P3b) and the
+/// live win-chance estimate. Edits the persisted `HandicapPreferences` directly. Sides read
 /// "You / Computer" or "White / Red" depending on the mode picked at the top.
 struct HandicapSettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -93,6 +94,54 @@ struct HandicapSettingsView: View {
                             stepSlider(value: binding(\.hints), range: 0...HandicapSetup.maxHints,
                                        label: prefs.hints == 0 ? String(localized: "Off")
                                                                : String(localized: "\(prefs.hints) per game"))
+                        }
+                    }
+                    .disabled(!prefs.enabled)
+                    .opacity(prefs.enabled ? 1 : 0.5)
+
+                    // Tier 2 (#148 P3b): rule changes, each describing a side's own rules.
+                    Text("Rule changes")
+                        .font(ChromeType.headline)
+                        .foregroundStyle(ChromeTheme.ink)
+                        .padding(.top, 4)
+                        .opacity(prefs.enabled ? 1 : 0.5)
+                    Group {
+                        itemCard(title: "Overshoot bear-off",
+                                 caption: "May bear off with a higher die than needed, from the farthest checker (as in standard Plakoto). A big advantage.",
+                                 side: binding(\.overshootSide)) {
+                            Toggle(isOn: binding(\.overshoot)) {
+                                Text(prefs.overshoot ? String(localized: "On") : String(localized: "Off"))
+                                    .font(ChromeType.callout)
+                                    .foregroundStyle(ChromeTheme.ink)
+                            }
+                            .tint(ChromeTheme.doneTint)
+                            .accessibilityIdentifier("handicapOvershoot")
+                        }
+                        itemCard(title: "Safe point",
+                                 caption: "A lone checker of this side on this point can't be pinned. Points count from the side's own start. A small advantage.",
+                                 side: binding(\.safePointSide)) {
+                            Picker("Safe point", selection: binding(\.safePoint)) {
+                                Text("Off").tag(0)
+                                ForEach(HandicapSetup.safePointCandidates, id: \.self) { p in
+                                    Text(verbatim: "\(p)").tag(p)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .tint(ChromeTheme.undoTint)
+                            .accessibilityIdentifier("handicapSafePoint")
+                        }
+                        checkersCard
+                        itemCard(title: "Home size",
+                                 caption: "Bear off only from the last points of the home board. A smaller home is a disadvantage.",
+                                 side: binding(\.homeSizeSide)) {
+                            Picker("Home size", selection: binding(\.homeSize)) {
+                                ForEach(HandicapSetup.homeSizes, id: \.self) { k in
+                                    Text(verbatim: "\(k)").tag(k)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .tint(ChromeTheme.undoTint)
+                            .accessibilityIdentifier("handicapHomeSize")
                         }
                     }
                     .disabled(!prefs.enabled)
@@ -201,6 +250,37 @@ struct HandicapSettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .chromeCard(padding: 16)
+    }
+
+    /// Checkers per side (13…17): a stepper row for each side, neutral (no favoured side).
+    private var checkersCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Checkers")
+                .font(ChromeType.body.weight(.semibold))
+                .foregroundStyle(ChromeTheme.ink)
+            checkerStepper(.a, value: binding(\.checkersA))
+            checkerStepper(.b, value: binding(\.checkersB))
+            Text("How many checkers each side plays with (normally 15). More checkers is the advantage.")
+                .font(ChromeType.caption)
+                .foregroundStyle(ChromeKit.inkSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .chromeCard(padding: 16)
+    }
+
+    private func checkerStepper(_ role: HandicapRole, value: Binding<Int>) -> some View {
+        Stepper(value: value, in: HandicapSetup.checkerRange) {
+            HStack {
+                Text(role.label(vsComputer: vsComputer))
+                    .font(ChromeType.callout)
+                    .foregroundStyle(ChromeKit.inkSecondary)
+                Spacer(minLength: 8)
+                Text(verbatim: "\(value.wrappedValue)")
+                    .font(ChromeType.callout.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(ChromeTheme.ink)
+            }
+        }
+        .accessibilityIdentifier(role == .a ? "handicapCheckersA" : "handicapCheckersB")
     }
 
     /// An integer slider with its value label.

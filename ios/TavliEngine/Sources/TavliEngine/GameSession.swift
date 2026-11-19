@@ -312,7 +312,9 @@ public final class GameSession: ObservableObject {
             $0.isActive && HandicapSetup.supports(variantID: config.variant.id) ? $0 : nil
         }
         let starter = setup?.forcedStarter ?? startingPlayer
-        let game = Game(config: config, startingPlayer: starter)
+        // Tier-2 rules (#148 P3b) ride on the config, so every board copy (search,
+        // hints, analysis, move builder) plays them; no setup = the config unchanged.
+        let game = Game(config: config.applying(setup), startingPlayer: starter)
         setup?.setUpInitialPosition(on: game.board)
         self.game = game
         self.agent = agent

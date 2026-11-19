@@ -75,6 +75,16 @@ struct HandicapPreferences: Codable, Equatable {
     var rerollsSide: HandicapRole = .a
     var hints = 0
     var hintsSide: HandicapRole = .a      // two players only; vs the computer always "You"
+    // Tier 2 (#148 P3b): rule levers. Overshoot, safe point and home size go to one side;
+    // the checker count is set per side (more checkers is the advantage).
+    var overshoot = false
+    var overshootSide: HandicapRole = .a
+    var safePoint = 0                     // 0 = off, else one of HandicapSetup.safePointCandidates
+    var safePointSide: HandicapRole = .a
+    var checkersA = HandicapSetup.normalCheckers
+    var checkersB = HandicapSetup.normalCheckers
+    var homeSize = HandicapSetup.normalHomeSize
+    var homeSizeSide: HandicapRole = .b
 
     static let storageKey = "settings.handicap"
 
@@ -84,7 +94,15 @@ struct HandicapPreferences: Codable, Equatable {
     }
 
     /// Whether any item is set (independent of the master toggle).
-    var hasItems: Bool { headStart > 0 || movesFirst || dice > 0 || rerolls > 0 || hints > 0 }
+    var hasItems: Bool {
+        headStart > 0 || movesFirst || dice > 0 || rerolls > 0 || hints > 0 || hasTier2
+    }
+
+    /// Whether any tier-2 (rule) item is set.
+    var hasTier2: Bool {
+        overshoot || safePoint > 0 || checkersA != HandicapSetup.normalCheckers
+            || checkersB != HandicapSetup.normalCheckers || homeSize != HandicapSetup.normalHomeSize
+    }
 
     /// Whether handicaps are on and do something.
     var isActive: Bool { enabled && hasItems }
@@ -105,6 +123,14 @@ struct HandicapPreferences: Codable, Equatable {
         rerollsSide = try c.decodeIfPresent(HandicapRole.self, forKey: .rerollsSide) ?? d.rerollsSide
         hints = try c.decodeIfPresent(Int.self, forKey: .hints) ?? d.hints
         hintsSide = try c.decodeIfPresent(HandicapRole.self, forKey: .hintsSide) ?? d.hintsSide
+        overshoot = try c.decodeIfPresent(Bool.self, forKey: .overshoot) ?? d.overshoot
+        overshootSide = try c.decodeIfPresent(HandicapRole.self, forKey: .overshootSide) ?? d.overshootSide
+        safePoint = try c.decodeIfPresent(Int.self, forKey: .safePoint) ?? d.safePoint
+        safePointSide = try c.decodeIfPresent(HandicapRole.self, forKey: .safePointSide) ?? d.safePointSide
+        checkersA = try c.decodeIfPresent(Int.self, forKey: .checkersA) ?? d.checkersA
+        checkersB = try c.decodeIfPresent(Int.self, forKey: .checkersB) ?? d.checkersB
+        homeSize = try c.decodeIfPresent(Int.self, forKey: .homeSize) ?? d.homeSize
+        homeSizeSide = try c.decodeIfPresent(HandicapRole.self, forKey: .homeSizeSide) ?? d.homeSizeSide
     }
 
     // MARK: Storage
@@ -141,6 +167,11 @@ struct HandicapPreferences: Codable, Equatable {
             let side = humanColor ?? color(hintsSide)   // vs the computer: always the human
             s[side].hints = hints
         }
+        if overshoot { s[color(overshootSide)].overshoot = true }
+        if safePoint > 0 { s[color(safePointSide)].safePoint = safePoint }
+        s[color(.a)].checkers = checkersA
+        s[color(.b)].checkers = checkersB
+        if homeSize != HandicapSetup.normalHomeSize { s[color(homeSizeSide)].homeSize = homeSize }
         let n = s.normalized
         return n.isActive ? n : nil
     }
@@ -172,6 +203,12 @@ struct HandicapPreferences: Codable, Equatable {
         if dice > 0 { parts.append(String(localized: "Weighted dice")) }
         if rerolls > 0 { parts.append(String(localized: "Rerolls \(rerolls)")) }
         if hints > 0 { parts.append(String(localized: "Hints \(hints)")) }
+        if overshoot { parts.append(String(localized: "Overshoot bear-off")) }
+        if safePoint > 0 { parts.append(String(localized: "Safe point \(safePoint)")) }
+        if checkersA != HandicapSetup.normalCheckers || checkersB != HandicapSetup.normalCheckers {
+            parts.append(String(localized: "Checkers \(checkersA)–\(checkersB)"))
+        }
+        if homeSize != HandicapSetup.normalHomeSize { parts.append(String(localized: "Home \(homeSize) points")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -213,6 +250,17 @@ enum HandicapCopy {
             if i.hints > 0 {
                 out.append(i.hints == 1 ? String(localized: "\(who): 1 hint per game")
                                         : String(localized: "\(who): \(i.hints) hints per game"))
+            }
+            // Tier 2 (#148 P3b): this side's own rules.
+            if i.overshoot { out.append(String(localized: "\(who): may bear off with a higher die")) }
+            if i.safePoint > 0 {
+                out.append(String(localized: "\(who): safe point \(i.safePoint) (a lone checker there can't be pinned)"))
+            }
+            if i.checkers != HandicapSetup.normalCheckers {
+                out.append(String(localized: "\(who): plays with \(i.checkers) checkers"))
+            }
+            if i.homeSize != HandicapSetup.normalHomeSize {
+                out.append(String(localized: "\(who): bears off from the last \(i.homeSize) points only"))
             }
         }
         return out
