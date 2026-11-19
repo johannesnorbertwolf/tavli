@@ -294,7 +294,7 @@ private struct FlightDisc: View {
 }
 
 /// Maps an engine `Color` to its Caramel checker palette. Engine `.black` → red.
-fileprivate struct CheckerStyle {
+struct CheckerStyle {
     let fill: SwiftUI.Color
     let hi: SwiftUI.Color
     let ring: SwiftUI.Color

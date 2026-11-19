@@ -121,7 +121,7 @@ public enum GameReview {
         onEvaluation: (@Sendable (PlyEvaluation) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int) -> Void)? = nil
     ) -> GameReviewResult {
-        let config = config ?? GameConfig(variantID: record.variantID)
+        let config = (config ?? GameConfig(variantID: record.variantID)).applying(record.handicap)
         let variant = config.variant
         let board = GameBoard(config: config)
         record.setUpInitialPosition(on: board)   // + any handicap head start (#148)
@@ -245,7 +245,7 @@ public enum GameReview {
         onPassComplete: (@Sendable (_ pass: Int, _ depth: Int) -> Void)? = nil,
         progress: (@Sendable (_ done: Int, _ total: Int, _ pass: Int) -> Void)? = nil
     ) -> GameReviewResult {
-        let config = config ?? GameConfig(variantID: record.variantID)
+        let config = (config ?? GameConfig(variantID: record.variantID)).applying(record.handicap)
         let contexts = replayContexts(record: record, humanColor: humanColor,
                                       config: config, includeOpponent: includeOpponent)
         guard !depths.isEmpty else { return GameReviewResult(evaluations: []) }
@@ -407,7 +407,7 @@ public enum GameReview {
     public static func cachedResult(record: GameRecord,
                                     analysis: [AnalysisEntry],
                                     config: GameConfig? = nil) -> GameReviewResult {
-        let config = config ?? GameConfig(variantID: record.variantID)
+        let config = (config ?? GameConfig(variantID: record.variantID)).applying(record.handicap)
         // Replaying with `includeOpponent` captures both sides, so an analysis that
         // annotated the opponent's plies (#132) rebuilds in full too.
         let contexts = replayContexts(record: record, humanColor: record.aiColor?.opponent ?? .white,

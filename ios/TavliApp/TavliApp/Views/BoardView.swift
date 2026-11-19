@@ -236,6 +236,10 @@ enum CaramelPalette {
     // blue — already chosen to read on both the ivory triangles and the mahogany frame —
     // which stands apart from the amber destination frame.
     static let hlRoute = hlBest
+
+    // Tier-2 handicap board cues (#148): a side's points that don't count as home under a
+    // smaller home are dimmed, and its counting home gets a line on the frame.
+    static let homeCueShade = Color(light: 0x2a1408, lightOpacity: 0.30, dark: 0x000000, darkOpacity: 0.42)
 }
 
 extension Color {

@@ -82,7 +82,9 @@ public struct BoardEncoder: Sendable {
             if capturedByOur { out[base + 1] = 1 }
             if capturedByTheir { out[base + 2] = 1 }
             if count > 0 {
-                for k in 0..<count { out[base + 3 + k] = 1 }
+                // Capped at the model's capacity: 16/17-checker stacks only occur with a
+                // tier-2 handicap (#148) — `ai/board_encoder.py` `count if count <= ppp else ppp`.
+                for k in 0..<min(count, ppp) { out[base + 3 + k] = 1 }
             }
 
             let ourCount: Int

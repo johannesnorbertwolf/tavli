@@ -3947,6 +3947,1334 @@
           }
         }
       }
+    },
+    "%@: %lld checkers start 6 points ahead" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld Steine starten 6 Felder weiter"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld schijven starten 6 punten verder"
+          }
+        }
+      }
+    },
+    "%@: %lld hints per game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld Tipps pro Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld hints per spel"
+          }
+        }
+      }
+    },
+    "%@: %lld rerolls per game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld Neuwürfe pro Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %lld keer opnieuw gooien per spel"
+          }
+        }
+      }
+    },
+    "%@: 1 checker starts 6 points ahead" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 Stein startet 6 Felder weiter"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 schijf start 6 punten verder"
+          }
+        }
+      }
+    },
+    "%@: 1 hint per game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 Tipp pro Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 hint per spel"
+          }
+        }
+      }
+    },
+    "%@: 1 reroll per game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 Neuwurf pro Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: 1 keer opnieuw gooien per spel"
+          }
+        }
+      }
+    },
+    "%@: bears off from the last %lld points only" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: würfelt nur von den letzten %lld Feldern ab"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: speelt alleen van de laatste %lld punten uit"
+          }
+        }
+      }
+    },
+    "%@: may bear off with a higher die" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: darf mit einer höheren Zahl abwürfeln"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: mag met een hoger getal uitspelen"
+          }
+        }
+      }
+    },
+    "%@: moves first" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: beginnt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: begint"
+          }
+        }
+      }
+    },
+    "%@: plays with %lld checkers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: spielt mit %lld Steinen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: speelt met %lld schijven"
+          }
+        }
+      }
+    },
+    "%@: safe point %lld (a lone checker there can't be pinned)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: sicheres Feld %lld (ein einzelner Stein dort kann nicht gefangen werden)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: veilig punt %lld (een losse schijf daar kan niet worden vastgezet)"
+          }
+        }
+      }
+    },
+    "Checkers %lld–%lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steine %lld–%lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schijven %lld–%lld"
+          }
+        }
+      }
+    },
+    "Dice favour %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Würfel bevorzugen %@ %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dobbelstenen bevoordelen %@ %@"
+          }
+        }
+      }
+    },
+    "Dice favour you %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Würfel bevorzugen dich %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dobbelstenen bevoordelen jou %@"
+          }
+        }
+      }
+    },
+    "Head start %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorsprung %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voorsprong %lld"
+          }
+        }
+      }
+    },
+    "Hints %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipps %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hints %lld"
+          }
+        }
+      }
+    },
+    "Home %lld points" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heimfeld %lld Felder"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thuisbord %lld punten"
+          }
+        }
+      }
+    },
+    "Moderate" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mittel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gemiddeld"
+          }
+        }
+      }
+    },
+    "Moves first" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beginnt"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begint"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aus"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uit"
+          }
+        }
+      }
+    },
+    "On" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aan"
+          }
+        }
+      }
+    },
+    "Overshoot bear-off" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abwürfeln mit Überschuss"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uitspelen met overschot"
+          }
+        }
+      }
+    },
+    "Rerolls %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuwürfe %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw gooien %lld"
+          }
+        }
+      }
+    },
+    "Safe point %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicheres Feld %lld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veilig punt %lld"
+          }
+        }
+      }
+    },
+    "Slight" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leicht"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Licht"
+          }
+        }
+      }
+    },
+    "Strong" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stark"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sterk"
+          }
+        }
+      }
+    },
+    "Very strong" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sehr stark"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeer sterk"
+          }
+        }
+      }
+    },
+    "Weighted dice" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewichtete Würfel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewogen dobbelstenen"
+          }
+        }
+      }
+    },
+    "moderately" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "mittel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "gemiddeld"
+          }
+        }
+      }
+    },
+    "slightly" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "leicht"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "licht"
+          }
+        }
+      }
+    },
+    "strongly" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stark"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sterk"
+          }
+        }
+      }
+    },
+    "very strongly" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sehr stark"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "zeer sterk"
+          }
+        }
+      }
+    },
+    "%lld checkers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Steine"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld schijven"
+          }
+        }
+      }
+    },
+    "%lld per game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld pro Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld per spel"
+          }
+        }
+      }
+    },
+    "1 checker" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Stein"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 schijf"
+          }
+        }
+      }
+    },
+    "A lone checker of this side on this point can't be pinned. Points count from the side's own start. A small advantage." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein einzelner Stein dieser Seite kann auf diesem Feld nicht gefangen werden. Gezählt wird vom eigenen Start aus. Ein kleiner Vorteil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een losse schijf van deze kant kan op dit punt niet worden vastgezet. Punten tellen vanaf de eigen start. Een klein voordeel."
+          }
+        }
+      }
+    },
+    "Always starts the game; no opening roll." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beginnt immer das Spiel; kein Eröffnungswurf."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Begint altijd het spel; geen openingsworp."
+          }
+        }
+      }
+    },
+    "Applies to offline games of Plakoto (house rules), single or Best of 3. Not online or Full Tavli." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gilt für Offline-Spiele Plakoto (Hausregeln), einzeln oder Best of 3. Nicht online und nicht für Full Tavli."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geldt voor offline potjes Plakoto (huisregels), los of Best of 3. Niet online of bij Full Tavli."
+          }
+        }
+      }
+    },
+    "Bear off only from the last points of the home board. A smaller home is a disadvantage." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abwürfeln nur von den letzten Feldern des Heimfelds. Ein kleineres Heimfeld ist ein Nachteil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alleen uitspelen vanaf de laatste punten van het thuisbord. Een kleiner thuisbord is een nadeel."
+          }
+        }
+      }
+    },
+    "Before each roll the dice lean towards rolls that are good for this side. The game says so in its Handicap tag." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vor jedem Wurf neigen die Würfel zu Würfen, die dieser Seite helfen. Das Spiel zeigt das im Handicap-Hinweis an."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voor elke worp neigen de dobbelstenen naar worpen die goed zijn voor deze kant. Het spel meldt dit bij Handicap."
+          }
+        }
+      }
+    },
+    "Checkers" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steine"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schijven"
+          }
+        }
+      }
+    },
+    "Checkers that start 6 points ahead of the stack." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steine, die 6 Felder vor dem Stapel starten."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schijven die 6 punten voor de stapel starten."
+          }
+        }
+      }
+    },
+    "For" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Für"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voor"
+          }
+        }
+      }
+    },
+    "Give one side an advantage so players of different strength get a close game." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gib einer Seite einen Vorteil, damit unterschiedlich starke Spieler ein enges Spiel haben."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geef één kant een voordeel, zodat spelers van verschillend niveau een spannend spel spelen."
+          }
+        }
+      }
+    },
+    "Handicap" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicap"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicap"
+          }
+        }
+      }
+    },
+    "Head start" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorsprung"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voorsprong"
+          }
+        }
+      }
+    },
+    "Hints" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipps"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hints"
+          }
+        }
+      }
+    },
+    "Home size" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heimfeldgröße"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grootte thuisbord"
+          }
+        }
+      }
+    },
+    "How many checkers each side plays with (normally 15). More checkers is the advantage." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mit wie vielen Steinen jede Seite spielt (normal 15). Mehr Steine sind der Vorteil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Met hoeveel schijven elke kant speelt (normaal 15). Meer schijven is het voordeel."
+          }
+        }
+      }
+    },
+    "May bear off with a higher die than needed, from the farthest checker (as in standard Plakoto). A big advantage." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Darf mit einer höheren Zahl als nötig abwürfeln, vom hintersten Stein aus (wie im Standard-Plakoto). Ein großer Vorteil."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mag uitspelen met een hoger getal dan nodig, vanaf de achterste schijf (zoals in standaard-Plakoto). Een groot voordeel."
+          }
+        }
+      }
+    },
+    "Playing the computer" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gegen den Computer"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tegen de computer"
+          }
+        }
+      }
+    },
+    "Rerolls" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuwürfe"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw gooien"
+          }
+        }
+      }
+    },
+    "Roll again after seeing the dice, this many times per game." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "So oft pro Spiel nach dem Wurf neu würfeln."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zo vaak per spel opnieuw gooien na het zien van de worp."
+          }
+        }
+      }
+    },
+    "Rule changes" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regeländerungen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regelwijzigingen"
+          }
+        }
+      }
+    },
+    "Safe point" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sicheres Feld"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Veilig punt"
+          }
+        }
+      }
+    },
+    "Show the computer's best move (without playing it), this many times per game." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "So oft pro Spiel den besten Zug des Computers zeigen (ohne ihn zu spielen)."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zo vaak per spel de beste zet van de computer tonen (zonder hem te spelen)."
+          }
+        }
+      }
+    },
+    "Sides" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seiten"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kanten"
+          }
+        }
+      }
+    },
+    "Two players" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zwei Spieler"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Twee spelers"
+          }
+        }
+      }
+    },
+    "Use handicaps" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicaps verwenden"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicaps gebruiken"
+          }
+        }
+      }
+    },
+    "Your next game is %@, so it will be played without a handicap." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein nächstes Spiel ist %@, es wird also ohne Handicap gespielt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je volgende spel is %@, dus het wordt zonder handicap gespeeld."
+          }
+        }
+      }
+    },
+    "Your next game is Full Tavli, so it will be played without a handicap." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dein nächstes Spiel ist Full Tavli, es wird also ohne Handicap gespielt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Je volgende spel is Full Tavli, dus het wordt zonder handicap gespeeld."
+          }
+        }
+      }
+    },
+    "%@ %@ · %@ %@" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %@ · %@ %@"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ %@ · %@ %@"
+          }
+        }
+      }
+    },
+    "%@: hints left %lld of %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: noch %lld von %lld Tipps"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: nog %lld van %lld hints"
+          }
+        }
+      }
+    },
+    "%@: not measured yet, so not in the number." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: noch nicht gemessen, daher nicht in der Zahl."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: nog niet gemeten, dus niet in het getal."
+          }
+        }
+      }
+    },
+    "%@: rerolls left %lld of %lld" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: noch %lld von %lld Neuwürfen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: nog %lld van %lld keer opnieuw gooien"
+          }
+        }
+      }
+    },
+    "%lld games" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Spiele"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld spellen"
+          }
+        }
+      }
+    },
+    "%lldW – %lldL" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldS – %lldN"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldW – %lldV"
+          }
+        }
+      }
+    },
+    "1 game" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Spiel"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 spel"
+          }
+        }
+      }
+    },
+    "Best move shown in blue" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bester Zug in Blau"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beste zet in blauw"
+          }
+        }
+      }
+    },
+    "Computer used a reroll (%lld left)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer hat neu gewürfelt (noch %lld)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Computer gooide opnieuw (nog %lld)"
+          }
+        }
+      }
+    },
+    "Estimate needs the computer's model, which isn't available." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die Schätzung braucht das Computer-Modell, das nicht verfügbar ist."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De schatting heeft het computermodel nodig, dat niet beschikbaar is."
+          }
+        }
+      }
+    },
+    "Estimated win chance" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Gewinnchance"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschatte winkans"
+          }
+        }
+      }
+    },
+    "Estimated win chance (approx.)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschätzte Gewinnchance (ungefähr)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Geschatte winkans (ongeveer)"
+          }
+        }
+      }
+    },
+    "Estimating…" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schätze…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schatten…"
+          }
+        }
+      }
+    },
+    "Handicap game: win chances assume fair dice" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicap-Spiel: Gewinnchancen setzen faire Würfel voraus"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicapspel: winkansen gaan uit van eerlijke dobbelstenen"
+          }
+        }
+      }
+    },
+    "Handicap games" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicap-Spiele"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Handicapspellen"
+          }
+        }
+      }
+    },
+    "Hint (%lld left)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipp (noch %lld)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hint (nog %lld)"
+          }
+        }
+      }
+    },
+    "Hints aren't counted: what they're worth depends on the player." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tipps zählen nicht mit: Was sie wert sind, hängt vom Spieler ab."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hints tellen niet mee: wat ze waard zijn hangt af van de speler."
+          }
+        }
+      }
+    },
+    "If both played at the computer's full strength." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wenn beide mit voller Computerstärke spielten."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Als beide op de volle sterkte van de computer speelden."
+          }
+        }
+      }
+    },
+    "Not counted in your record against the computer." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zählt nicht zu deiner Bilanz gegen den Computer."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telt niet mee in je score tegen de computer."
+          }
+        }
+      }
+    },
+    "Reroll (%lld left)" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neu würfeln (noch %lld)"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opnieuw gooien (nog %lld)"
+          }
+        }
+      }
+    },
+    "Weighted dice and rerolls" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewichtete Würfel und Neuwürfe"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewogen dobbelstenen en opnieuw gooien"
+          }
+        }
+      }
+    },
+    "Win chances in the review and the win-probability bar still assume fair dice." : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gewinnchancen in der Analyse und im Gewinnbalken setzen weiter faire Würfel voraus."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Winkansen in de analyse en de winkansbalk gaan nog steeds uit van eerlijke dobbelstenen."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

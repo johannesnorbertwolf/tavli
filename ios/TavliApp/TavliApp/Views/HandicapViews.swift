@@ -1,4 +1,5 @@
 import SwiftUI
+import BoardGeometry
 import TavliEngine
 
 fileprivate typealias EngineColor = TavliEngine.Color
@@ -26,6 +27,15 @@ final class HandicapEstimateModel: ObservableObject {
         guard key != lastKey else { return }
         lastKey = key
         task?.cancel()
+        let table = HandicapTableResource.table
+        // The net sees only the position levers (tier-2 levers come from the table, §11),
+        // so a tier-2-only change reuses the last position estimate: instant update.
+        let positionKey = "\(setup.tier1Only.hashValue)-\(rule)"
+        if positionKey == lastPositionKey, let position = lastPosition {
+            computing = false
+            estimate = HandicapEstimator.combine(positionWhite: position, setup: setup, table: table)
+            return
+        }
         let config = GameSettingsConfig.plakoto
         guard let agent = Self.agent ?? ModelCatalog.main.makeAgent(config: config) else {
             unavailable = true
@@ -34,7 +44,6 @@ final class HandicapEstimateModel: ObservableObject {
         }
         Self.agent = agent
         computing = true
-        let table = HandicapTableResource.table
         task = Task { [weak self] in
             let position = await Task.detached(priority: .userInitiated) {
                 try? HandicapEstimator.positionWhiteWinChance(setup: setup, agent: agent, rule: rule)
@@ -42,10 +51,15 @@ final class HandicapEstimateModel: ObservableObject {
             guard let self, !Task.isCancelled else { return }
             self.computing = false
             if let position {
+                self.lastPositionKey = positionKey
+                self.lastPosition = position
                 self.estimate = HandicapEstimator.combine(positionWhite: position, setup: setup, table: table)
             }
         }
     }
+
+    private var lastPositionKey: String?
+    private var lastPosition: Double?
 }
 
 /// The house-Plakoto config the estimate runs under.
@@ -367,5 +381,80 @@ struct HandicapRecordBlock: View {
         .frame(maxWidth: 352, alignment: .leading)
         .chromeCard(padding: ChromeType.isCompact ? 16 : 24)
         .accessibilityIdentifier("handicapRecord")
+    }
+}
+
+// MARK: - Tier-2 board cues
+
+/// Board cues for a tier-2 handicap game (#148 P3b), drawn over the empty board and under
+/// the checkers. Renders nothing without rules. Per side:
+/// - **Safe point**: a small shield in the side's checker colour on the frame strip at the
+///   base of that point (its lone checker there can't be pinned).
+/// - **Smaller home**: the points of its six-point home quadrant that no longer count are
+///   dimmed, and a line in its checker colour runs along the frame under the points that do.
+struct HandicapBoardCuesView: View {
+    let rules: HandicapRules?
+    var flipped = false
+
+    var body: some View {
+        Canvas { context, size in
+            guard let rules else { return }
+            let geo = BoardGeometry(rect: CGRect(origin: .zero, size: size), flipped: flipped)
+            for color in [EngineColor.white, .black] {
+                drawHome(&context, geo: geo, color: color, size: rules[color].homeSize)
+            }
+            for color in [EngineColor.white, .black] where rules[color].safePoint > 0 {
+                drawSafe(&context, geo: geo, color: color, index: rules.safeSlot(color, boardSize: 24))
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// Board index of `color`'s own point `p` (1 = its start).
+    private func index(_ color: EngineColor, _ p: Int) -> Int { color == .white ? p : 25 - p }
+
+    private func drawHome(_ context: inout GraphicsContext, geo: BoardGeometry, color: EngineColor, size: Int) {
+        guard size < HandicapSetup.normalHomeSize else { return }
+        let s = geo.scale
+        // Own points 19…24 are the home quadrant; the last `size` of them count.
+        for p in 19...(24 - size) {
+            let pt = geo.point(index(color, p))
+            var tri = Path()
+            tri.move(to: pt.baselineLeft)
+            tri.addLine(to: pt.baselineRight)
+            tri.addLine(to: pt.tip)
+            tri.closeSubpath()
+            context.fill(tri, with: .color(CaramelPalette.homeCueShade))
+        }
+        let style = CheckerStyle.of(color)
+        let counting = ((25 - size)...24).map { geo.point(index(color, $0)) }
+        let xs = counting.flatMap { [$0.baselineLeft.x, $0.baselineRight.x] }
+        guard let lo = xs.min(), let hi = xs.max(), let first = counting.first else { return }
+        let y = first.isTop ? first.baselineLeft.y - geo.frameInset * 0.32
+                            : first.baselineLeft.y + geo.frameInset * 0.32
+        var line = Path()
+        line.move(to: CGPoint(x: lo + 4 * s, y: y))
+        line.addLine(to: CGPoint(x: hi - 4 * s, y: y))
+        context.stroke(line, with: .color(style.edge), style: StrokeStyle(lineWidth: 6 * s, lineCap: .round))
+        context.stroke(line, with: .color(style.fill), style: StrokeStyle(lineWidth: 4 * s, lineCap: .round))
+    }
+
+    private func drawSafe(_ context: inout GraphicsContext, geo: BoardGeometry, color: EngineColor, index i: Int) {
+        let pt = geo.point(i)
+        let s = geo.scale
+        let mid = CGPoint(x: (pt.baselineLeft.x + pt.baselineRight.x) / 2,
+                          y: pt.isTop ? pt.baselineLeft.y - geo.frameInset * 0.5
+                                      : pt.baselineLeft.y + geo.frameInset * 0.5)
+        let style = CheckerStyle.of(color)
+        let h = geo.frameInset * 0.78
+        var outline = context.resolve(Image(systemName: "shield.fill"))
+        outline.shading = .color(style.edge)
+        context.draw(outline, in: CGRect(x: mid.x - h * 0.5 - 1.2 * s, y: mid.y - h * 0.5 - 1.2 * s,
+                                         width: h + 2.4 * s, height: h + 2.4 * s))
+        var shield = context.resolve(Image(systemName: "shield.fill"))
+        shield.shading = .color(style.fill)
+        context.draw(shield, in: CGRect(x: mid.x - h * 0.5, y: mid.y - h * 0.5, width: h, height: h))
     }
 }
