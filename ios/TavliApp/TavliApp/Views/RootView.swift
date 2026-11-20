@@ -208,6 +208,14 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background { persistAutosave() }
         }
+        // Online (#134): sign in to Game Center at launch without UI, so a tapped turn
+        // notification reaches the listener; the sign-in sheet waits for Play Online.
+        .onAppear { online.authenticate(presentUI: false) }
+        .onChange(of: online.showOnlineRequested) { _, requested in
+            guard requested else { return }
+            online.showOnlineRequested = false
+            showOnline = true
+        }
         // Wire each live session's game-over hook to record the human's W/L (#64).
         // Done here (keyed on session identity) rather than at the static creation
         // sites so it covers every entry point uniformly — opening roll, resume from

@@ -53,10 +53,14 @@ struct GameView: View {
     struct Online {
         var localColor: TavliEngine.Color
         var isLocalTurn: Bool
+        /// The match is over (decided or forfeited): no forfeit action any more.
+        var isMatchOver: Bool = false
         var opponentName: String
-        /// A transient status line (opponent left / match ended), or `nil`.
+        /// A transient status line (opponent left / send failed / …), or `nil`.
         var banner: String?
-        /// Forfeit/leave the match and return to the lobby.
+        /// Back to the lobby, keeping the match (the game continues later).
+        var onBack: () -> Void
+        /// Forfeit the match (after the player confirms) and return to the lobby.
         var onLeave: () -> Void
     }
     var online: Online? = nil
@@ -135,6 +139,8 @@ struct GameView: View {
     /// "you still have a 34% chance of winning" line captured when it opens — `nil`
     /// (no line) when the win chance is unknown or at/below the threshold.
     @State private var showSurrenderConfirm = false
+    /// Online (#134): confirm before forfeiting a match.
+    @State private var showForfeitConfirm = false
     @State private var surrenderChanceLine: String? = nil
 
     /// Drives the settings sheet (#77).
@@ -184,7 +190,10 @@ struct GameView: View {
                 .foregroundStyle(ChromeKit.inkSecondary)
                 .textCase(.uppercase)
                 .accessibilityIdentifier("variantName")
-            if let online, !online.isLocalTurn, !session.isTerminal {
+            if let online, online.isMatchOver, !session.isTerminal {
+                // Ended without a final move (a forfeit): the banner says why.
+                EmptyView()
+            } else if let online, !online.isLocalTurn, !session.isTerminal {
                 OnlineWaitingView(opponentName: online.opponentName)
             } else {
                 TurnIndicatorView(session: session, naming: naming)
@@ -333,7 +342,7 @@ struct GameView: View {
                                    onHistory: { showHistory = true },
                                    onReview: hasReviewableMoves ? { showReview = true } : nil,
                                    tournamentExit: tournamentExit,
-                                   onlineExit: online?.onLeave,
+                                   onlineExit: online?.onBack,
                                    onMenu: onBack,
                                    // Handicap games aren't in the vs-Computer record (#148).
                                    showsStats: session.aiColor != nil && session.handicap == nil)
@@ -375,6 +384,13 @@ struct GameView: View {
             // winner) and clears the auto-save slot via `onAutosave`. In the tournament
             // `onGiveUp` takes over: it concedes the match but keeps the in-progress
             // game saved (resumable) and returns to the tournament.
+            // Online (#134): forfeiting is final, so it is confirmed; Back keeps the match.
+            .alert("Forfeit this match?", isPresented: $showForfeitConfirm) {
+                Button("Keep playing", role: .cancel) {}
+                Button("Forfeit", role: .destructive) { online?.onLeave() }
+            } message: {
+                Text("\(online?.opponentName ?? "") wins the match. To continue later instead, use the back button.")
+            }
             .alert("Give up this game?", isPresented: $showSurrenderConfirm) {
                 Button("Keep playing", role: .cancel) {}
                 Button("Give up", role: .destructive) {
@@ -547,11 +563,11 @@ struct GameView: View {
                 WinProbabilityBar(session: session)
             }
             Spacer(minLength: 0)
-            if !session.isTerminal {
+            if !session.isTerminal && !(online?.isMatchOver ?? false) {
                 if let online {
                     // Online (#134): one "Leave match" action; in-turn controls only
                     // when it's the local player's move.
-                    LeaveButton(action: online.onLeave)
+                    LeaveButton { showForfeitConfirm = true }
                     if online.isLocalTurn { ControlsView(session: session) }
                 } else {
                     HStack(spacing: 12) {
@@ -578,9 +594,9 @@ struct GameView: View {
             }
             SettingsButton { showSettings = true }
             HandicapTagButton(session: session, compact: true)   // only in a handicap game (#148)
-            if !session.isTerminal {
+            if !session.isTerminal && !(online?.isMatchOver ?? false) {
                 if let online {
-                    LeaveButton(action: online.onLeave)
+                    LeaveButton { showForfeitConfirm = true }
                 } else {
                     SaveButton(action: presentSaveDialog)
                     SurrenderButton(action: onSurrenderTapped)
@@ -674,9 +690,9 @@ struct GameView: View {
     /// pane — the actions the iPad shows as separate buttons.
     private var gameMenu: some View {
         Menu {
-            if !session.isTerminal {
+            if !session.isTerminal && !(online?.isMatchOver ?? false) {
                 if let online {
-                    Button(role: .destructive, action: online.onLeave) {
+                    Button(role: .destructive) { showForfeitConfirm = true } label: {
                         Label("Leave match", systemImage: "rectangle.portrait.and.arrow.right")
                     }
                 } else {
