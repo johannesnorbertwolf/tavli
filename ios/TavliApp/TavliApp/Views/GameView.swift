@@ -334,6 +334,7 @@ struct GameView: View {
                                    onReview: hasReviewableMoves ? { showReview = true } : nil,
                                    tournamentExit: tournamentExit,
                                    onlineExit: online?.onLeave,
+                                   onMenu: onBack,
                                    // Handicap games aren't in the vs-Computer record (#148).
                                    showsStats: session.aiColor != nil && session.handicap == nil)
                 }
@@ -1106,6 +1107,9 @@ private struct WinOverlayView: View {
     /// Online (#134): when set, the primary action returns to the lobby, and the
     /// vs-AI record + Review (which needs a model the online session lacks) are hidden.
     var onlineExit: (() -> Void)? = nil
+    /// "Back to menu" — return to the start screen. Shown only when the primary action
+    /// doesn't already leave the game (not online / tournament, whose primary exits).
+    var onMenu: (() -> Void)? = nil
     /// Whether this game counts toward the vs-AI record (`false` for two-player, #143).
     var showsStats: Bool = true
 
@@ -1114,6 +1118,11 @@ private struct WinOverlayView: View {
     private var showsRecord: Bool { showsStats && tournamentExit == nil && onlineExit == nil }
 
     @Environment(\.chromeMode) private var chromeMode
+
+    private var menuExit: GameOverAction? {
+        guard onlineExit == nil, tournamentExit == nil, let onMenu else { return nil }
+        return .init(label: String(localized: "Back to menu"), icon: "house", action: onMenu)
+    }
 
     private var primary: GameOverAction {
         if let onlineExit {
@@ -1131,7 +1140,8 @@ private struct WinOverlayView: View {
                      primary: primary,
                      // Review needs the bundled model the online session deliberately omits.
                      onReview: onlineExit == nil ? onReview : nil,
-                     onHistory: onHistory) {
+                     onHistory: onHistory,
+                     exit: menuExit) {
             if showsRecord {
                 StatsPanelView(stats: stats, embedded: true,
                                condensed: chromeMode == .compactLandscape)
