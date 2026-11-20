@@ -4,98 +4,78 @@ import GameKit
 import UIKit
 import TavliEngine
 
-/// Bridges a Game Center **turn-based** match to a local `GameSession` (#134), and
-/// sequences the games of a best-of-three match within that one Game Center match (#145).
+/// The Game Center side of online play (#134, #145): sign-in, the matchmaker, the
+/// lobby's match list, and the turn-event listener. All match logic lives in the
+/// engine's `OnlineMatchController` (unit-tested against a simulated two-device Game
+/// Center); this class only adapts `GKTurnBasedMatch` to its `OnlineMatchService` seam
+/// and routes events to it.
 ///
-/// The engine stays oblivious to the network: each game is a pure human-vs-human
-/// `GameSession` (`aiColor == nil`), and a remote move is fed in via
-/// `GameSession.applyRemoteMove` — structurally the AI move the session already knows
-/// how to animate, only sourced from the wire. This object owns all the `GameKit`
-/// plumbing and is the single place that touches `GKTurnBasedMatch`.
+/// **Event routing.**
+/// - An event for the open match is applied to it (moves, match end, opponent quitting).
+/// - A match this device just created through the matchmaker is opened.
+/// - A match the user opened from a notification (`didBecomeActive`) is opened and the
+///   online screen requested.
+/// - Anything else only refreshes the lobby list (and notes "your turn" elsewhere) —
+///   it never replaces the game on screen.
 ///
-/// **State model.** The whole match lives in the match's `matchData` as an
-/// `OnlineMatchPayload`: the list of each game's ply log plus that game's winner.
-/// Sync, resume, and reconnection are therefore "decode + replay": there is never any
-/// board state to reconcile. Each completed local turn is pushed with `endTurn`; each
-/// incoming turn event decodes the payload and applies whatever this device has not yet
-/// seen — which may finish the current game and continue into the next.
-///
-/// **Match flow.** When a game ends, its winner is appended to the score. If the match
-/// is decided the Game Center match ends; otherwise a fresh game is started locally
-/// (the starter alternates, so no opening-roll ceremony) and the turn is handed to that
-/// starter. A `pendingGameResult` drives the between-games overlay while the session has
-/// already advanced behind it.
-///
-/// **Untested by `swift test`.** GameKit needs a signed build, two devices, and sandbox
-/// Game Center accounts, so the flows below are verified manually (see the PR checklist).
-/// The match-agnostic core they call — `applyRemoteMove`, the codec, `MatchState`, the
-/// payload diff — is covered headlessly.
+/// Sign-in starts at launch without UI (`authenticate(presentUI: false)`) so the
+/// listener is registered before a notification is tapped; the Game Center sign-in
+/// sheet is shown only when the player opens Play Online. Returning to the foreground
+/// reloads the lobby list and the open match.
 @MainActor
 final class GameKitCoordinator: NSObject, ObservableObject {
 
     // ── Published view state ────────────────────────────────────────────────────
 
-    /// Whether the local player is signed in to Game Center.
     @Published private(set) var isAuthenticated = false
-    /// A human-readable problem to surface in the lobby (auth/match errors).
     @Published private(set) var authError: String?
-    /// The current game's session, or `nil` when in the lobby / between matches.
-    @Published private(set) var session: GameSession?
-    /// The colour the local player holds in the active match.
-    @Published private(set) var localColor: TavliEngine.Color = .white
-    /// The opponent's Game Center display name, for the turn indicator / scoreboard.
-    @Published private(set) var opponentName: String = String(localized: "Opponent")
-    /// A transient status line (e.g. "Waiting for opponent to start…",
-    /// "Opponent left the match"). `nil` when there is nothing to say.
-    @Published var statusBanner: String?
-    /// The player's in-progress / their-turn matches, for the lobby list.
+    /// The player's matches for the lobby (ended ones included, shown as finished).
     @Published private(set) var matches: [GKTurnBasedMatch] = []
-    /// The running best-of-three score (#145).
-    @Published private(set) var matchState = MatchState.single(baseStartingPlayer: .white)
-    /// Set to the just-finished game's result (winner + points, or a draw, #143) while
-    /// the between-games / match-over overlay should show; the session has already
-    /// advanced to the next game behind it. Cleared when the player taps "Next game".
-    /// `nil` during normal play.
-    @Published var pendingGameResult: MatchGameResult?
+    /// Set when a notification opened a match: the app should show the online screen.
+    @Published var showOnlineRequested = false
 
-    // ── Private match state ─────────────────────────────────────────────────────
+    /// The match logic (session, colours, score, status). Views observe it directly.
+    private(set) var controller: OnlineMatchController!
 
-    /// The active match, or `nil` in the lobby.
-    private var match: GKTurnBasedMatch?
-    /// Maps each participant's `gamePlayerID` to the colour they play, carried in the
-    /// payload so each device computes its own side independent of turn order.
-    private var colorByPlayerID: [String: TavliEngine.Color] = [:]
-    /// `GameVariant.id` of the match's rules (#136), carried in every payload. A new
-    /// match takes the variant chosen in the lobby (#143); an opened match the payload's.
-    private var variantID = GameVariants.defaultID
-    /// The variant chosen in the lobby for a match this device creates (#143).
-    private var pendingMatchVariantID = GameVariants.defaultID
-    /// Full ply logs + winners for the match's finished games, in order — the history
-    /// re-sent in every payload so reconnection stays exact.
-    private var completedGameLogs: [GameLog] = []
-    /// 0-based index of the current game (the one `session` is playing).
-    private var syncedGameIndex = 0
-    /// Plies of the current game already reflected locally (sent or received) — the
-    /// high-water mark used to avoid echoing a ply back out and to diff incoming updates.
-    private var syncedPlyCount = 0
-    /// The match length chosen in the lobby for a match this device creates.
-    private var pendingMatchTargetWins = MatchLengthSetting.bestOfThree.targetWins
-    /// Observes the session's ply log so a completed *local* turn is pushed to GC.
-    private var recordCancellable: AnyCancellable?
+    // ── Private state ───────────────────────────────────────────────────────────
 
-    private var localPlayerID: String { GKLocalPlayer.local.gamePlayerID }
+    /// Live `GKTurnBasedMatch` objects by id, for the service calls.
+    private var liveMatches: [String: GKTurnBasedMatch] = [:]
+    /// Match length + variant chosen in the lobby while the matchmaker is up; the next
+    /// new match the listener reports is this device's creation.
+    private var pendingNewMatch: (targetWins: Int, variantID: String)?
+    private weak var matchmaker: UIViewController?
+    /// Game Center's sign-in sheet, held until the player opens Play Online.
+    private var pendingSignInController: UIViewController?
+    private var foregroundObserver: NSObjectProtocol?
+
+    override init() {
+        super.init()
+        controller = OnlineMatchController(service: self)
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.appDidBecomeActive() }
+        }
+    }
 
     // ── Authentication ──────────────────────────────────────────────────────────
 
-    /// Begin Game Center sign-in. If GC needs to present a sign-in screen we surface
-    /// it; on success we register as the turn-event listener so invites and the
-    /// opponent's moves flow in. Idempotent — safe to call each time the lobby opens.
-    func authenticate() {
+    /// Begin (or resume) Game Center sign-in. At launch call with `presentUI: false`:
+    /// a needed sign-in sheet is kept until the lobby asks for it. Safe to call again.
+    func authenticate(presentUI: Bool = true) {
+        if presentUI, let vc = pendingSignInController {
+            pendingSignInController = nil
+            present(vc)
+            return
+        }
+        guard GKLocalPlayer.local.authenticateHandler == nil || presentUI else { return }
         GKLocalPlayer.local.authenticateHandler = { [weak self] viewController, error in
             Task { @MainActor in
                 guard let self else { return }
                 if let viewController {
-                    self.present(viewController)
+                    if presentUI { self.present(viewController) }
+                    else { self.pendingSignInController = viewController }
                 } else if GKLocalPlayer.local.isAuthenticated {
                     self.isAuthenticated = true
                     self.authError = nil
@@ -113,347 +93,144 @@ final class GameKitCoordinator: NSObject, ObservableObject {
 
     // ── Lobby actions ───────────────────────────────────────────────────────────
 
-    /// Present Game Center's matchmaker so the host can invite a friend. The created
-    /// match is delivered back through the turn-event listener (`receivedTurnEventFor`),
-    /// so there is no completion handler here — `handleMatchUpdate` picks it up. The
-    /// chosen match length (#145) is remembered for when we initialise the new match.
+    /// Show Game Center's matchmaker to invite a friend (or auto-match). The created
+    /// match arrives through the listener and is opened there.
     func presentInvite(targetWins: Int, variantID: String = GameVariants.defaultID) {
-        pendingMatchTargetWins = max(1, targetWins)
-        pendingMatchVariantID = variantID
-        guard isAuthenticated else { authenticate(); return }
+        guard isAuthenticated else { authenticate(presentUI: true); return }
+        pendingNewMatch = (max(1, targetWins), variantID)
         let request = GKMatchRequest()
         request.minPlayers = 2
         request.maxPlayers = 2
         let vc = GKTurnBasedMatchmakerViewController(matchRequest: request)
         vc.turnBasedMatchmakerDelegate = self
+        vc.showExistingMatches = false
+        matchmaker = vc
         present(vc)
     }
 
-    /// Reload the player's matches for the lobby list (their-turn first by recency).
     func refreshMatches() {
         GKTurnBasedMatch.loadMatches { [weak self] matches, _ in
-            Task { @MainActor in self?.matches = matches ?? [] }
+            Task { @MainActor in
+                guard let self else { return }
+                for m in matches ?? [] { self.liveMatches[m.matchID] = m }
+                self.matches = (matches ?? []).sorted(by: Self.lobbyOrder)
+            }
         }
     }
 
-    /// Open an existing match (tapped in the lobby list, or resumed on launch).
+    /// Open a match from the lobby list.
     func open(_ match: GKTurnBasedMatch) {
-        handleMatchUpdate(match)
+        liveMatches[match.matchID] = match
+        controller.open(snapshot(of: match))
     }
 
-    /// Advance from the between-games overlay to the next game (#145). The session has
-    /// already advanced; this just dismisses the overlay.
-    func continueToNextGame() {
-        pendingGameResult = nil
-    }
-
-    /// Leave the active match: forfeit it on Game Center, then return to the lobby.
-    func leaveMatch() {
-        guard let match else { clearMatch(); return }
-        let data = (try? currentPayload()?.encoded()) ?? Data()
-        if isLocalTurn(in: match) {
-            match.participantQuitInTurn(with: .quit,
-                                        nextParticipants: opponents(of: match),
-                                        turnTimeout: GKTurnTimeoutDefault,
-                                        match: data) { _ in }
-        } else {
-            match.participantQuitOutOfTurn(with: .quit) { _ in }
-        }
-        clearMatch()
-    }
-
-    private func clearMatch() {
-        recordCancellable = nil
-        session = nil
-        match = nil
-        colorByPlayerID = [:]
-        variantID = GameVariants.defaultID
-        completedGameLogs = []
-        syncedGameIndex = 0
-        syncedPlyCount = 0
-        matchState = .single(baseStartingPlayer: .white)
-        pendingGameResult = nil
-        statusBanner = nil
+    /// Back to the lobby, keeping the match.
+    func closeMatch() {
+        controller.close()
         refreshMatches()
     }
 
-    // ── Incoming: a match was created / updated / became our turn ────────────────
+    /// Forfeit the open match.
+    func forfeitMatch() {
+        controller.forfeit()
+        refreshMatches()
+    }
 
-    /// The funnel for every match event. Decodes the payload and either opens the
-    /// match fresh (rebuild from the log) or applies the opponent's newest update; an
-    /// as-yet-uninitialised match is set up here by whichever side holds the opening
-    /// turn (the creator).
-    private func handleMatchUpdate(_ match: GKTurnBasedMatch) {
-        guard let data = match.matchData, !data.isEmpty,
-              let payload = try? OnlineMatchPayload.decoded(from: data) else {
-            // No payload yet: the creator (the player holding the turn) initialises
-            // it; the joiner waits for the creator to write the opening state.
-            if isLocalTurn(in: match) {
-                initializeNewMatch(match, targetWins: pendingMatchTargetWins)
-            } else {
-                self.match = match
-                self.session = nil
-                self.statusBanner = String(localized: "Waiting for opponent to start…")
-            }
+    /// Remove a finished match from the player's list.
+    func remove(_ match: GKTurnBasedMatch) {
+        match.remove { [weak self] _ in
+            Task { @MainActor in self?.refreshMatches() }
+        }
+    }
+
+    private func appDidBecomeActive() {
+        guard isAuthenticated else { return }
+        refreshMatches()
+        controller.refresh()
+    }
+
+    /// Your turn first, then their turn, then finished; most recent first within each.
+    private static func lobbyOrder(_ a: GKTurnBasedMatch, _ b: GKTurnBasedMatch) -> Bool {
+        func rank(_ m: GKTurnBasedMatch) -> Int {
+            if m.status == .ended { return 2 }
+            return m.currentParticipant?.player?.gamePlayerID == GKLocalPlayer.local.gamePlayerID ? 0 : 1
+        }
+        let (ra, rb) = (rank(a), rank(b))
+        if ra != rb { return ra < rb }
+        return (a.currentParticipant?.lastTurnDate ?? .distantPast)
+             > (b.currentParticipant?.lastTurnDate ?? .distantPast)
+    }
+
+    // ── Incoming events ─────────────────────────────────────────────────────────
+
+    private func handleEvent(_ match: GKTurnBasedMatch, didBecomeActive: Bool) {
+        liveMatches[match.matchID] = match
+        let snap = snapshot(of: match)
+        defer { refreshMatches() }
+
+        if controller.receive(snap) { return }
+
+        // A match this device just created through the matchmaker.
+        if let new = pendingNewMatch, match.matchData?.isEmpty ?? true,
+           snap.currentPlayerID == GKLocalPlayer.local.gamePlayerID {
+            pendingNewMatch = nil
+            matchmaker?.dismiss(animated: true)
+            controller.open(snap, newMatchTargetWins: new.targetWins, newMatchVariantID: new.variantID)
             return
         }
-
-        let isSameMatch = (self.match?.matchID == match.matchID) && session != nil
-        if isSameMatch {
-            applyIncoming(payload, for: match)
-        } else {
-            openFresh(match, payload)
+        // The player tapped a notification for this match.
+        if didBecomeActive {
+            controller.open(snap)
+            showOnlineRequested = true
         }
     }
 
-    /// Apply everything in `payload` this device has not yet seen, game by game. A
-    /// finished current game (with the match still going) advances to the next game and
-    /// raises the between-games result; a decided match raises the match-over result.
-    /// Any inconsistency falls back to an exact rebuild from the authoritative log.
-    private func applyIncoming(_ payload: OnlineMatchPayload, for match: GKTurnBasedMatch) {
-        self.match = match
-        matchState = payload.matchState
-        completedGameLogs = payload.games.filter(\.isComplete)
+    // ── Snapshots ───────────────────────────────────────────────────────────────
 
-        while let session = self.session {
-            let plies = payload.games.indices.contains(syncedGameIndex)
-                ? payload.games[syncedGameIndex].plies : []
-            while syncedPlyCount < plies.count {
-                let ply = plies[syncedPlyCount]
-                guard session.applyRemoteMove(ply) else { openFresh(match, payload); return }
-                syncedPlyCount += 1
-            }
-            let hasNextGame = payload.games.count > syncedGameIndex + 1
-            if session.isTerminal && hasNextGame && !payload.matchState.isComplete {
-                pendingGameResult = session.record.result
-                advanceToGame(syncedGameIndex + 1, payload: payload)
-                continue   // apply any plies already present in the new current game
-            }
-            break
-        }
-
-        if payload.matchState.isComplete, let session, session.isTerminal {
-            pendingGameResult = session.record.result
-        }
-        statusBanner = nil
+    private func snapshot(of match: GKTurnBasedMatch) -> OnlineMatchSnapshot {
+        OnlineMatchSnapshot(
+            matchID: match.matchID,
+            data: match.matchData,
+            participants: match.participants.map { p in
+                OnlineParticipant(playerID: p.player?.gamePlayerID,
+                                  displayName: p.player?.displayName,
+                                  status: Self.status(p.status),
+                                  outcome: Self.outcome(p.matchOutcome))
+            },
+            currentPlayerID: match.currentParticipant?.player?.gamePlayerID,
+            isEnded: match.status == .ended)
     }
 
-    /// Rebuild the local session exactly from the authoritative log (the reconnection /
-    /// first-open path): set the colours, the score, and the current game, then start
-    /// observing local turns. A decided match is shown at its last game.
-    private func openFresh(_ match: GKTurnBasedMatch, _ payload: OnlineMatchPayload) {
-        colorByPlayerID = payload.colorByPlayerID.compactMapValues(TavliEngine.Color.init(rawValue:))
-        variantID = payload.variant
-        localColor = payload.color(forPlayerID: localPlayerID) ?? .white
-        opponentName = match.participants
-            .first { $0.player?.gamePlayerID != localPlayerID }?
-            .player?.displayName ?? String(localized: "Opponent")
-
-        matchState = payload.matchState
-        completedGameLogs = payload.games.filter(\.isComplete)
-        self.match = match
-        statusBanner = nil
-
-        let index = payload.currentGameIndex
-        let rebuilt = GameSession.resume(from: payload.gameSave(forGameIndex: index),
-                                         animationTimings: .standard)
-        self.session = rebuilt
-        syncedGameIndex = index
-        syncedPlyCount = rebuilt.record.plies.count
-        rebuilt.start()
-
-        if matchState.isComplete {
-            // Reconnecting to a finished match: surface the match-over overlay; no need
-            // to observe local turns (there are none left).
-            recordCancellable = nil
-            pendingGameResult = rebuilt.record.result
-        } else {
-            pendingGameResult = nil
-            observeLocalTurns(of: rebuilt)
+    private static func status(_ s: GKTurnBasedParticipant.Status) -> OnlineParticipantStatus {
+        switch s {
+        case .invited: return .invited
+        case .declined: return .declined
+        case .matching: return .matching
+        case .active: return .active
+        case .done: return .done
+        default: return .unknown
         }
     }
 
-    /// First-time setup by the match creator: assign colours (creator = White), pick
-    /// game 1's starter per the variant (`startingPlayer(default: .white)` — White for
-    /// house Plakoto, a coin flip for the bkgm-rules variants, #143), persist the opening
-    /// payload so the joiner can read its colour, the variant and the match length, and
-    /// open the local session.
-    private func initializeNewMatch(_ match: GKTurnBasedMatch, targetWins: Int) {
-        variantID = pendingMatchVariantID
-        let starter = GameConfig(variantID: variantID).variant.startingPlayer(default: .white)
-        let opponentID = match.participants
-            .first { $0.player?.gamePlayerID != localPlayerID }?
-            .player?.gamePlayerID
-
-        var colors: [String: TavliEngine.Color] = [localPlayerID: .white]
-        if let opponentID { colors[opponentID] = .black }
-
-        let payload = OnlineMatchPayload(targetWins: targetWins,
-                                         startingPlayer: starter,
-                                         colorByPlayerID: colors,
-                                         games: [GameLog()],
-                                         variant: variantID)
-        guard let data = try? payload.encoded() else { return }
-        if starter == .white {
-            // Persist the colours WITHOUT ending the turn — we move first.
-            match.saveCurrentTurn(withMatch: data) { _ in }
-        } else {
-            // The opponent starts game 1: hand them the turn with the opening state.
-            match.endTurn(withNextParticipants: opponents(of: match),
-                          turnTimeout: GKTurnTimeoutDefault,
-                          match: data) { [weak self] error in
-                Task { @MainActor in self?.reportIfError(error) }
-            }
+    private static func outcome(_ o: GKTurnBasedMatch.Outcome) -> OnlineMatchOutcome {
+        switch o {
+        case .none: return .none
+        case .quit: return .quit
+        case .won: return .won
+        case .lost: return .lost
+        case .tied: return .tied
+        case .timeExpired: return .timeExpired
+        default: return .other
         }
-        openFresh(match, payload)
-    }
-
-    /// Advance the local session to game `index`, rebuilding it from the payload (which
-    /// also replays any plies already present there, so the diff stays consistent).
-    private func advanceToGame(_ index: Int, payload: OnlineMatchPayload) {
-        let next = GameSession.resume(from: payload.gameSave(forGameIndex: index),
-                                      animationTimings: .standard)
-        self.session = next
-        syncedGameIndex = index
-        syncedPlyCount = next.record.plies.count
-        next.start()
-        observeLocalTurns(of: next)
-    }
-
-    /// Start a fresh (empty) local game `index` with the given starter — the local-win
-    /// advance path, where the next game's log is created empty.
-    private func startEmptyGame(index: Int, starter: TavliEngine.Color) {
-        let save = GameSave(name: "Online match", savedAt: Date(),
-                            startingPlayer: starter.rawValue, aiColor: nil, history: [],
-                            variant: variantID)
-        let next = GameSession.resume(from: save, animationTimings: .standard)
-        self.session = next
-        syncedGameIndex = index
-        syncedPlyCount = 0
-        next.start()
-        observeLocalTurns(of: next)
-    }
-
-    // ── Outgoing: push a completed local turn ───────────────────────────────────
-
-    /// Watch the session's ply log; when a new ply is a *local* move (or pass), push it
-    /// to Game Center. Remote plies (applied via `applyRemoteMove`) are already in the
-    /// match data, so they only advance the high-water mark.
-    private func observeLocalTurns(of session: GameSession) {
-        recordCancellable = session.$record
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.handleRecordChange() }
-    }
-
-    private func handleRecordChange() {
-        guard let session else { return }
-        let count = session.record.plies.count
-        guard count > syncedPlyCount else { return }
-        // The mover alternates every ply within the current game, from its starter.
-        let mover = (count - 1) % 2 == 0 ? session.startingPlayer
-                                         : session.startingPlayer.opponent
-        syncedPlyCount = count
-        if mover == localColor { pushLocalTurn() }
-    }
-
-    /// Send the current state to Game Center after a local turn. An ordinary move ends
-    /// our turn; a move that wins the current game either ends the match (if it decides
-    /// it) or rolls the match on to the next game.
-    private func pushLocalTurn() {
-        guard let session, let match else { return }
-
-        // A finished game (a win of 1 or 2 points, or a draw, #143). A draw scores
-        // nothing and the match rolls on to the next game, like a non-deciding win.
-        if session.isTerminal, let result = session.record.result {
-            completedGameLogs.append(GameLog(plies: session.record.plies, result: result))
-            matchState.record(result)
-            if matchState.isComplete {
-                endMatch(match, gameResult: result)
-            } else {
-                advanceMatchAfterLocalWin(match, gameResult: result)
-            }
-            return
-        }
-
-        guard let data = try? currentPayload()?.encoded() else { return }
-        match.endTurn(withNextParticipants: opponents(of: match),
-                      turnTimeout: GKTurnTimeoutDefault,
-                      match: data) { [weak self] error in
-            Task { @MainActor in self?.reportIfError(error) }
-        }
-    }
-
-    /// End the whole Game Center match (the local move decided it): set each
-    /// participant's outcome by the **match** winner and write the final log.
-    private func endMatch(_ match: GKTurnBasedMatch, gameResult: MatchGameResult) {
-        let data = (try? payload(games: completedGameLogs).encoded()) ?? Data()
-        let localWonMatch = matchState.matchWinner == localColor
-        for participant in match.participants {
-            let isLocal = participant.player?.gamePlayerID == localPlayerID
-            participant.matchOutcome = (isLocal == localWonMatch) ? .won : .lost
-        }
-        match.endMatchInTurn(withMatch: data) { [weak self] error in
-            Task { @MainActor in self?.reportIfError(error) }
-        }
-        pendingGameResult = gameResult
-    }
-
-    /// The local move won a game but not the match: start the next game locally, raise
-    /// the between-games result, and hand the turn to whoever starts that game (keeping
-    /// the turn when that is us).
-    private func advanceMatchAfterLocalWin(_ match: GKTurnBasedMatch, gameResult: MatchGameResult) {
-        let nextIndex = matchState.completedGames           // == completedGameLogs.count
-        let nextStarter = matchState.currentStartingPlayer
-        startEmptyGame(index: nextIndex, starter: nextStarter)
-        pendingGameResult = gameResult
-
-        let data = (try? payload(games: completedGameLogs + [GameLog()]).encoded()) ?? Data()
-        if nextStarter == localColor {
-            // We start the next game too: keep the turn, just persist the new state.
-            match.saveCurrentTurn(withMatch: data) { [weak self] error in
-                Task { @MainActor in self?.reportIfError(error) }
-            }
-        } else {
-            match.endTurn(withNextParticipants: opponents(of: match),
-                          turnTimeout: GKTurnTimeoutDefault,
-                          match: data) { [weak self] error in
-                Task { @MainActor in self?.reportIfError(error) }
-            }
-        }
-    }
-
-    /// The current payload for an ordinary move: the finished games plus the in-progress
-    /// game's plies.
-    private func currentPayload() -> OnlineMatchPayload? {
-        guard let session else { return nil }
-        let current = GameLog(plies: session.record.plies, result: session.record.result)
-        return payload(games: completedGameLogs + [current])
-    }
-
-    private func payload(games: [GameLog]) -> OnlineMatchPayload {
-        OnlineMatchPayload(targetWins: matchState.targetWins,
-                           startingPlayer: matchState.baseStartingPlayer,
-                           colorByPlayerID: colorByPlayerID,
-                           games: games,
-                           variant: variantID)
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
     private func opponents(of match: GKTurnBasedMatch) -> [GKTurnBasedParticipant] {
-        match.participants.filter { $0.player?.gamePlayerID != localPlayerID }
+        match.participants.filter { $0.player?.gamePlayerID != GKLocalPlayer.local.gamePlayerID }
     }
 
-    private func isLocalTurn(in match: GKTurnBasedMatch) -> Bool {
-        match.currentParticipant?.player?.gamePlayerID == localPlayerID
-    }
-
-    private func reportIfError(_ error: Error?) {
-        if let error { statusBanner = error.localizedDescription }
-    }
-
-    /// Present a UIKit view controller (auth or matchmaker) from the top-most
-    /// controller — SwiftUI has no first-class GameKit presentation.
+    /// Present a UIKit view controller (sign-in or matchmaker) from the top-most one.
     private func present(_ vc: UIViewController) {
         guard let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene })
@@ -463,40 +240,109 @@ final class GameKitCoordinator: NSObject, ObservableObject {
         while let presented = top.presentedViewController { top = presented }
         top.present(vc, animated: true)
     }
+
+    private func liveMatch(_ id: String, _ fail: OnlineCompletion) -> GKTurnBasedMatch? {
+        if let m = liveMatches[id] { return m }
+        fail(GKError(.unknown))
+        return nil
+    }
+}
+
+// ── OnlineMatchService: the controller's operations, on GKTurnBasedMatch ─────────
+
+extension GameKitCoordinator: OnlineMatchService {
+    var localPlayerID: String { GKLocalPlayer.local.gamePlayerID }
+
+    func endTurn(matchID: String, data: Data, completion: @escaping OnlineCompletion) {
+        guard let match = liveMatch(matchID, completion) else { return }
+        match.endTurn(withNextParticipants: opponents(of: match),
+                      turnTimeout: GKTurnTimeoutDefault, match: data) { error in
+            Task { @MainActor in completion(error) }
+        }
+    }
+
+    func saveTurn(matchID: String, data: Data, completion: @escaping OnlineCompletion) {
+        guard let match = liveMatch(matchID, completion) else { return }
+        match.saveCurrentTurn(withMatch: data) { error in
+            Task { @MainActor in completion(error) }
+        }
+    }
+
+    func endMatch(matchID: String, data: Data, localWon: Bool, completion: @escaping OnlineCompletion) {
+        guard let match = liveMatch(matchID, completion) else { return }
+        for p in match.participants where p.matchOutcome != .quit {
+            let isLocal = p.player?.gamePlayerID == localPlayerID
+            p.matchOutcome = (isLocal == localWon) ? .won : .lost
+        }
+        match.endMatchInTurn(withMatch: data) { error in
+            Task { @MainActor in completion(error) }
+        }
+    }
+
+    func quit(matchID: String, data: Data, inTurn: Bool, completion: @escaping OnlineCompletion) {
+        guard let match = liveMatch(matchID, completion) else { return }
+        if inTurn {
+            match.participantQuitInTurn(with: .quit, nextParticipants: opponents(of: match),
+                                        turnTimeout: GKTurnTimeoutDefault, match: data) { error in
+                Task { @MainActor in completion(error) }
+            }
+        } else {
+            match.participantQuitOutOfTurn(with: .quit) { error in
+                Task { @MainActor in completion(error) }
+            }
+        }
+    }
+
+    func acceptInvite(matchID: String, completion: @escaping OnlineSnapshotCompletion) {
+        guard let match = liveMatches[matchID] else { completion(nil, GKError(.unknown)); return }
+        match.acceptInvite { [weak self] accepted, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let accepted { self.liveMatches[accepted.matchID] = accepted }
+                completion(accepted.map { self.snapshot(of: $0) }, error)
+            }
+        }
+    }
+
+    func load(matchID: String, completion: @escaping OnlineSnapshotCompletion) {
+        GKTurnBasedMatch.load(withID: matchID) { [weak self] match, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let match { self.liveMatches[match.matchID] = match }
+                completion(match.map { self.snapshot(of: $0) }, error)
+            }
+        }
+    }
 }
 
 // ── Turn-based event listener ───────────────────────────────────────────────────
 
-// GameKit invokes these callbacks off the main thread, so they are `nonisolated`
-// and hop onto the main actor to touch the coordinator's state.
+// GameKit calls these off the main thread; hop to the main actor.
 extension GameKitCoordinator: GKLocalPlayerListener {
-    /// The opponent took a turn, accepted our invite, or we launched from a turn
-    /// notification — open or advance the match.
-    nonisolated func player(_ player: GKPlayer,
-                            receivedTurnEventFor match: GKTurnBasedMatch,
+    /// A turn was taken, an invite accepted, a match created, or the player opened the
+    /// app from a turn notification (`didBecomeActive`).
+    nonisolated func player(_ player: GKPlayer, receivedTurnEventFor match: GKTurnBasedMatch,
                             didBecomeActive: Bool) {
-        Task { @MainActor in
-            self.handleMatchUpdate(match)
-            self.refreshMatches()
-        }
+        Task { @MainActor in self.handleEvent(match, didBecomeActive: didBecomeActive) }
     }
 
-    /// The match ended (a win, or the opponent forfeited).
+    /// The match ended. Routed like a turn event so the open match applies the final
+    /// move (or the opponent's forfeit) instead of freezing a move early.
     nonisolated func player(_ player: GKPlayer, matchEnded match: GKTurnBasedMatch) {
-        Task { @MainActor in
-            if self.match?.matchID == match.matchID {
-                self.statusBanner = String(localized: "Match ended.")
-            }
-            self.refreshMatches()
-        }
+        Task { @MainActor in self.handleEvent(match, didBecomeActive: false) }
     }
 
-    /// The opponent asked to quit; record their forfeit and let the local player win.
+    /// The **local** player quit this match from Game Center's own interface while it
+    /// was their turn: GameKit expects the app to forfeit it in turn.
     nonisolated func player(_ player: GKPlayer, wantsToQuitMatch match: GKTurnBasedMatch) {
         Task { @MainActor in
-            if self.match?.matchID == match.matchID {
-                self.statusBanner = String(localized: "Opponent left the match.")
+            self.liveMatches[match.matchID] = match
+            if self.controller.activeMatchID == match.matchID {
+                self.controller.forfeit()
+            } else {
+                self.quit(matchID: match.matchID, data: match.matchData ?? Data(), inTurn: true) { _ in }
             }
+            self.refreshMatches()
         }
     }
 }
@@ -505,14 +351,18 @@ extension GameKitCoordinator: GKLocalPlayerListener {
 
 extension GameKitCoordinator: GKTurnBasedMatchmakerViewControllerDelegate {
     nonisolated func turnBasedMatchmakerViewControllerWasCancelled(_ viewController: GKTurnBasedMatchmakerViewController) {
-        Task { @MainActor in viewController.dismiss(animated: true) }
+        Task { @MainActor in
+            self.pendingNewMatch = nil
+            viewController.dismiss(animated: true)
+        }
     }
 
     nonisolated func turnBasedMatchmakerViewController(_ viewController: GKTurnBasedMatchmakerViewController,
                                                        didFailWithError error: Error) {
         Task { @MainActor in
+            self.pendingNewMatch = nil
             viewController.dismiss(animated: true)
-            self.statusBanner = error.localizedDescription
+            self.authError = error.localizedDescription
         }
     }
 }

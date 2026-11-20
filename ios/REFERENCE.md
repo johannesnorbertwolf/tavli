@@ -614,17 +614,42 @@ are all "decode + replay", with no board state to reconcile.
   authoritative log. An empty `halfMoves` is a forced pass, legal only when there are no legal moves.
   Covered by `GameSessionRemoteTests` (accept/reject/pass/Pasch + exact equivalence with `replay`).
 
-- **The bridge — `GameKitCoordinator` (`TavliApp/Online/`, app target, `@MainActor`).** Owns all
-  `GameKit` plumbing: authentication, the matchmaker invite UI, the turn-event listener, the match
-  score (`matchState`), and the **current game's** HvH `GameSession`. **Inbound** —
-  `receivedTurnEventFor` decodes the payload and either rebuilds from the log (first open /
-  reconnection, via `resume` of the current game) or, for the open match, applies whatever this device
-  has not yet seen via `pendingPlies(...)` through `applyRemoteMove` (live update, animated) — which may
-  finish the current game and continue into the next. **Outbound** — it observes `session.$record`;
-  when a new ply's mover is the local colour, it `endTurn`s with the re-encoded payload. **Dice** stay
-  local-roll-and-broadcast; there is no shared RNG. Colours: creator plays White and moves first
-  (deliberately simple for v1); the creator persists the opening payload (with the lobby's chosen
-  `targetWins`) via `saveCurrentTurn` so the joiner can read its colour before the first move.
+- **Match logic — `OnlineMatchController` (engine) behind `OnlineMatchService`.** All online
+  match behaviour is in the engine, testable without GameKit. The service seam is plain values:
+  `OnlineMatchSnapshot` (`matchID`, `data`, participants with `playerID?`/status/outcome,
+  `currentPlayerID`, `isEnded`) and the operations `endTurn` / `saveTurn` / `endMatch(localWon:)`
+  / `quit(inTurn:)` / `acceptInvite` / `load`. Entry points: `open(_:newMatchTargetWins:newMatchVariantID:)`
+  (accepts a pending invite first; a stateless match on the local turn is this device's creation and
+  is initialised), `receive(_:)` (any event — applied only to the open match; another match's event
+  never replaces it, it just sets `status = .yourTurnElsewhere`), `refresh()` (reload the open match:
+  foreground, retry), `close()` (back to the lobby, match kept) and `forfeit()` (quit in/out of turn).
+  Rules, each pinned by `OnlineMatchControllerTests` (two `FakeDevice`s on a `FakeGameCenter` that
+  fills auto-match seats only when the turn reaches them):
+  - **Colours:** creator = White; a player missing from `colorByPlayerID` (its seat was unfilled at
+    creation — auto-match or an unresolved invite) takes the free colour, and the merged map is
+    written back with the next turn.
+  - **End of match:** a `matchEnded` event goes through `receive` like a turn, so the loser applies the
+    final move; a decided match locks the board (`isMatchOver`). An opponent whose outcome is `.quit`
+    makes the controller end the match as a local win (`status = .opponentLeft`).
+  - **Local turns** are pushed when the session's ply log grows by a local-colour ply, handled on the
+    next main-queue turn (a game-ending move appends its ply before the result is recorded). A finished
+    game appends its `GameLog`, records `MatchState`, then ends the match or starts the next game and
+    hands the turn to its starter (`saveTurn` when that is us).
+  - **Unsent turns:** a failed write keeps the op (`hasUnsentTurn`, `status = .sendFailed`), never rolls
+    the board back; a snapshot that is *behind* the local log triggers a resend instead of a rebuild,
+    one that has caught up clears it. Retries reload after 10 s, doubling to 5 min.
+
+- **The bridge — `GameKitCoordinator` (`TavliApp/Online/`, app target, `@MainActor`).** Adapts GameKit
+  to `OnlineMatchService` (keeps live `GKTurnBasedMatch`es by id; outcomes for `endMatch` skip
+  participants who already quit) and routes events: the open match → `receive`; a match this device
+  just created via the matchmaker (lobby length + variant remembered) → dismiss the matchmaker and
+  `open`; a notification tap (`didBecomeActive`) → `open` + `showOnlineRequested` (RootView switches to
+  the online screen); anything else only refreshes the lobby list. Signs in **at launch without UI**
+  (`authenticate(presentUI: false)`, so the listener exists before a notification is tapped; a needed
+  sign-in sheet is held until Play Online opens). `wantsToQuitMatch` = the *local* player quit from
+  Game Center's own UI → forfeit in turn. Foreground (`didBecomeActive`) reloads the list and the open
+  match. Lobby: your-turn first, then their turn, then finished (context menu "Remove"). **Dice** stay
+  local-roll-and-broadcast; there is no shared RNG.
 
 - **Best-of-three flow (#145).** When a local move wins the current game, the coordinator appends the
   winner to `matchState` and the finished `GameLog` to its history. If the **match** is now decided it
