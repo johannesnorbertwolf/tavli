@@ -108,5 +108,9 @@ cd ios/TavliEngine && swift test
 - **Fixtures + model are generated, not hand-written.** Re-run both scripts after changing the Python
   engine/encoder or the `gold_model_path`. The `.mlpackage` lives in the test Fixtures dir so
   `swift test` can load it.
+- **Every Core ML prediction drains its own `autoreleasepool`** (`Agent.value`, the only call
+  site). Review/search run 100k+ predictions in one synchronous job; without the pool the
+  autoreleased Core ML objects pile up (1.2 GB for a 40-ply review) and jetsam kills the app on
+  small iPhones. `AnalysisMemoryTests` pins it — keep new prediction paths inside a pool.
 - **Tests use `computeUnits = .cpuOnly`** to match Python CPU inference and avoid ANE float drift.
   The agent parity test runs ~170k Core ML predictions and takes ~60s.

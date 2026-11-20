@@ -70,17 +70,26 @@ public final class Agent: @unchecked Sendable {
     }
 
     /// Win probability for the side whose turn it is in the encoded position.
+    ///
+    /// Each prediction is drained in its own autorelease pool. Core ML hands back
+    /// autoreleased Objective-C objects (input/output arrays, feature providers), and
+    /// callers run hundreds of thousands of predictions inside one long synchronous
+    /// job (post-game review, search) whose thread pool would otherwise only drain when
+    /// the job returns — on an iPhone 13 mini that grew the app past its ~2 GB jetsam
+    /// limit mid-review. Pinned by `AnalysisMemoryTests`.
     public func value(_ encoding: [Float]) throws -> Float {
-        let arr = try MLMultiArray(shape: [1, NSNumber(value: inputSize)], dataType: .float32)
-        let ptr = arr.dataPointer.bindMemory(to: Float.self, capacity: inputSize)
-        for i in 0..<inputSize { ptr[i] = encoding[i] }
-        let provider = try MLDictionaryFeatureProvider(dictionary: [inputName: MLFeatureValue(multiArray: arr)])
-        let out = try model.prediction(from: provider)
-        guard let mv = out.featureValue(for: outputName)?.multiArrayValue else {
-            throw NSError(domain: "Agent", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "missing output \(outputName)"])
+        try autoreleasepool {
+            let arr = try MLMultiArray(shape: [1, NSNumber(value: inputSize)], dataType: .float32)
+            let ptr = arr.dataPointer.bindMemory(to: Float.self, capacity: inputSize)
+            for i in 0..<inputSize { ptr[i] = encoding[i] }
+            let provider = try MLDictionaryFeatureProvider(dictionary: [inputName: MLFeatureValue(multiArray: arr)])
+            let out = try model.prediction(from: provider)
+            guard let mv = out.featureValue(for: outputName)?.multiArrayValue else {
+                throw NSError(domain: "Agent", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: "missing output \(outputName)"])
+            }
+            return mv[0].floatValue
         }
-        return mv[0].floatValue
     }
 
     /// An agent for `config.variant`, using that variant's encoder.
